@@ -15,6 +15,7 @@
 #include <Jolt/Physics/Constraints/DistanceConstraint.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Constraints/HingeConstraint.h>
+#include <Jolt/Physics/Constraints/SliderConstraint.h>
 #include <Jolt/Physics/Constraints/TwoBodyConstraint.h>
 #include <Jolt/Physics/Collision/BroadPhase/BroadPhaseLayerInterfaceMask.h>
 #include <Jolt/Physics/Collision/BroadPhase/ObjectVsBroadPhaseLayerFilterMask.h>
@@ -529,6 +530,55 @@ World::JointId JoltWorld::AddDistanceJoint(BodyId a, BodyId b, const math::Vec3&
     const JointId id{impl_->nextJointId++};
     impl_->constraints[id.id] = c;
     return id;
+}
+
+World::JointId JoltWorld::AddSliderJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor,
+                                         const math::Vec3& worldAxis, float minLimit,
+                                         float maxLimit, float springHz, float damping) {
+    if (!impl_) return {};
+    const JPH::BodyID ba = impl_->Find(a);
+    const JPH::BodyID bb = impl_->Find(b);
+    if (ba == JPH::BodyID() || bb == JPH::BodyID() || ba == bb) return {};
+    JPH::BodyLockWrite la(impl_->physics.GetBodyLockInterface(), ba);
+    JPH::BodyLockWrite lb(impl_->physics.GetBodyLockInterface(), bb);
+    if (!la.Succeeded() || !lb.Succeeded()) return {};
+    JPH::SliderConstraintSettings s;
+    s.mSpace = JPH::EConstraintSpace::WorldSpace;
+    s.mPoint1 = ToRVec3(worldAnchor);
+    s.mPoint2 = ToRVec3(worldAnchor);
+    JPH::Vec3 ax = ToJolt(worldAxis);
+    if (ax.LengthSq() < 1e-8f) ax = JPH::Vec3::sAxisY();
+    ax = ax.Normalized();
+    s.mSliderAxis1 = ax;
+    s.mSliderAxis2 = ax;
+    const JPH::Vec3 ref =
+        std::fabs(ax.GetY()) < 0.9f ? JPH::Vec3::sAxisY() : JPH::Vec3::sAxisX();
+    const JPH::Vec3 normal = ax.Cross(ref).Normalized();
+    s.mNormalAxis1 = normal;
+    s.mNormalAxis2 = normal;
+    if (springHz > 0.0f) {
+        // Soft limits at the creation offset: a spring mount that supports the
+        // chassis through the constraint (suspension).
+        s.mLimitsMin = 0.0f;
+        s.mLimitsMax = 0.0f;
+        s.mLimitsSpringSettings.mMode = JPH::ESpringMode::FrequencyAndDamping;
+        s.mLimitsSpringSettings.mFrequency = springHz;
+        s.mLimitsSpringSettings.mDamping = damping;
+    } else {
+        s.mLimitsMin = minLimit;
+        s.mLimitsMax = maxLimit;
+    }
+    JPH::Ref<JPH::Constraint> c = s.Create(la.GetBody(), lb.GetBody());
+    impl_->physics.AddConstraint(c.GetPtr());
+    const JointId id{impl_->nextJointId++};
+    impl_->constraints[id.id] = c;
+    return id;
+}
+
+void JoltWorld::Activate(BodyId body) {
+    if (!impl_) return;
+    const JPH::BodyID bid = impl_->Find(body);
+    if (bid != JPH::BodyID()) impl_->Bodies().ActivateBody(bid);
 }
 
 void JoltWorld::RemoveJoint(JointId joint) {

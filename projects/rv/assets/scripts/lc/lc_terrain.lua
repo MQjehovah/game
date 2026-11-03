@@ -142,6 +142,9 @@ function updateWheelMotion(dt)
     -- Kinematic/co-op path: no Ackermann, both front wheels share the angle.
     rv.steerLeft, rv.steerRight = rv.steerVis, rv.steerVis
   end
+  if rv.wheelBodies == nil then
+    rv.wheelSpinI = nil
+  end
   rv.wheelSpin = (rv.wheelSpin or 0) -
                  (rv.speed or 0) * (dt or 0.016) / 0.40
   if rv.wheelSpin > math.pi * 2 or rv.wheelSpin < -math.pi * 2 then
@@ -263,7 +266,65 @@ local SUSP_K = 90000.0      -- N/m per wheel
 local SUSP_C = 11000.0      -- N*s/m per wheel (slightly overdamped)
 local SUSP_MAX_F = 150000.0
 local SUSP_R = 0.40
-local SUSP_REST = 0.04      -- free length: floats the box so springs carry the load
+local SUSP_REST = 0.06      -- free length: floats the box so springs carry the load
+
+-- Per-wheel rigid bodies: a small dynamic box per wheel, attached to the
+-- chassis by a slider joint with soft limits (spring mount, ~8 Hz). The terrain
+-- spring acts on the wheel body and the chassis is supported through the joint;
+-- tire forces also act on the wheel bodies. Single-player only.
+local WHEEL_BODY_HALF = { x = 0.04, y = 0.20, z = 0.20 }
+local WHEEL_BODY_MASS = 300
+local WHEEL_BODY_OUT = 1.0
+local WHEEL_BODY_MAX_F = 12000.0
+local WHEEL_SPRING_HZ = 8.0
+
+function spawnRvWheelBodies()
+  if rvBody == nil or PhysicsAddBox == nil or PhysicsAddSliderJoint == nil then
+    return false
+  end
+  if rv.wheelBodies ~= nil then return true end
+  rv.wheelBodies = {}
+  rv.wheelSpinI = {}
+  local gy = rv.groundY or 0
+  for i, w in ipairs(WHEELS) do
+    local bx = w.lx * WHEEL_BODY_OUT
+    local ox, oy, oz = rvOffset(bx, 0.38, w.lz)
+    local wx = rv.x + ox
+    local wy = gy + oy
+    local wz = rv.z + oz
+    local body = PhysicsAddBox({ x = wx, y = wy, z = wz },
+                               WHEEL_BODY_HALF, true,
+                               { mass = WHEEL_BODY_MASS, friction = 0.9,
+                                 restitution = 0.0, gravityScale = 0.0 })
+    if body ~= nil then
+      local joint = PhysicsAddSliderJoint(rvBody, body,
+                                          { x = wx, y = wy, z = wz },
+                                          { x = 0, y = 1, z = 0 },
+                                          0, 0, WHEEL_SPRING_HZ, 1.0)
+      rv.wheelBodies[i] = { body = body, joint = joint }
+    end
+  end
+  if rv.wheelBodies[1] == nil then
+    rv.wheelBodies = nil
+    rv.wheelSpinI = nil
+    return false
+  end
+  return true
+end
+
+function resetRvWheelBodies()
+  if rv.wheelBodies == nil then return end
+  local gy = rv.groundY or 0
+  for i, w in ipairs(WHEELS) do
+    local wb = rv.wheelBodies[i]
+    if wb ~= nil then
+      local bx = w.lx * WHEEL_BODY_OUT
+      local ox, oy, oz = rvOffset(bx, 0.38, w.lz)
+      PhysicsSetPosition(wb.body, { x = rv.x + ox, y = gy + oy, z = rv.z + oz })
+      PhysicsSetVelocity(wb.body, { x = 0, y = 0, z = 0 })
+    end
+  end
+end
 
 -- Friction impulse for one contact: proportional to the lateral slip, capped
 -- by the friction circle mu * normalForce * dt. Exposed for the self-test.
@@ -358,55 +419,80 @@ function updateRvPhysics(dt)
     end
   end
 
-  for i, w in ipairs(WHEELS) do
-    -- Offset from the box centre: the collider centre is 0.9 above the visual
-    -- origin and the wheel centres sit at 0.38.
-    local lx, ly, lz = w.lx, 0.38 - 0.9, w.lz
-    local x1 = lx * cr - ly * sr
-    local y1 = lx * sr + ly * cr
-    local y2 = y1 * cp - lz * sp
-    local z2 = y1 * sp + lz * cp
-    local ox = x1 * cyw + z2 * syw
-    local oz = -x1 * syw + z2 * cyw
-    local wx, wy, wz = p.x + ox, p.y + y2, p.z + oz
-
-    local ground = terrainHeight(wx, wz)
-    local compression = ground + SUSP_REST - (wy - SUSP_R)
-    local vp = nil
-    if PhysicsGetPointVelocity ~= nil then
-      vp = PhysicsGetPointVelocity(rvBody, { x = wx, y = wy, z = wz })
+  local useBodies = rv.wheelBodies ~= nil and rv.wheelBodies[1] ~= nil
+  if useBodies and PhysicsActivate ~= nil then
+    PhysicsActivate(rvBody)
+    for i = 1, #rv.wheelBodies do
+      PhysicsActivate(rv.wheelBodies[i].body)
     end
-    local vy = vp and vp.y or 0
-
-    local force = SUSP_K * compression - SUSP_C * vy
-    if force > SUSP_MAX_F then force = SUSP_MAX_F end
-    if force < -SUSP_MAX_F then force = -SUSP_MAX_F end
-    PhysicsApplyImpulse(rvBody, { x = 0, y = force * step, z = 0 },
-                        { x = wx, y = wy, z = wz })
-
-    -- Lateral tire grip: damp the contact's sideways velocity, capped by the
-    -- friction circle of the normal load. Front wheels use their Ackermann
-    -- angle so cornering generates the sideways force that makes the RV track.
+  end
+  for i, w in ipairs(WHEELS) do
     local steer = 0
     if w.front then
       steer = (i == 1) and steerL or steerR
     end
+    local wx, wy, wz, ground, vp, nForce, mu
+
+    if useBodies then
+      local wb = rv.wheelBodies[i]
+      local bp = PhysicsGetPosition(wb.body)
+      local bv = PhysicsGetVelocity(wb.body)
+      wx, wy, wz = bp.x, bp.y, bp.z
+      vp = PhysicsGetPointVelocity and
+           PhysicsGetPointVelocity(wb.body, { x = wx, y = wy, z = wz }) or bv
+      ground = terrainHeight(wx, wz)
+      local targetY = ground + 0.38 + SUSP_REST
+      local compression = targetY - wy
+      local vy = vp and vp.y or (bv and bv.y) or 0
+      local force = SUSP_K * compression - SUSP_C * vy
+      if force > WHEEL_BODY_MAX_F then force = WHEEL_BODY_MAX_F end
+      if force < -WHEEL_BODY_MAX_F then force = -WHEEL_BODY_MAX_F end
+      PhysicsApplyImpulse(wb.body, { x = 0, y = force * step, z = 0 },
+                          { x = wx, y = wy, z = wz })
+      nForce = math.max(0, SUSP_K * compression)
+      mu = surfaceGrip(wx, wz)
+      s.plane[i] = ground - (p.y - 0.9)
+      s.travel[i] = 0
+      s.h[i] = ground
+    else
+      local lx, ly, lz = w.lx, 0.38 - 0.9, w.lz
+      local x1 = lx * cr - ly * sr
+      local y1 = lx * sr + ly * cr
+      local y2 = y1 * cp - lz * sp
+      local z2 = y1 * sp + lz * cp
+      local ox = x1 * cyw + z2 * syw
+      local oz = -x1 * syw + z2 * cyw
+      wx, wy, wz = p.x + ox, p.y + y2, p.z + oz
+      ground = terrainHeight(wx, wz)
+      local compression = ground + SUSP_REST - (wy - SUSP_R)
+      vp = PhysicsGetPointVelocity and
+           PhysicsGetPointVelocity(rvBody, { x = wx, y = wy, z = wz }) or nil
+      local vy = vp and vp.y or 0
+      local force = SUSP_K * compression - SUSP_C * vy
+      if force > SUSP_MAX_F then force = SUSP_MAX_F end
+      if force < -SUSP_MAX_F then force = -SUSP_MAX_F end
+      PhysicsApplyImpulse(rvBody, { x = 0, y = force * step, z = 0 },
+                          { x = wx, y = wy, z = wz })
+      nForce = math.max(0, SUSP_K * compression)
+      mu = surfaceGrip(wx, wz)
+      s.plane[i] = ground - (p.y - 0.9)
+      s.travel[i] = 0
+      s.h[i] = ground
+    end
+
+    local targetBody = useBodies and rv.wheelBodies[i].body or rvBody
+    local point = { x = wx, y = wy, z = wz }
     local wyaw = rv.yaw + steer
     local lrx, lrz = -math.cos(wyaw), math.sin(wyaw)
     local latV = vp and (vp.x * lrx + vp.z * lrz) or
                  (vx * lrx + vz * lrz)
-    local nForce = math.max(0, SUSP_K * compression)
-    local mu = surfaceGrip(wx, wz)
     local grip = tireGripImpulse(latV, nForce, mass / 4, step, mu)
     if math.abs(grip) > 0.001 then
-      PhysicsApplyImpulse(rvBody,
+      PhysicsApplyImpulse(targetBody,
                           { x = lrx * grip, y = 0, z = lrz * grip },
-                          { x = wx, y = wy, z = wz })
+                          point)
     end
 
-    -- Longitudinal slip-ratio traction at each contact (rear-wheel drive;
-    -- front wheels contribute under braking). The force saturates at mu*N,
-    -- so surface grip and load transfer change acceleration and braking.
     local vLong = vp and (vp.x * fwdX + vp.z * fwdZ) or
                   (vx * fwdX + vz * fwdZ)
     local slip = (targetSpeed - vLong) /
@@ -417,17 +503,17 @@ function updateRvPhysics(dt)
     if factor > 0 then
       local impL = slipTraction(mu, nForce, slip) * factor * step
       if math.abs(impL) > 0.001 then
-        PhysicsApplyImpulse(rvBody,
+        PhysicsApplyImpulse(targetBody,
                             { x = fwdX * impL, y = 0, z = fwdZ * impL },
-                            { x = wx, y = wy, z = wz })
+                            point)
       end
     end
 
-    -- Visual wheel sits on its own contact (the body plane is the solver's
-    -- job); store it relative to the body origin for applyRvTransform.
-    s.plane[i] = ground - (p.y - 0.9)
-    s.travel[i] = 0
-    s.h[i] = ground
+    if useBodies then
+      rv.wheelSpinI = rv.wheelSpinI or {}
+      rv.wheelSpinI[i] = ((rv.wheelSpinI[i] or 0) -
+                          vLong * step / 0.40) % (math.pi * 2)
+    end
   end
 
   updateWheelMotion(dt)

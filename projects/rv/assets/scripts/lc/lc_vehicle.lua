@@ -98,7 +98,7 @@ end
 
 -- Full 3D rotation of an RV-local offset by roll -> pitch -> yaw. Mirrors the
 -- engine SetRotationEuler order (q = yaw * pitch * roll).
-local function rvOffset(lx, ly, lz)
+function rvOffset(lx, ly, lz)
   local cr, sr = math.cos(rv.roll or 0), math.sin(rv.roll or 0)
   local x1 = lx * cr - ly * sr
   local y1 = lx * sr + ly * cr
@@ -154,25 +154,31 @@ function applyRvTransform()
       if p.hideInCab then SetVisible(p.ent, not hideCab) end
     end
   end
-  -- Wheels: body-local height = fitted plane offset + per-wheel suspension
-  -- travel + wheel centre height. Steering and rolling are added on top.
+  -- Wheels: use the per-wheel rigid body pose when available (real suspension
+  -- travel), otherwise place them from the fitted plane + travel.
   if rvWheels then
     local s = rv.susp
-    local spin = rv.wheelSpin or 0
     for i, w in ipairs(rvWheels) do
-      local travel, plane = 0, 0
-      if s ~= nil and s.travel ~= nil then
-        travel = s.travel[i] or 0
-        plane = (s.plane and s.plane[i]) or 0
+      local wb = rv.wheelBodies and rv.wheelBodies[i]
+      local bp = wb and PhysicsGetPosition and PhysicsGetPosition(wb.body)
+      if bp ~= nil then
+        SetPosition(w.ent, { x = bp.x, y = bp.y, z = bp.z })
+      else
+        local travel, plane = 0, 0
+        if s ~= nil and s.travel ~= nil then
+          travel = s.travel[i] or 0
+          plane = (s.plane and s.plane[i]) or 0
+        end
+        local ly = WHEEL_CENTER_Y + plane + travel
+        local ox, oy, oz = rvOffset(w.lx, ly, w.lz)
+        SetPosition(w.ent, { x = rv.x + ox, y = gy + oy, z = rv.z + oz })
       end
-      local ly = WHEEL_CENTER_Y + plane + travel
-      local ox, oy, oz = rvOffset(w.lx, ly, w.lz)
-      SetPosition(w.ent, { x = rv.x + ox, y = gy + oy, z = rv.z + oz })
       local steer = 0
       if w.front then
         steer = (i == 1) and (rv.steerLeft or rv.steerVis or 0)
                           or (rv.steerRight or rv.steerVis or 0)
       end
+      local spin = (rv.wheelSpinI and rv.wheelSpinI[i]) or rv.wheelSpin or 0
       local pitch = (rv.pitch or 0) + spin
       if SetRotationEuler ~= nil then
         SetRotationEuler(w.ent, pitch, rv.roll or 0, rv.yaw + steer)

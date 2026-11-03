@@ -1833,6 +1833,32 @@ Value NativePhysicsAddDistanceJoint(IScriptHost& host, void* user) {
         ctx->physics->AddDistanceJoint({a}, {b}, anchorA, anchorB, minD, maxD).id));
 }
 
+// PhysicsAddSliderJoint(a, b, anchor, axis, min, max, springHz, damping):
+// prismatic joint; springHz > 0 makes it a soft spring mount (RV suspension).
+Value NativePhysicsAddSliderJoint(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t a = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    const uint32_t b = SafeU32FromNumber(NumberArg(host, 1, 0.0));
+    const math::Vec3 anchor = Vec3FromValue(host.GetArg(2), math::Vec3{});
+    const math::Vec3 axis = Vec3FromValue(host.GetArg(3), math::Vec3{0, 1, 0});
+    const float minL = NumberArg(host, 4, -0.2f);
+    const float maxL = NumberArg(host, 5, 0.2f);
+    const float hz = NumberArg(host, 6, 0.0f);
+    const float damping = NumberArg(host, 7, 0.7f);
+    return Value::Num(static_cast<double>(
+        ctx->physics->AddSliderJoint({a}, {b}, anchor, axis, minL, maxL, hz, damping).id));
+}
+
+// PhysicsActivate(body): wake a sleeping rigid body.
+Value NativePhysicsActivate(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    if (id != 0) ctx->physics->Activate({id});
+    return Value::Nil();
+}
+
 Value NativePhysicsRemoveJoint(IScriptHost& host, void* user) {
     auto* ctx = static_cast<ScriptContext*>(user);
     if (!ctx || !ctx->physics) return Value::Nil();
@@ -2448,6 +2474,8 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("PhysicsAddFixedJoint", &NativePhysicsAddFixedJoint, &ctx);
     host.Register("PhysicsAddHingeJoint", &NativePhysicsAddHingeJoint, &ctx);
     host.Register("PhysicsAddDistanceJoint", &NativePhysicsAddDistanceJoint, &ctx);
+    host.Register("PhysicsAddSliderJoint", &NativePhysicsAddSliderJoint, &ctx);
+    host.Register("PhysicsActivate", &NativePhysicsActivate, &ctx);
     host.Register("PhysicsRemoveJoint", &NativePhysicsRemoveJoint, &ctx);
     host.Register("PhysicsJointCount", [](IScriptHost&, void* user) -> Value {
         auto* ctx = static_cast<ScriptContext*>(user);

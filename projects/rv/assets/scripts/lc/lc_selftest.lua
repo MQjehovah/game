@@ -291,6 +291,15 @@ function runSelfTest()
       ok(r, "rv tire grip binding", true,
          "PhysicsGetAngularVelocity + PhysicsAddAngularImpulse")
     end
+    if PhysicsAddSliderJoint ~= nil and PhysicsActivate ~= nil then
+      ok(r, "rv wheel body binding", true,
+         "PhysicsAddSliderJoint + PhysicsActivate")
+    end
+    if rv.wheelBodies ~= nil then
+      ok(r, "rv wheel bodies", #rv.wheelBodies == 4 and
+         rv.wheelBodies[1].body ~= nil and rv.wheelBodies[4].body ~= nil,
+         string.format("bodies=%d", #rv.wheelBodies))
+    end
     if tireGripImpulse ~= nil then
       local dt = 1 / 60
       local grip = tireGripImpulse(3.0, 3000, 1200, dt)

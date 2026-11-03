@@ -217,6 +217,7 @@ function loadLayout()
       PhysicsSetVelocity(rvBody, { x = 0, y = 0, z = 0 })
       if rvQuat ~= nil then PhysicsSetRotation(rvBody, rvQuat()) end
       rv.susp = nil
+      if resetRvWheelBodies ~= nil then resetRvWheelBodies() end
     end
   end
   if type(data.vehicle) == "table" then
@@ -437,6 +438,7 @@ function on_start()
     applyRvTransform()
     if rvBody ~= nil then
       PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + rv.groundY, z = rv.z })
+      if rvQuat ~= nil then PhysicsSetRotation(rvBody, rvQuat()) end
     end
   end
   if startMode == "rvhill" then
@@ -452,11 +454,15 @@ function on_start()
     applyRvTransform()
     if rvBody ~= nil then
       PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + rv.groundY, z = rv.z })
+      if rvQuat ~= nil then PhysicsSetRotation(rvBody, rvQuat()) end
     end
   end
 
   if coopRole ~= nil then
     coopInitWorld(coopRole)
+  else
+    -- Four dynamic wheel bodies held by soft slider joints (single-player).
+    spawnRvWheelBodies()
   end
 
   if coopRole == nil then

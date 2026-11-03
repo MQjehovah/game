@@ -115,22 +115,23 @@
   `terrainHeight(x,z)` / `terrainFollow()` / `terrainSlope(x,z)`；步行时角色眼高、
   模型与枪械、驾驶时 `rv.groundY` + 外壳/内饰/家具/相机全部跟随地形高度。
   公路段按高度抬升并按坡度倾斜（5m 分段、10° 限幅），新 POI 会避开坡面。
-  悬挂、轮胎抓地与转向由 Jolt 物理求解：`updateRvPhysics()` 在四个车轮
-  接地点（±1.26m / ±2.92m）采样地面高度，对房车刚体施加弹簧/阻尼冲量
-  （每轮 k=90000 N/m、c=11000 N·s/m，力限幅 150kN，4cm 自由行程让弹簧
-  承担车重），并按接触点侧滑速度施加受 μ·N·dt 摩擦圆限制的侧向抓地冲量
-  （`tireGripImpulse`；`surfaceGrip()` 给出沥青 0.95 / 土坡 0.72 / 草地 0.60）。
-  纵向用滑移率模型 `slipTraction()` 在后轮施加牵引、四轮参与制动，
-  饱和于 μ·N，因此不同路面加速/刹车不同。A/D 只给前轮转角（±0.5rad），
+  悬挂、轮胎抓地与转向由 Jolt 多体物理求解：单机为四个车轮创建独立刚体，
+  用软限位滑轨关节（`PhysicsAddSliderJoint(..., 8Hz, 1.0)`）连接到车体，
+  每个车轮用 `terrainHeight` 采样并施加弹簧/阻尼冲量
+  （k=90000 N/m、c=11000 N·s/m、力限幅 12kN），车体通过四个滑轨被支撑。
+  轮胎侧向冲量（`tireGripImpulse`）与滑移率牵引（`slipTraction`）直接作用于
+  车轮刚体；`surfaceGrip()` 给出沥青 0.95 / 土坡 0.72 / 草地 0.60；
+  纵向在后轮牵引、四轮制动。A/D 只给前轮转角（±0.5rad），
   `ackermannAngles()` 让内侧前轮（0.55rad）比外侧（0.45rad）转得更多；
-  偏航由前后轮横向力矩积分得到（5% 角速度阻尼），每帧用
-  `rvYawPitchRollFromQuat()` 从刚体四元数读回 yaw/pitch/roll；
+  偏航由轮胎横向力矩积分得到（5% 角速度阻尼），每帧用
+  `rvYawPitchRollFromQuat()` 从车体四元数读回 yaw/pitch/roll；
   因此高度、加速、刹车、转向、侧滑都来自求解器。
   引擎新增 `PhysicsApplyImpulse` / `PhysicsGetPointVelocity` /
-  `PhysicsGetAngularVelocity` / `PhysicsAddAngularImpulse`。
-  没有物理后端时回退到 `updateRvSuspension()` 的四点平面拟合与脚本偏航。
-  四个车轮是独立实体（`rv_wheel.gltf` / `tools/gen_rv_wheel.py`）：
-  各自按采样地面上下移动，前轮按 Ackermann 左右夹角偏转，轮毂孔位随速度滚动。
+  `PhysicsGetAngularVelocity` / `PhysicsAddAngularImpulse` /
+  `PhysicsAddSliderJoint` / `PhysicsActivate`。
+  合作服务器/无物理后端时回退到 `updateRvSuspension()` 的四点平面拟合与脚本偏航。
+  视觉车轮直接读取各自车轮刚体的位置，滚动角按每轮接触速度累积
+  （`rv.wheelSpinI`），前轮按 Ackermann 左右夹角偏转。
   `applyRvTransform()` 用三维旋转摆放每个部件并通过引擎新增的
   `SetRotationEuler(entity,pitch,roll,yaw)` 设置朝向，物理刚体也用同一四元数；
   车内第一人称的站立高度由 `rvFloorOffset()` 取倾斜地板高度。
@@ -393,10 +394,10 @@
    但几何仍是“倒角盒体/棱柱”组合，法线图只是平面凸起近似，
    没有曲面细分/视差贴图；世界画风已转为低多边形草甸 + 起伏草丘/土坡，
    玩家/房车/合作代理按营地级高度场跟随坡面高度，
-   房车悬挂、轮胎抓地与转向已由四个接地点对 Jolt 刚体施加弹簧/阻尼与摩擦冲量，
+   房车已有四个独立车轮刚体，通过软限位滑轨弹簧支撑车体；
    高度/俯仰/侧倾/侧滑/偏航来自求解器，前轮有阿克曼夹角，
    路面摩擦区分沥青/土坡/草地，纵向使用滑移率曲线；
-   但车体仍是单个碰撞盒（没有四轮胎刚体/独立悬挂约束），
+   但车轮刚体是方形代理（无轮胎碰撞形状/独立滚动约束），
    没有轮胎温度/磨损模型，合作服务器仍走脚本偏航回退；
    高度场只覆盖营地周边 144×144m，范围外仍是平地；
    商店/加油站/仓库/商场/湖边木屋/诊所前窗已支持透明玻璃，破碎时从 seed 冲击点

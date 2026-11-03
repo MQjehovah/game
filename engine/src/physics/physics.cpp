@@ -160,6 +160,24 @@ World::JointId World::AddDistanceJoint(BodyId a, BodyId b, const math::Vec3& wor
     return {};
 }
 
+World::JointId World::AddSliderJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor,
+                                     const math::Vec3& worldAxis, float minLimit,
+                                     float maxLimit, float springHz, float damping) {
+    (void)a;
+    (void)b;
+    (void)worldAnchor;
+    (void)worldAxis;
+    (void)minLimit;
+    (void)maxLimit;
+    (void)springHz;
+    (void)damping;
+    return {};
+}
+
+void World::Activate(BodyId) {
+    // The deterministic world has no sleep state.
+}
+
 void World::RemoveJoint(JointId joint) { (void)joint; }
 
 void World::RemoveJointsOn(BodyId body) { (void)body; }

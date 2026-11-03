@@ -809,24 +809,27 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   （`rv.groundY`、`applyRvTransform`、追逐/驾驶席/俯视相机）、植被摆放
   （草/花/灌木/树/岩石按地形抬高）、公路（5m 分段按坡度抬升、10° 限幅）
   以及合作模式（服务器采样、`game_state` 的 `gy`/`rv.gy`、代理与客户端预测）
-  共同使用。悬挂、轮胎抓地与转向由 Jolt 物理求解：`updateRvPhysics()` 在四个
-  车轮接地点（±1.26m 轮距、±2.92m 轴距）采样 `terrainHeight`，对刚体施加
-  弹簧/阻尼冲量（每轮 k=90000 N/m、c=11000 N·s/m、力限幅 150kN，
-  4cm 自由行程让弹簧承担车重），并按接触点侧滑速度施加受 μ·N·dt 摩擦圆限制的
-  侧向冲量（`tireGripImpulse`；`surfaceGrip()` 返回沥青 0.95/土坡 0.72/草地 0.60）。
-  纵向用滑移率模型 `slipTraction()` 在后轮施加牵引、四轮参与制动，饱和于 μ·N。
+  共同使用。悬挂、轮胎抓地与转向由 Jolt 多体物理求解：单机为四个车轮创建
+  独立刚体（`PhysicsAddBox`，300kg、无重力），用软限位滑轨关节
+  `PhysicsAddSliderJoint(..., 8Hz, 1.0)` 连接到车体；每个车轮用
+  `terrainHeight` 采样并施加弹簧/阻尼冲量（k=90000 N/m、c=11000 N·s/m、
+  力限幅 12kN），车体通过四条滑轨被支撑。轮胎侧向冲量
+  （`tireGripImpulse`，μ 由 `surfaceGrip()` 给出沥青 0.95/土坡 0.72/草地 0.60）
+  与滑移率牵引（`slipTraction()`，后轮驱动、四轮制动）直接作用在车轮刚体上。
   A/D 只给前轮转角（±0.5rad），`ackermannAngles()` 产生内外轮夹角（0.55/0.45rad），
   偏航由前后轮横向力矩积分得到（5% 角速度阻尼），每帧用
-  `rvYawPitchRollFromQuat()` 从刚体四元数读回 yaw/pitch/roll，
+  `rvYawPitchRollFromQuat()` 从车体四元数读回 yaw/pitch/roll，
   因此高度/加速/刹车/转向/侧滑都来自求解器。引擎新增
   `PhysicsApplyImpulse` / `PhysicsGetPointVelocity` /
-  `PhysicsGetAngularVelocity` / `PhysicsAddAngularImpulse`
+  `PhysicsGetAngularVelocity` / `PhysicsAddAngularImpulse` /
+  `PhysicsAddSliderJoint` / `PhysicsActivate`
   （`physics.hpp`/`physics.cpp`/`jolt_world.*`/`bindings.cpp`）。
-  没有物理后端时回退到 `updateRvSuspension()` 的四点平面拟合与脚本偏航
-  （±0.35rad 限幅、10Hz 平滑）。
+  没有物理后端或合作服务器时回退到 `updateRvSuspension()` 的四点平面拟合与
+  脚本偏航（±0.35rad 限幅、10Hz 平滑）。
   **四个车轮是独立实体**（`rv_wheel.gltf`，`tools/gen_rv_wheel.py`；
-  `rv_body.gltf` 不再烘焙车轮）：`applyRvTransform()` 按采样地面定位每个车轮，
-  前轮按 `rv.steerLeft/steerRight` 偏转，轮毂孔位随 `rv.wheelSpin` 滚动。
+  `rv_body.gltf` 不再烘焙车轮）：视觉车轮直接读取各自刚体位置，
+  前轮按 `rv.steerLeft/steerRight` 偏转，滚动角按每轮接触速度累积
+  （`rv.wheelSpinI`）。
   `applyRvTransform()` 用 `rvOffset()` 对部件偏移做
   roll→pitch→yaw 三维旋转，并通过**引擎新增的 `SetRotationEuler`**
   （`bindings.cpp` / `game_runtime.cpp` / `bindings.hpp`）设置朝向，
@@ -838,9 +841,9 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `rv four wheel contact` / `rv wheel articulation` / `rv wheel entities` /
   `rv wheel steer` / `rv physics suspension binding` /
   `rv tire grip binding` / `rv tire grip model` / `rv surface grip` /
-  `rv ackermann steering` / `rv slip traction` / `rv attitude roundtrip` /
-  `rv yaw attitude roundtrip`，
-  总计 **45/45 PASS**。
+  `rv ackermann steering` / `rv slip traction` / `rv wheel body binding` /
+  `rv wheel bodies` / `rv attitude roundtrip` / `rv yaw attitude roundtrip`，
+  总计 **47/47 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

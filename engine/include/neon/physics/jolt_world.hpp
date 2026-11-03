@@ -57,6 +57,9 @@ public:
     JointId AddDistanceJoint(BodyId a, BodyId b, const math::Vec3& worldAnchorA,
                              const math::Vec3& worldAnchorB, float minDistance,
                              float maxDistance) override;
+    JointId AddSliderJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor,
+                           const math::Vec3& worldAxis, float minLimit,
+                           float maxLimit, float springHz, float damping) override;
     void RemoveJoint(JointId joint) override;
     void RemoveJointsOn(BodyId body) override;
     size_t JointCount() const override;
@@ -78,6 +81,7 @@ public:
     void SetLinearDamping(BodyId body, float damping) override;
     void SetGravityScale(BodyId body, float scale) override;
     void SetEnabled(BodyId body, bool enabled) override;
+    void Activate(BodyId body) override;
     bool IsOnGround(BodyId body) const override;
 
     void Step(float dt, const math::Vec3& gravity) override;

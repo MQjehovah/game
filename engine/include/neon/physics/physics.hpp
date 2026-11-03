@@ -86,6 +86,13 @@ public:
     virtual JointId AddDistanceJoint(BodyId a, BodyId b, const math::Vec3& worldAnchorA,
                                      const math::Vec3& worldAnchorB, float minDistance,
                                      float maxDistance);
+    // Slider/prismatic joint with optional soft limits. With springHz > 0 the
+    // slider acts as a spring mount centred on the creation offset (the RV
+    // wheel suspension); otherwise the hard [minLimit, maxLimit] range applies.
+    virtual JointId AddSliderJoint(BodyId a, BodyId b, const math::Vec3& worldAnchor,
+                                   const math::Vec3& worldAxis, float minLimit,
+                                   float maxLimit, float springHz = 0.0f,
+                                   float damping = 0.7f);
     virtual void RemoveJoint(JointId joint);
     virtual size_t JointCount() const;
     // Removes every joint referencing `body` (also done implicitly by Remove).
@@ -120,6 +127,8 @@ public:
     virtual void SetLinearDamping(BodyId body, float damping);
     virtual void SetGravityScale(BodyId body, float scale);
     virtual void SetEnabled(BodyId body, bool enabled);
+    // Wakes a body so scripted impulses keep the vehicle awake.
+    virtual void Activate(BodyId body);
     virtual bool IsOnGround(BodyId body) const;
 
     // Advances the world by `dt` seconds under `gravity` (e.g. {0,-9.81,0}).
