@@ -1300,6 +1300,7 @@ function on_update(ent, dt)
       for i, part in ipairs(REPAIR_PARTS) do
         if ActionPressed(tostring(i)) then repairPart(part.id) end
       end
+      if ActionPressed("5") and upgradeCargo ~= nil then upgradeCargo() end
     end
     updateCamera(dt)
     return

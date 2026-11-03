@@ -435,6 +435,30 @@ function partRepairCost(id)
   return VEH.repairCost
 end
 
+-- 货架升级：提高载重上限（每级 +300kg），最多 3 级
+function upgradeCargo()
+  upgrades.cargo = upgrades.cargo or 0
+  if upgrades.cargo >= 3 then
+    toast.text = "货架已经满级"
+    toast.t = 1.8
+    return false
+  end
+  local lv = upgrades.cargo
+  local cost = { metal = 3 + lv * 2, wood = 2 + lv }
+  if not canAfford(cost) then
+    toast.text = "升级材料不足：" .. costText(cost)
+    toast.t = 2.2
+    return false
+  end
+  payCost(cost)
+  upgrades.cargo = lv + 1
+  if PlaySfx then PlaySfx("repair") end
+  toast.text = string.format("货架升级到 Lv%d — 载重上限 %dkg",
+                             upgrades.cargo, weightMax())
+  toast.t = 2.6
+  return true
+end
+
 function workbenchTarget()
   local best = { id = "body", name = "车体", value = dur }
   if (parts.engine or 100) < best.value then

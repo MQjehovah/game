@@ -390,8 +390,8 @@ function drawBuildHud()
     water / SURVIVAL.waterMax, water < 15)
   rowY = rowY + 34
   drawStatBar(10 + pad, rowY, innerW, "载重",
-    string.format("%.0f / %d kg", s.weight, WEIGHT_MAX),
-    s.weight / WEIGHT_MAX, s.weight > WEIGHT_MAX)
+    string.format("%.0f / %d kg", s.weight, weightMax()),
+    s.weight / weightMax(), s.weight > weightMax())
   rowY = rowY + 34
   drawStatBar(10 + pad, rowY, innerW, "储物",
     string.format("%d L", s.storage), math.min(1, s.storage / 400), false)
@@ -482,7 +482,7 @@ function drawDriveHud()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
   local kmh = math.floor(math.abs(rv.speed) * 3.6)
-  local ratio = stats.weight / WEIGHT_MAX
+  local ratio = stats.weight / weightMax()
   local over = ratio > 1.0
 
   local pw, ph = 210, 186
@@ -519,7 +519,7 @@ function drawDriveHud()
   DrawRect(px + 14, py + 110, (pw - 28) * math.max(0, dur / VEH.durMax), 5,
            dur < 40 and 0.88 or 0.45, dur < 40 and 0.28 or 0.78,
            dur < 40 and 0.24 or 0.44, 1)
-  DrawText(string.format("载重 %.0f / %d kg", stats.weight, WEIGHT_MAX),
+  DrawText(string.format("载重 %.0f / %d kg", stats.weight, weightMax()),
            px + 14, py + 124, 12, 0.8, 0.8, 0.78, 1)
   DrawText(string.format("引擎 %.0f%%  轮胎 %.0f%%  电瓶 %.0f%%",
            (parts and parts.engine) or 100, (parts and parts.tires) or 100,
@@ -654,7 +654,7 @@ function drawStationMenu()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
   local isStove = (stationUI.kind == "stove")
-  local rows = isStove and #RECIPES or #REPAIR_PARTS
+  local rows = isStove and #RECIPES or (#REPAIR_PARTS + 1)
   local pw = 540
   local ph = 108 + rows * 58
   local px = math.floor((vw - pw) * 0.5)
@@ -723,7 +723,27 @@ function drawStationMenu()
                     (ok or full) and 0.72 or 0.28)
       yy = yy + 58
     end
-    drawTextCentered("按 1/2/3/4 维修    E 关闭", vw * 0.5, py + ph - 30, 13, 0.75, 0.75, 0.68, 1)
+    -- 货架升级（第 5 项）：提高载重上限
+    do
+      local lv = (upgrades and upgrades.cargo) or 0
+      local maxed = lv >= 3
+      local cost = { metal = 3 + lv * 2, wood = 2 + lv }
+      local ok = (not maxed) and canAfford(cost)
+      DrawRect(px + 16, yy - 4, pw - 32, 52, ok and 0.10 or 0.12,
+               ok and 0.12 or 0.08, ok and 0.09 or 0.08, 0.7)
+      DrawText("[5]", px + 26, yy, 16, ok and 0.95 or 0.5, ok and 0.85 or 0.5, 0.55, 1)
+      DrawText("货架", px + 66, yy, 16, ok and 0.96 or 0.6, ok and 0.92 or 0.6, 0.82, 1)
+      DrawText(string.format("Lv%d · 载重上限 %dkg", lv, weightMax()),
+               px + 66, yy + 21, 12, 0.80, 0.80, 0.74, 1)
+      local rightText = maxed and "满级 Lv3" or
+        ("升级 Lv" .. lv .. "->" .. (lv + 1) .. "  " .. costText(cost))
+      drawTextRight(rightText, px + pw - 24, yy + 8, 12,
+                    (ok or maxed) and 0.85 or 1, (ok or maxed) and 0.82 or 0.35,
+                    (ok or maxed) and 0.72 or 0.28)
+      yy = yy + 58
+    end
+    drawTextCentered("按 1/2/3/4 维修 / 5 货架    E 关闭", vw * 0.5, py + ph - 30,
+                     13, 0.75, 0.75, 0.68, 1)
   end
 end
 

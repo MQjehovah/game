@@ -164,7 +164,7 @@ function updateDrive(dt)
   impactCd = impactCd - dt
 
   -- 超载/车况：极速与加速打折
-  local ratio = stats.weight / WEIGHT_MAX
+  local ratio = stats.weight / weightMax()
   local maxSp, acc = DRIVE.maxSpeed, DRIVE.accel
   -- 零件磨损：引擎影响极速/加速，轮胎影响转向
   local engF = 0.60 + 0.40 * (parts.engine or 100) / 100

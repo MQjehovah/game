@@ -92,6 +92,22 @@ function runSelfTest()
   ok(r, "repair/upgrade engine", repaired and upgrades.engine == lv0 + 1,
      string.format("engine 40->100 lv %d->%d", lv0, upgrades.engine))
 
+  -- 货架升级：载重上限 +300kg/级
+  do
+    local clv = upgrades.cargo or 0
+    local max0 = weightMax()
+    materials.metal = (materials.metal or 0) + 12
+    materials.wood = (materials.wood or 0) + 12
+    if clv < 3 then upgradeCargo() end
+    local max1 = weightMax()
+    local newLv = upgrades.cargo or 0
+    local upgraded = newLv == clv + 1 and max1 > max0
+    upgrades.cargo = clv
+    recomputeStats()
+    ok(r, "cargo rack upgrade", upgraded,
+       string.format("max %d->%d lv %d->%d", max0, max1, clv, newLv))
+  end
+
   -- 低强度威胁
   local h0 = #horde
   spawnAmbientZombie()

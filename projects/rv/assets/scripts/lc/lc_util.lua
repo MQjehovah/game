@@ -210,3 +210,8 @@ function nodeName(id)
   local nd = nodeById(id)
   return nd and nd.name or "荒野"
 end
+
+-- 载重上限：基础 WEIGHT_MAX + 货架升级（每级 +300kg）
+function weightMax()
+  return WEIGHT_MAX + ((upgrades and upgrades.cargo) or 0) * (VEH.cargoPerLevel or 300)
+end

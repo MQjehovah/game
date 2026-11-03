@@ -119,6 +119,7 @@ DRIVE = {
 -- 车辆：燃油 / 车体耐久
 VEH = {
   tank = 60, burn = 0.12, idleBurn = 0.010, limpSpeed = 1.5,
+  cargoPerLevel = 300,      -- 货架每级 +300kg 载重上限
   pressureWear = 0.00002,   -- 冷胎压随里程下降（bar/m，约 0.02bar/1000m）
   gearUp = { 1.8, 3.4, 5.2, 7.0 },   -- 自动挡升挡车速（m/s，共 5 挡）
   gearRpmMin = 850, gearRpmMax = 2600,
