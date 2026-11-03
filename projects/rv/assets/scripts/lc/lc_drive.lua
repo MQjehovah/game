@@ -187,6 +187,14 @@ function surfaceFuelScale(name)
   return 1.0
 end
 
+-- 天气对油耗的影响：雨/雪/雾增加行驶阻力与暖风负荷
+function weatherFuelScale(weatherValue)
+  if weatherValue == "rain" then return 1.05 end
+  if weatherValue == "snow" then return 1.12 end
+  if weatherValue == "fog" then return 1.03 end
+  return 1.0
+end
+
 -- 防滑链在干燥铺装路上略拖慢车速（雪链抓地的权衡）
 function chainsSpeedScale(surface)
   if hasItem ~= nil and hasItem("chains", 1) and chainsOn ~= false and
@@ -209,7 +217,8 @@ function fuelBurnRate(speed, loadRatio, throttle)
   local eff = tirePressureFuelScale(avgTirePressure()) *
               engineOilFuelScale(oilLife) *
               surfaceFuelScale(surfName) *
-              engineColdFuelScale(engineTemp)
+              engineColdFuelScale(engineTemp) *
+              weatherFuelScale(weather)
   if (throttle or 0) > 0 then
     return (idle + VEH.burn * (0.30 + 0.70 * v) * load) * eff
   elseif (throttle or 0) < 0 then

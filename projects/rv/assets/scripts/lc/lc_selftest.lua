@@ -1656,6 +1656,16 @@ function runSelfTest()
                      up, flat, down, steep))
   end
 
+  -- 天气油耗：雪天最费、雨天次之、晴天基准
+  do
+    local clear = weatherFuelScale("clear")
+    local rain = weatherFuelScale("rain")
+    local snow = weatherFuelScale("snow")
+    ok(r, "weather fuel scale",
+       clear == 1.0 and rain > clear and snow > rain,
+       string.format("clear=%.2f rain=%.2f snow=%.2f", clear, rain, snow))
+  end
+
   -- 坡度车速/加速：上坡慢、下坡略快
   do
     local up = slopeSpeedScale(0.15)
