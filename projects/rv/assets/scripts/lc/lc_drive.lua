@@ -180,6 +180,25 @@ function serviceTiresAtGasstop()
   return true, cost, "轮胎充气至 2.4bar（1 金属）"
 end
 
+-- 加油站下一次保养的金属花费（保养面板用；无需保养返回 nil）
+function maintenanceCostText()
+  local parts = {}
+  local oilCost = oilChangeCost()
+  if oilCost > 0 then
+    parts[#parts + 1] = string.format("机油 %d", oilCost)
+  end
+  local coolantCost = coolantServiceCost()
+  if coolantCost > 0 then
+    parts[#parts + 1] = string.format("冷却液 %d", coolantCost)
+  end
+  local airCost = tireAirCost()
+  if airCost > 0 then
+    parts[#parts + 1] = string.format("充气 %d", airCost)
+  end
+  if #parts == 0 then return nil end
+  return "加油站服务：" .. table.concat(parts, " · ") .. " 金属"
+end
+
 -- 机油劣化对油耗的影响：低于 40% 时油耗略升（最高 +8%）
 function engineOilFuelScale(o)
   local v = o or 100

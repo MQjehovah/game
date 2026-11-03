@@ -1914,6 +1914,23 @@ function runSelfTest()
                      #rows, tostring(allOk), tostring(flagged), #wheels))
   end
 
+  -- 保养花费提示：需要保养时列出费用，全部良好时返回 nil
+  do
+    local ko, kc, kp = oilLife, coolant, rv.tirePressureCold
+    oilLife, coolant = 50, 40
+    rv.tirePressureCold = { 1.8, 1.8, 1.8, 1.8 }
+    local need = maintenanceCostText()
+    oilLife, coolant = 100, 100
+    rv.tirePressureCold = { 2.4, 2.4, 2.4, 2.4 }
+    local none = maintenanceCostText()
+    oilLife, coolant, rv.tirePressureCold = ko, kc, kp
+    ok(r, "maintenance cost",
+       need ~= nil and need:find("机油", 1, true) ~= nil and
+       need:find("冷却液", 1, true) ~= nil and
+       need:find("充气", 1, true) ~= nil and none == nil,
+       string.format("need=%s none=%s", tostring(need), tostring(none)))
+  end
+
   -- 续航估算：无实测时用 1.6L/100m 基准，有实测按实测油耗
   do
     local sf, sd, sfu = fuel, tripDistance, tripFuel

@@ -1984,5 +1984,9 @@ function drawMaintenancePanel()
     and ("建议到加油站/工作台处理：" .. table.concat(tips, "、"))
     or "各系统状态良好，继续上路"
   DrawText(tip, px + 22, yy, 12, 0.80, 0.86, 0.72, 1)
+  local cost = maintenanceCostText and maintenanceCostText() or nil
+  if cost ~= nil then
+    DrawText(cost, px + 22, yy + 20, 11, 0.86, 0.78, 0.52, 1)
+  end
 end
 
