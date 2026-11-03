@@ -78,17 +78,19 @@ function updateDrive(dt)
       bodyVy = v.y
       local fxr, fzr = math.sin(rv.yaw), math.cos(rv.yaw)
       local proj = v.x * fxr + v.z * fzr
-      if math.abs(proj) < math.abs(rv.speed) then
-        local impact = math.abs(rv.speed) - math.abs(proj)
-        if impact > 1.5 and impactCd <= 0 then
-          -- A real collision: the body lost most of its speed at once. Small
-          -- per-frame lag is expected now that traction is impulse-driven, so
-          -- only a large drop clamps the commanded speed.
+      -- Impact = a sudden loss of forward speed between frames. Comparing the
+      -- commanded speed with the actual one would misfire while the tires are
+      -- still building traction (slip-driven acceleration lags the pedal).
+      local prev = rv.lastProj
+      if prev ~= nil then
+        local drop = math.abs(prev) - math.abs(proj)
+        if drop > 1.5 and impactCd <= 0 then
           impactCd = 0.5
-          dur = math.max(0, dur - math.min(8, impact * VEH.impactK))
+          dur = math.max(0, dur - math.min(8, drop * VEH.impactK))
           rv.speed = proj
         end
       end
+      rv.lastProj = proj
     end
   end
   impactCd = impactCd - dt

@@ -816,9 +816,15 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   其余平移/旋转锁定）；车体放在独立碰撞组（`layer=4, mask=0xFD`），
   避免与重叠的轮胎代理互相挤压。
   每个车轮用 `terrainHeight` 采样并施加弹簧/阻尼冲量
-  （k=90000 N/m、c=11000 N·s/m、力限幅 12kN），车体通过四个约束被支撑。
-  车轮按接触速度用 `PhysicsSetAngularVelocity` 绕车轴滚动，
-  圆柱轴线用 `PhysicsSetRotationEuler` 对齐；`rv.wheelSpinI` 同步视觉滚动。
+  （k=90000 N/m、c=11000 N·s/m、力限幅 12kN），车体通过四个约束被支撑；
+  车体碰撞盒半高缩到 0.64（底面离地 0.26m），让轮胎承担车重——
+  否则车体与地面接触摩擦会抵消大部分牵引力（实测净加速度只剩约 1/10）。
+  车轮旋转由摩擦产生：后轮按驾驶需求施加驱动力矩
+  （`PhysicsAddAngularImpulse`，1100 N·m/轮），四轮按需求施加制动反向力矩；
+  纵向力用 `wheelSlipRatio(omega, vLong, 0.40)` 的滑移率曲线计算，
+  并施加在**接地点**而非轮心，同一冲量既推进车体、又给车轮反向力矩，
+  所以起步会打滑（`slip≈0.12`）、随后收敛到 `slip≈0.01` 的纯滚动，
+  刹车会抱死；`rv.wheelSpinI` 由车轮角速度积分。
   轮胎侧向冲量
   （`tireGripImpulse`，μ 由 `surfaceGrip()` 给出沥青 0.95/土坡 0.72/草地 0.60）
   与滑移率牵引（`slipTraction()`，后轮驱动、四轮制动）直接作用在车轮刚体上。
@@ -842,7 +848,7 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   脚本偏航（±0.35rad 限幅、10Hz 平滑）。
   **四个车轮是独立实体**（`rv_wheel.gltf`，`tools/gen_rv_wheel.py`；
   `rv_body.gltf` 不再烘焙车轮）：视觉车轮直接读取各自刚体位置，
-  前轮按 `rv.steerLeft/steerRight` 偏转，滚动角按每轮接触速度累积
+  前轮按 `rv.steerLeft/steerRight` 偏转，滚动角由车轮角速度积分
   （`rv.wheelSpinI`）。
   `applyRvTransform()` 用 `rvOffset()` 对部件偏移做
   roll→pitch→yaw 三维旋转，并通过**引擎新增的 `SetRotationEuler`**
@@ -855,10 +861,11 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `rv four wheel contact` / `rv wheel articulation` / `rv wheel entities` /
   `rv wheel steer` / `rv physics suspension binding` /
   `rv tire grip binding` / `rv tire grip model` / `rv surface grip` /
-  `rv ackermann steering` / `rv slip traction` / `rv wheel body binding` /
+  `rv ackermann steering` / `rv slip traction` / `rv wheel slip ratio` /
+  `rv wheel body binding` /
   `rv wheel bodies` / `rv wheel cylinder rolling` / `rv wheel prediction` /
   `rv wheel rolling` / `rv attitude roundtrip` / `rv yaw attitude roundtrip`，
-  总计 **50/50 PASS**。
+  总计 **51/51 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

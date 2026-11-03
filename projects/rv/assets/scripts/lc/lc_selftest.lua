@@ -362,6 +362,14 @@ function runSelfTest()
          math.abs(empty) < 0.001,
          string.format("fwd=%.0f brake=%.0f empty=%.0f", fwd, brake, empty))
     end
+    if wheelSlipRatio ~= nil then
+      local roll = wheelSlipRatio(20.0, 8.0, 0.40)      -- 20*0.4 = 8 m/s
+      local spin = wheelSlipRatio(40.0, 8.0, 0.40)      -- wheel spinning up
+      local lock = wheelSlipRatio(0.0, 8.0, 0.40)       -- locked wheel
+      ok(r, "rv wheel slip ratio",
+         math.abs(roll) < 0.001 and spin > 0.2 and lock < -0.5,
+         string.format("roll=%.2f spin=%.2f lock=%.2f", roll, spin, lock))
+    end
     if rvBody ~= nil and PhysicsGetRotation ~= nil and rvQuat ~= nil
        and rvPitchRollFromQuat ~= nil then
       local kp, kr, ky = rv.pitch, rv.roll, rv.yaw

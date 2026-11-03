@@ -279,6 +279,14 @@ local WHEEL_BODY_MAX_F = 12000.0
 local WHEEL_SPRING_HZ = 8.0
 local WHEEL_BODY_HALF = { x = 0.04, y = 0.20, z = 0.20 }
 
+-- Friction-driven wheel spin: engine/brake torque is applied to the wheel
+-- bodies and the tires' slip-ratio force (applied at the contact patch) is the
+-- reaction, so wheelspin and lockup emerge from the solver instead of having
+-- the angular velocity overwritten every frame.
+local DRIVE_TORQUE = 1100.0    -- N*m per driven rear wheel
+local BRAKE_TORQUE = 1500.0    -- N*m per braked wheel
+local WHEEL_MAX_OMEGA = 90.0   -- rad/s cap (protects an airborne wheel)
+
 function spawnRvWheelBodies()
   if rvBody == nil then return false end
   if rv.wheelBodies ~= nil then return true end
@@ -383,6 +391,14 @@ function slipTraction(mu, normalForce, slip)
   return (mu or 0.9) * math.max(0, normalForce or 0) * s
 end
 
+-- Slip ratio from the wheel's own angular velocity: 0 when the tire rolls
+-- without slip, >0 under wheelspin, <0 when the wheel is locked / braking.
+function wheelSlipRatio(omega, vLong, radius)
+  local surface = (omega or 0) * (radius or 0.40)
+  local denom = math.max(2.0, math.abs(vLong or 0))
+  return (surface - (vLong or 0)) / denom
+end
+
 -- Ackermann steering: the inner front wheel turns tighter than the outer one.
 -- Returns the signed left/right wheel angles for a positive-left steer angle.
 function ackermannAngles(steer, wheelbase, track)
@@ -411,28 +427,30 @@ function updateWheelPrediction(dt)
       local bv = PhysicsGetVelocity(wb.body)
       if bp ~= nil then
         local ground = terrainHeight(bp.x, bp.z)
-        local target = ground + 0.38 + SUSP_REST
+        local target = ground + SUSP_R
         local vy = bv and bv.y or 0
         local force = SUSP_K * (target - bp.y) - SUSP_C * vy
         if force > WHEEL_BODY_MAX_F then force = WHEEL_BODY_MAX_F end
         if force < -WHEEL_BODY_MAX_F then force = -WHEEL_BODY_MAX_F end
         PhysicsApplyImpulse(wb.body, { x = 0, y = force * step, z = 0 },
                             { x = bp.x, y = bp.y, z = bp.z })
-        local vLong = 0
-        if bv ~= nil then
-          vLong = bv.x * math.sin(rv.yaw) + bv.z * math.cos(rv.yaw)
-        end
-        -- Predict the rolling spin from the replicated RV speed.
+        local vLong = (bv ~= nil) and
+                      (bv.x * math.sin(rv.yaw) + bv.z * math.cos(rv.yaw)) or 0
         local axx, axy, axz = rvOffset(1, 0, 0)
-        local omega = -(rv.speed or 0) / 0.40
-        if wb.rolling and PhysicsSetAngularVelocity ~= nil then
-          PhysicsSetAngularVelocity(wb.body,
-                                    { x = axx * omega, y = axy * omega,
-                                      z = axz * omega })
+        -- Prediction only: nudge the wheel towards the replicated rolling
+        -- speed with a torque (the client never overwrites angular velocity).
+        local wv = PhysicsGetAngularVelocity and
+                   PhysicsGetAngularVelocity(wb.body) or nil
+        local omega = wv and (wv.x * axx + wv.y * axy + wv.z * axz) or 0
+        if wb.rolling and PhysicsAddAngularImpulse ~= nil then
+          local err = (rv.speed or 0) / SUSP_R - omega
+          local imp = math.max(-40.0, math.min(40.0, err * 4.0)) * step
+          PhysicsAddAngularImpulse(wb.body,
+                                   { x = axx * imp, y = axy * imp, z = axz * imp })
         end
         rv.wheelSpinI = rv.wheelSpinI or {}
-        rv.wheelSpinI[i] = ((rv.wheelSpinI[i] or 0) -
-                            vLong * step / 0.40) % (math.pi * 2)
+        rv.wheelSpinI[i] = ((rv.wheelSpinI[i] or 0) + omega * step)
+                            % (math.pi * 2)
       end
     end
   end
@@ -464,6 +482,8 @@ function updateRvPhysics(dt)
   rv.steerLeft, rv.steerRight = steerL, steerR
   local fwdX, fwdZ = math.sin(rv.yaw), math.cos(rv.yaw)
   local targetSpeed = rv.speed or 0
+  local axleX, axleY, axleZ = rvOffset(1, 0, 0)
+  local upX, upY, upZ = rvOffset(0, 1, 0)
   local s = rv.susp
   if s == nil then
     s = { h = {}, v = {} }
@@ -508,7 +528,9 @@ function updateRvPhysics(dt)
       vp = PhysicsGetPointVelocity and
            PhysicsGetPointVelocity(wb.body, { x = wx, y = wy, z = wz }) or bv
       ground = terrainHeight(wx, wz)
-      local targetY = ground + 0.38 + SUSP_REST
+      -- Target the contact height (centre = radius): the tire then presses on
+      -- the ground so friction can produce/absorb the wheel spin.
+      local targetY = ground + SUSP_R
       local compression = targetY - wy
       local vy = vp and vp.y or (bv and bv.y) or 0
       local force = SUSP_K * compression - SUSP_C * vy
@@ -562,9 +584,53 @@ function updateRvPhysics(dt)
 
     local vLong = vp and (vp.x * fwdX + vp.z * fwdZ) or
                   (vx * fwdX + vz * fwdZ)
-    local slip = (targetSpeed - vLong) /
-                 math.max(2.0, math.abs(targetSpeed))
     local braking = math.abs(targetSpeed) < math.abs(vLong) - 0.05
+    local slip, omega = 0, 0
+    local applyPoint = point
+    if useBodies then
+      local wb = rv.wheelBodies[i]
+      local wv = PhysicsGetAngularVelocity and
+                 PhysicsGetAngularVelocity(wb.body) or nil
+      omega = wv and (wv.x * axleX + wv.y * axleY + wv.z * axleZ) or 0
+      -- Engine torque on the rear axle / brake torque on every wheel. The
+      -- reaction comes from the tire force below, so a wheel can spin up
+      -- (wheelspin) or lock (lockup) instead of being set kinematically.
+      if wb.rolling and PhysicsAddAngularImpulse ~= nil then
+        local torque = 0
+        if braking then
+          if omega > 0.2 then torque = -BRAKE_TORQUE
+          elseif omega < -0.2 then torque = BRAKE_TORQUE end
+        elseif not w.front then
+          local drive = targetSpeed - vLong
+          if math.abs(drive) > 0.05 then
+            local amount = math.min(1.0, math.abs(drive) / 2.0)
+            torque = (drive > 0 and 1 or -1) * DRIVE_TORQUE * amount
+          end
+        end
+        if torque ~= 0 then
+          PhysicsAddAngularImpulse(wb.body,
+            { x = axleX * torque * step, y = axleY * torque * step,
+              z = axleZ * torque * step })
+        end
+      end
+      if math.abs(omega) > WHEEL_MAX_OMEGA then
+        local excess = omega - (omega > 0 and WHEEL_MAX_OMEGA or -WHEEL_MAX_OMEGA)
+        if PhysicsAddAngularImpulse ~= nil then
+          PhysicsAddAngularImpulse(wb.body,
+            { x = -axleX * excess * 6.0, y = -axleY * excess * 6.0,
+              z = -axleZ * excess * 6.0 })
+        end
+      end
+      slip = wheelSlipRatio(omega, vLong, SUSP_R)
+      -- Tire force at the contact patch: the offset from the wheel centre
+      -- turns the same impulse into the counter-torque on the wheel.
+      applyPoint = { x = wx - upX * SUSP_R, y = wy - upY * SUSP_R,
+                     z = wz - upZ * SUSP_R }
+    else
+      slip = (targetSpeed - vLong) /
+             math.max(2.0, math.abs(targetSpeed))
+    end
+
     local factor = 1.0
     if w.front then factor = braking and 0.55 or 0.0 end
     if factor > 0 then
@@ -572,23 +638,14 @@ function updateRvPhysics(dt)
       if math.abs(impL) > 0.001 then
         PhysicsApplyImpulse(targetBody,
                             { x = fwdX * impL, y = 0, z = fwdZ * impL },
-                            point)
+                            applyPoint)
       end
     end
 
     if useBodies then
-      -- Rolling degree of freedom: spin the wheel body around the chassis axle.
-      local rb = rv.wheelBodies[i]
-      local axx, axy, axz = rvOffset(1, 0, 0)
-      local omega = -(vLong or 0) / 0.40
-      if rb ~= nil and rb.rolling and PhysicsSetAngularVelocity ~= nil then
-        PhysicsSetAngularVelocity(rb.body,
-                                  { x = axx * omega, y = axy * omega,
-                                    z = axz * omega })
-      end
       rv.wheelSpinI = rv.wheelSpinI or {}
-      rv.wheelSpinI[i] = ((rv.wheelSpinI[i] or 0) -
-                          vLong * step / 0.40) % (math.pi * 2)
+      rv.wheelSpinI[i] = ((rv.wheelSpinI[i] or 0) + omega * step)
+                          % (math.pi * 2)
     end
   end
 

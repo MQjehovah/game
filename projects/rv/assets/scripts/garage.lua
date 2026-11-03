@@ -423,7 +423,7 @@ function on_start()
                         friction = 0.15, restitution = 0.05,
                         layer = 4, mask = 0xFD }
   rvBody = PhysicsAddBox({ x = rv.x, y = 0.9, z = rv.z },
-                         { x = 1.2, y = 0.9, z = 4.3 }, true, chassisDesc)
+                         { x = 1.2, y = 0.64, z = 4.3 }, true, chassisDesc)
 
   if startMode == "rvslope" or startMode == "rvslope_in" then
     -- Test-only: park the RV on the steep part of the embankment so height
