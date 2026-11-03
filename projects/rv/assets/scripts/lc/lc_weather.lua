@@ -9,16 +9,22 @@ WEATHER_WEIGHTS = {
   { id = "fog",    w = 10 },
 }
 
+-- 天气持续时间（游戏分钟）：1.5–3 游戏小时，约 30–60 现实秒；
+-- 太短会让雨/雾一闪而过，也不利于规划下一段路。
+function weatherDuration()
+  return 90 + math.random() * 90
+end
+
 function initWeather()
   weather = "clear"
   weatherT = 0
-  weatherNext = 10 + math.random() * 14
+  weatherNext = weatherDuration()
 end
 
 function setWeather(id)
   weather = id or "clear"
   weatherT = 0
-  weatherNext = 9 + math.random() * 14
+  weatherNext = weatherDuration()
   if recomputeStats then recomputeStats() end  -- 太阳能随天气变化
   if toast and WEATHER_NAMES[weather] then
     toast.text = "天气：" .. WEATHER_NAMES[weather]
@@ -167,6 +173,13 @@ end
 
 function weatherName()
   return WEATHER_NAMES[weather] or "晴"
+end
+
+-- 当前天气还剩多少游戏小时（HUD 预报用）
+function weatherHoursLeft()
+  local left = (weatherNext or 0) - (weatherT or 0)
+  if left < 0 then left = 0 end
+  return left / 60
 end
 
 function isRainy()

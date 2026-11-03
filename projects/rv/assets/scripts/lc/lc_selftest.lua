@@ -144,6 +144,16 @@ function runSelfTest()
   setWeather("clear")
   ok(r, "weather", rainOn and not isRainy())
 
+  -- 天气持续 1.5–3 游戏小时，HUD 预报可读
+  do
+    setWeather("clear")
+    local dur = weatherNext or 0
+    local hours = weatherHoursLeft()
+    ok(r, "weather duration", dur >= 90 and dur <= 180 and
+       hours > 1.4 and hours <= 3.01,
+       string.format("next=%.0fmin left=%.2fh", dur, hours))
+  end
+
   -- 真实昼夜光照
   clock = 22 * 60; lastSunClock = -999; updateDayNight(0)
   local nightInt = EntityComponentField(sunEnt, "light", "intensity")

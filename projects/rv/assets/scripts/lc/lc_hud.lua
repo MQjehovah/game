@@ -223,8 +223,12 @@ function drawFpHud()
   drawThreatBadge(vw)
 
   local loc = atNode and ("停靠 · " .. nodeName(atNode)) or (nearRv() and "房车旁" or "荒野")
+  local wText = weatherName()
+  if weatherHoursLeft ~= nil and weatherHoursLeft() > 0 then
+    wText = wText .. string.format("（%.1fh）", weatherHoursLeft())
+  end
   drawBanner(string.format("第 %d 天  %s  ·  %s  ·  %s%s", day, timeString(), loc,
-             weatherName(), isNight() and "  夜晚" or ""), 12, 16)
+             wText, isNight() and "  夜晚" or ""), 12, 16)
 
   drawCrosshair(vw, vh, #horde > 0)
   drawInteractionPrompt(vw, vh)
@@ -553,7 +557,9 @@ function drawDriveHud()
     drawTextRight(h, vw - 14, vh - 74 + (i - 1) * 19, 12, 0.80, 0.79, 0.74, 0.9)
   end
 
-  local top = string.format("第 %d 天  %s  ·  %s", day, timeString(), weatherName())
+  local top = string.format("第 %d 天  %s  ·  %s%s", day, timeString(), weatherName(),
+                            (weatherHoursLeft and weatherHoursLeft() > 0) and
+                            string.format("（%.1fh）", weatherHoursLeft()) or "")
   if nearNode then
     top = top .. "   ▶ 临近 " .. nearNode.name .. "（空格停靠）"
   end
