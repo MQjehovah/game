@@ -2515,6 +2515,25 @@ function runSelfTest()
                      tostring(on), tostring(logged), tostring(reset)))
   end
 
+  -- 修塔后收音机切换为“信号恢复”广播池
+  do
+    local keep = radioMastFixed
+    radioMastFixed = false
+    local normal = radioBroadcastPool()
+    local normalFirst = normal[1]
+    radioMastFixed = true
+    local fixed = radioBroadcastPool()
+    local fixedFirst = fixed[1]
+    local switched = #normal > 0 and #fixed > 0 and
+                     fixedFirst ~= normalFirst and
+                     (RADIO_BROADCASTS_FIXED == nil or
+                      fixedFirst == RADIO_BROADCASTS_FIXED[1])
+    radioMastFixed = keep
+    ok(r, "radio post-repair", switched,
+       string.format("normal=%s fixed=%s", tostring(normalFirst),
+                     tostring(fixedFirst)))
+  end
+
   -- 钓鱼水塘木栈桥
   do
     local n = #docks

@@ -508,13 +508,22 @@ function sleepInBed()
 end
 
 -- 收音机广播：开启后按游戏分钟间隔播报路况/天气提示
+-- 当前收音机广播池：修好无线电塔后优先播报“信号恢复”内容
+function radioBroadcastPool()
+  if radioMastFixed and RADIO_BROADCASTS_FIXED ~= nil and
+     #RADIO_BROADCASTS_FIXED > 0 then
+    return RADIO_BROADCASTS_FIXED
+  end
+  return RADIO_BROADCASTS or {}
+end
+
 function updateRadioBroadcast(gm)
   if not radioOn then return false end
   radioBroadcastT = (radioBroadcastT or 0) + (gm or 0)
   if radioBroadcastT < (radioBroadcastNext or 120) then return false end
   radioBroadcastT = 0
   radioBroadcastNext = 90 + math.random() * 60
-  local list = RADIO_BROADCASTS or {}
+  local list = radioBroadcastPool()
   if #list == 0 then return false end
   local line = list[math.random(#list)]
   toast.text = line
