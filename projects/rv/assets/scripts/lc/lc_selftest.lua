@@ -1066,6 +1066,23 @@ function runSelfTest()
        string.format("30L/1000m=%.2f L/100km short=%s", e1, tostring(e2)))
   end
 
+  -- 地图探索迷雾：未去过的程序化地点在地图上只显示“?”
+  do
+    local gen = nil
+    for _, nd in ipairs(NODES) do
+      if nd.generated and gen == nil then gen = nd end
+    end
+    local knownBefore = gen ~= nil and mapNodeKnown(gen)
+    if gen ~= nil then visitedPois[gen.id] = true end
+    local knownAfter = gen ~= nil and mapNodeKnown(gen)
+    local baseKnown = mapNodeKnown(nodeById("camp"))
+    ok(r, "map discovery fog",
+       gen ~= nil and knownBefore == false and knownAfter == true and baseKnown == true,
+       string.format("gen=%s before=%s after=%s base=%s",
+                     gen and gen.id or "?", tostring(knownBefore),
+                     tostring(knownAfter), tostring(baseKnown)))
+  end
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")

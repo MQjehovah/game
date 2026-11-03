@@ -148,6 +148,14 @@ function endScavenge(keepRatio)
   LC.flow.call("stop_cycle", "leave")
 end
 
+-- 地图认知：营地周边的手工地标默认已知；程序化生成的地点只有亲自抵达过
+-- （visitedPois）才在地图上显示名字，否则是一个灰色“?”。
+function mapNodeKnown(nd)
+  if nd == nil then return false end
+  if not nd.generated then return true end
+  return visitedPois[nd.id] == true
+end
+
 -- 首次抵达某个地点的一次性补给：鼓励把地图跑开，而不是只刷营地/加油站。
 -- 返回提示文本；重复抵达返回 nil。
 function firstVisitBonus(nd)

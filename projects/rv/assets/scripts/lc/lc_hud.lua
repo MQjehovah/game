@@ -759,11 +759,18 @@ function drawMapHud()
     local mx2, my2 = mapXY(nd.x, nd.z)
     local cur = (nd.id == (atNode or curNode))
     local danger = nd.danger or 0
-    DrawCircle(mx2, my2, cur and 7 or 5, cur and 2 or 1.5,
-               0.45 + danger * 0.17, 0.85 - danger * 0.18, 0.32, 1, true)
-    drawTextCentered(nd.name .. (danger > 0 and string.rep("!", danger) or ""),
-                     mx2, my2 - 20, 12, cur and 1 or 0.82,
-                     cur and 0.9 or 0.78, cur and 0.6 or 0.68, 1)
+    local known = (mapNodeKnown == nil) or mapNodeKnown(nd)
+    if known then
+      DrawCircle(mx2, my2, cur and 7 or 5, cur and 2 or 1.5,
+                 0.45 + danger * 0.17, 0.85 - danger * 0.18, 0.32, 1, true)
+      drawTextCentered(nd.name .. (danger > 0 and string.rep("!", danger) or ""),
+                       mx2, my2 - 20, 12, cur and 1 or 0.82,
+                       cur and 0.9 or 0.78, cur and 0.6 or 0.68, 1)
+    else
+      -- 未探索的程序化地点：只给一个灰色“?”，去过之后才显示名字
+      DrawCircle(mx2, my2, 4, 1.5, 0.55, 0.57, 0.55, 0.9, false)
+      drawTextCentered("?", mx2, my2 - 18, 13, 0.62, 0.64, 0.62, 1)
+    end
   end
   local rx, ry = mapXY(rv.x, rv.z)
   DrawLine(rx, ry, rx + math.sin(rv.yaw) * 20, ry + math.cos(rv.yaw) * 20,
@@ -778,7 +785,7 @@ function drawMapHud()
       drawTextCentered("货运目标", jx, jy + 13, 12, 1.0, 0.88, 0.50, 1)
     end
   end
-  DrawText("● 房车    ● 地点（越红越危险）    — 公路", px + 16, py + ph - 24,
+  DrawText("● 房车    ● 地点（越红越危险）  ? 未探索    — 公路", px + 16, py + ph - 24,
            12, 0.7, 0.7, 0.65, 1)
   DrawText(string.format("已探索 %d / %d 个地点", visitedCount or 0, #NODES),
            px + pw - 16, py + ph - 24, 12, 0.7, 0.7, 0.65, 1, true)
