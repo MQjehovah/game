@@ -1047,6 +1047,29 @@ function runSelfTest()
                      tostring(completed)))
   end
 
+  -- 夜间送达 +10%（同一单、同一货况下对比白天）
+  do
+    local sd, sc, slast = day, clock, lastJobDay
+    local jd = jobDelivered
+    local function deliverAt(hour)
+      day, clock, lastJobDay = 9, hour * 60, 9
+      jobDelivered = 0
+      jobRefreshOffers("gasstop")
+      jobAccept(1)
+      job.stops, job.stopIndex = nil, 1
+      job.pay = { metal = 10 }
+      job.condition = 1.0
+      local m0 = materials.metal or 0
+      jobComplete()
+      return (materials.metal or 0) - m0
+    end
+    local nightGain = deliverAt(22)
+    local dayGain = deliverAt(12)
+    day, clock, lastJobDay, jobDelivered = sd, sc, slast, jd
+    ok(r, "night delivery bonus", nightGain == 11 and dayGain == 10,
+       string.format("night=%d day=%d", nightGain, dayGain))
+  end
+
   -- 易碎货：撞击掉货况翻倍（0.10 vs 0.05 per m/s）
   do
     jobRefreshOffers("gasstop")
