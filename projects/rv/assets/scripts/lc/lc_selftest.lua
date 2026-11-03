@@ -2757,6 +2757,14 @@ function runSelfTest()
        string.format("drive=%s rain=%s clear=%s radio=%s", dn, rn, wn, radioN))
   end
 
+  -- 两个电台：1=radio、2=radio2
+  do
+    local a = desiredMusic("parked", "clear", true, 1)
+    local b = desiredMusic("parked", "clear", true, 2)
+    ok(r, "radio stations", a == "radio" and b == "radio2",
+       string.format("station1=%s station2=%s", tostring(a), tostring(b)))
+  end
+
   -- 收音机广播：开启后按游戏分钟触发，关闭不触发
   do
     local keepOn, keepT, keepNext = radioOn, radioBroadcastT, radioBroadcastNext

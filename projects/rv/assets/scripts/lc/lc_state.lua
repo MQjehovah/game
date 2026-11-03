@@ -111,6 +111,7 @@ flashlightOn = true           -- 手电筒开关（F）
 flashlightEnt = nil           -- 手电筒聚光灯实体
 ambientTrack = nil            -- 当前环境音乐（wind/engine/rain/radio）
 radioOn = false               -- 营地收音机开关
+radioStation = 1              -- 当前电台（1/2）
 radioBroadcastT = 0           -- 收音机广播计时（游戏分钟）
 radioBroadcastNext = 120      -- 下一次广播阈值（游戏分钟）
 campRadio = nil               -- 营地收音机世界坐标

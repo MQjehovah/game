@@ -218,9 +218,16 @@ function doInteract()
     cookAtCampfire()
     return true
   elseif nearAction.kind == "radio" then
-    radioOn = not radioOn
-    toast.text = radioOn and "营地收音机打开——驻车/步行时播放"
-                          or "营地收音机关闭"
+    if not radioOn then
+      radioOn, radioStation = true, 1
+      toast.text = "营地收音机 · 电台 1"
+    elseif (radioStation or 1) < 2 then
+      radioStation = 2
+      toast.text = "营地收音机 · 切换到电台 2"
+    else
+      radioOn = false
+      toast.text = "营地收音机关闭"
+    end
     toast.t = 2.4
     if PlaySfx then PlaySfx("click") end
     updateInteraction()
