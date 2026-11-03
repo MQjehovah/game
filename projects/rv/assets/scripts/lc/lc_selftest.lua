@@ -287,6 +287,21 @@ function runSelfTest()
       ok(r, "rv physics suspension binding", true,
          "PhysicsApplyImpulse + PhysicsGetPointVelocity")
     end
+    if PhysicsGetAngularVelocity ~= nil and PhysicsAddAngularImpulse ~= nil then
+      ok(r, "rv tire grip binding", true,
+         "PhysicsGetAngularVelocity + PhysicsAddAngularImpulse")
+    end
+    if tireGripImpulse ~= nil then
+      local dt = 1 / 60
+      local grip = tireGripImpulse(3.0, 3000, 1200, dt)
+      local capped = tireGripImpulse(100.0, 3000, 1200, dt)
+      local empty = tireGripImpulse(3.0, 0, 1200, dt)
+      ok(r, "rv tire grip model",
+         grip < 0 and math.abs(capped + 0.9 * 3000 * dt) < 0.5 and
+         math.abs(empty) < 0.001,
+         string.format("grip=%.1f capped=%.1f empty=%.1f",
+                       grip, capped, empty))
+    end
     if rvBody ~= nil and PhysicsGetRotation ~= nil and rvQuat ~= nil
        and rvPitchRollFromQuat ~= nil then
       local kp, kr, ky = rv.pitch, rv.roll, rv.yaw

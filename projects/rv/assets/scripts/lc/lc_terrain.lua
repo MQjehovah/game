@@ -234,13 +234,23 @@ end
 
 -- Physical suspension: the Jolt body is held up by four spring/damper impulses
 -- applied at the wheel contacts. Ride height, pitch and roll therefore come out
--- of the solver (the visual wheels are then snapped to their sampled ground so
--- they never float). Horizontal motion and heading stay scripted: the drive
--- code sets the horizontal velocity and re-applies the yaw each frame.
+-- of the solver; horizontal motion comes from a friction-capped traction
+-- impulse plus per-wheel lateral tire grip, while the heading stays scripted.
 local SUSP_K = 90000.0      -- N/m per wheel
 local SUSP_C = 11000.0      -- N*s/m per wheel (slightly overdamped)
 local SUSP_MAX_F = 150000.0
 local SUSP_R = 0.40
+
+-- Friction impulse for one contact: proportional to the lateral slip, capped
+-- by the friction circle mu * normalForce * dt. Exposed for the self-test.
+function tireGripImpulse(latV, normalForce, mass, dt, mu)
+  local step = math.min(dt or 0.016, 0.033)
+  local imp = -latV * mass * math.min(1, step * 8.0)
+  local cap = (mu or 0.9) * math.max(0, normalForce) * step
+  if imp > cap then imp = cap end
+  if imp < -cap then imp = -cap end
+  return imp
+end
 
 function updateRvPhysics(dt)
   if rvBody == nil or PhysicsApplyImpulse == nil or PhysicsGetPosition == nil
@@ -261,6 +271,7 @@ function updateRvPhysics(dt)
   local cr, sr = math.cos(rv.roll), math.sin(rv.roll)
   local cyw, syw = math.cos(rv.yaw), math.sin(rv.yaw)
   local step = math.min(dt or 0.016, 0.033)
+  local mass = rv.mass or 1200
   local s = rv.susp
   if s == nil then
     s = { h = {}, v = {} }
@@ -268,6 +279,20 @@ function updateRvPhysics(dt)
   end
   s.plane = s.plane or {}
   s.travel = s.travel or {}
+
+  local vel = PhysicsGetVelocity ~= nil and PhysicsGetVelocity(rvBody) or nil
+  local vx = vel and vel.x or 0
+  local vz = vel and vel.z or 0
+
+  -- Heading is scripted, so cancel the yaw component of the angular velocity
+  -- that the tire friction torques would otherwise integrate into drift.
+  if PhysicsGetAngularVelocity ~= nil and PhysicsAddAngularImpulse ~= nil then
+    local w = PhysicsGetAngularVelocity(rvBody)
+    if w ~= nil and math.abs(w.y) > 1e-5 then
+      local inertia = rv.yawInertia or (mass * (2.4 * 2.4 + 8.6 * 8.6) / 12)
+      PhysicsAddAngularImpulse(rvBody, { x = 0, y = -w.y * inertia, z = 0 })
+    end
+  end
 
   for i, w in ipairs(WHEELS) do
     -- Offset from the box centre: the collider centre is 0.9 above the visual
@@ -283,22 +308,54 @@ function updateRvPhysics(dt)
 
     local ground = terrainHeight(wx, wz)
     local compression = ground - (wy - SUSP_R)
-    local vy = 0
+    local vp = nil
     if PhysicsGetPointVelocity ~= nil then
-      local vp = PhysicsGetPointVelocity(rvBody, { x = wx, y = wy, z = wz })
-      if vp ~= nil then vy = vp.y end
+      vp = PhysicsGetPointVelocity(rvBody, { x = wx, y = wy, z = wz })
     end
+    local vy = vp and vp.y or 0
+
     local force = SUSP_K * compression - SUSP_C * vy
     if force > SUSP_MAX_F then force = SUSP_MAX_F end
     if force < -SUSP_MAX_F then force = -SUSP_MAX_F end
     PhysicsApplyImpulse(rvBody, { x = 0, y = force * step, z = 0 },
                         { x = wx, y = wy, z = wz })
 
+    -- Lateral tire grip: damp the contact's sideways velocity, capped by the
+    -- friction circle of the normal load. Front wheels use the steered axis so
+    -- cornering generates the sideways force that makes the RV track.
+    local steer = w.front and (rv.steerVis or 0) or 0
+    local wyaw = rv.yaw + steer
+    local lrx, lrz = -math.cos(wyaw), math.sin(wyaw)
+    local latV = vp and (vp.x * lrx + vp.z * lrz) or
+                 (vx * lrx + vz * lrz)
+    local nForce = math.max(0, SUSP_K * compression)
+    local grip = tireGripImpulse(latV, nForce, mass / 4, step, 0.9)
+    if math.abs(grip) > 0.001 then
+      PhysicsApplyImpulse(rvBody,
+                          { x = lrx * grip, y = 0, z = lrz * grip },
+                          { x = wx, y = wy, z = wz })
+    end
+
     -- Visual wheel sits on its own contact (the body plane is the solver's
     -- job); store it relative to the body origin for applyRvTransform.
     s.plane[i] = ground - (p.y - 0.9)
     s.travel[i] = 0
     s.h[i] = ground
+  end
+
+  -- Longitudinal traction: instead of teleporting the velocity, push the body
+  -- towards the commanded speed with an impulse capped by tire friction, so
+  -- acceleration and braking are physical while the heading stays scripted.
+  local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
+  local vf = vx * fx + vz * fz
+  local dv = (rv.speed or 0) - vf
+  if math.abs(dv) > 0.01 then
+    local imp = dv * mass * math.min(1, step * 20.0)
+    local cap = 0.9 * mass * 9.81 * step
+    if imp > cap then imp = cap end
+    if imp < -cap then imp = -cap end
+    PhysicsApplyImpulse(rvBody, { x = fx * imp, y = 0, z = fz * imp },
+                        { x = p.x, y = p.y, z = p.z })
   end
 
   updateWheelMotion(dt)

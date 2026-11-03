@@ -1890,6 +1890,24 @@ Value NativePhysicsGetPointVelocity(IScriptHost& host, void* user) {
     return Vec3ToValue(ctx->physics->GetPointVelocity({id}, point));
 }
 
+// PhysicsGetAngularVelocity(body): angular velocity vector (rad/s).
+Value NativePhysicsGetAngularVelocity(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    return id == 0 ? Value::Nil() : Vec3ToValue(ctx->physics->GetAngularVelocity({id}));
+}
+
+// PhysicsAddAngularImpulse(body, impulse): pure angular impulse.
+Value NativePhysicsAddAngularImpulse(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->physics) return Value::Nil();
+    const uint32_t id = SafeU32FromNumber(NumberArg(host, 0, 0.0));
+    if (id == 0) return Value::Nil();
+    ctx->physics->AddAngularImpulse({id}, Vec3FromValue(host.GetArg(1), math::Vec3{}));
+    return Value::Nil();
+}
+
 // PhysicsApplyImpulse(body, impulse, point): world impulse at a world point.
 // The RV suspension applies one per wheel so the solver produces the ride
 // height, pitch and roll.
@@ -2441,6 +2459,8 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("PhysicsSetVelocity", &NativePhysicsSetVelocity, &ctx);
     host.Register("PhysicsGetVelocity", &NativePhysicsGetVelocity, &ctx);
     host.Register("PhysicsGetPointVelocity", &NativePhysicsGetPointVelocity, &ctx);
+    host.Register("PhysicsGetAngularVelocity", &NativePhysicsGetAngularVelocity, &ctx);
+    host.Register("PhysicsAddAngularImpulse", &NativePhysicsAddAngularImpulse, &ctx);
     host.Register("PhysicsApplyImpulse", &NativePhysicsApplyImpulse, &ctx);
     host.Register("PhysicsSetPosition", &NativePhysicsSetPosition, &ctx);
     host.Register("PhysicsGetPosition", &NativePhysicsGetPosition, &ctx);

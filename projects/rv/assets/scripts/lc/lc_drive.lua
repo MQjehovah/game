@@ -75,10 +75,13 @@ function updateDrive(dt)
       if math.abs(proj) < math.abs(rv.speed) then
         local impact = math.abs(rv.speed) - math.abs(proj)
         if impact > 1.5 and impactCd <= 0 then
+          -- A real collision: the body lost most of its speed at once. Small
+          -- per-frame lag is expected now that traction is impulse-driven, so
+          -- only a large drop clamps the commanded speed.
           impactCd = 0.5
           dur = math.max(0, dur - math.min(8, impact * VEH.impactK))
+          rv.speed = proj
         end
-        rv.speed = proj
       end
     end
   end
@@ -160,26 +163,33 @@ function updateDrive(dt)
   end
 
   local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
+  local physicalPath = rvBody ~= nil and updateRvPhysics ~= nil and
+                       PhysicsApplyImpulse ~= nil and terrainHeight ~= nil
   if rvBody then
-    PhysicsSetVelocity(rvBody, { x = fx * rv.speed, y = bodyVy, z = fz * rv.speed })
-    PhysicsSetRotation(rvBody, rvQuat())
+    if not physicalPath then
+      PhysicsSetVelocity(rvBody, { x = fx * rv.speed, y = bodyVy, z = fz * rv.speed })
+      PhysicsSetRotation(rvBody, rvQuat())
+    end
   else
     rv.x = rv.x + fx * rv.speed * dt
     rv.z = rv.z + fz * rv.speed * dt
   end
 
   -- Follow the terrain. With a live physics body the four contact springs
-  -- hold the body up and the solver produces height/pitch/roll; otherwise fall
-  -- back to the kinematic plane fit (old binaries, co-op server, tests).
+  -- hold the body up, tire friction drives it and the solver produces
+  -- height/pitch/roll; otherwise fall back to the kinematic plane fit.
   if terrainHeight ~= nil then
     local physical = false
-    if rvBody ~= nil and updateRvPhysics ~= nil then
+    if physicalPath then
       physical = updateRvPhysics(dt)
     end
     if physical then
       -- Keep the scripted heading while preserving the solver's attitude.
       PhysicsSetRotation(rvBody, rvQuat())
     else
+      if rvBody ~= nil and physicalPath then
+        PhysicsSetVelocity(rvBody, { x = fx * rv.speed, y = bodyVy, z = fz * rv.speed })
+      end
       if updateRvSuspension ~= nil then
         updateRvSuspension(dt)
       else

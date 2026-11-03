@@ -356,6 +356,8 @@ function on_start()
     if sm and sm ~= "" then
       startMode = string.lower((sm:gsub("%s+", "")))
     end
+    -- Test-only: start in the outside chase camera (autopilot screenshots).
+    if startMode == "chase" then driveView = "chase" end
   end
   ensureHelpers()
   initSurvival()
@@ -414,9 +416,11 @@ function on_start()
   if hasSave then loadLayout() end
   applyRvTransform()
   -- RV 动态刚体：质量随载重
+  rv.mass = math.max(800, 1200 + stats.weight * 0.8)
+  rv.yawInertia = rv.mass * (2.4 * 2.4 + 8.6 * 8.6) / 12
   rvBody = PhysicsAddBox({ x = rv.x, y = 0.9, z = rv.z },
                          { x = 1.2, y = 0.9, z = 4.3 }, true,
-                         { mass = math.max(800, 1200 + stats.weight * 0.8),
+                         { mass = rv.mass,
                            friction = 0.4, restitution = 0.05 })
 
   if startMode == "rvslope" or startMode == "rvslope_in" then
@@ -857,6 +861,8 @@ function on_update(ent, dt)
 
   -- ======================= 行驶 =======================
   if phase == "driving" then
+    -- Test-only: keep the outside chase camera for autopilot screenshots.
+    if startMode == "chase" then driveView = "chase" end
     if ActionPressed("c") then
       driveView = (driveView == "cab") and "chase" or "cab"
     end

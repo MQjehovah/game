@@ -705,6 +705,20 @@ math::Vec3 JoltWorld::GetPointVelocity(BodyId body, const math::Vec3& point) con
     return FromJolt(impl_->Bodies().GetPointVelocity(bid, ToRVec3(point)));
 }
 
+math::Vec3 JoltWorld::GetAngularVelocity(BodyId body) const {
+    if (!impl_) return {};
+    const JPH::BodyID bid = impl_->Find(body);
+    if (bid == JPH::BodyID()) return {};
+    return FromJolt(impl_->Bodies().GetAngularVelocity(bid));
+}
+
+void JoltWorld::AddAngularImpulse(BodyId body, const math::Vec3& impulse) {
+    if (!impl_) return;
+    const JPH::BodyID bid = impl_->Find(body);
+    if (bid == JPH::BodyID()) return;
+    impl_->Bodies().AddAngularImpulse(bid, ToJolt(impulse));
+}
+
 void JoltWorld::ApplyImpulse(BodyId body, const math::Vec3& impulse,
                              const math::Vec3& point) {
     if (!impl_) return;

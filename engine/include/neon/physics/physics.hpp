@@ -105,6 +105,10 @@ public:
     // Velocity of a world-space point on a (possibly rotating) body. Used by
     // the vehicle suspension to damp each wheel contact independently.
     virtual math::Vec3 GetPointVelocity(BodyId body, const math::Vec3& point) const;
+    // Angular velocity / impulse around the body origin. Used to keep the
+    // scripted vehicle heading while tire friction acts at the contacts.
+    virtual math::Vec3 GetAngularVelocity(BodyId body) const;
+    virtual void AddAngularImpulse(BodyId body, const math::Vec3& impulse);
     // Applies an impulse at a world-space point: the spring/damper suspension
     // of the RV calls this once per wheel so height/pitch/roll come from the
     // solver. Default implementation is a no-op (deterministic custom world).

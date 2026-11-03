@@ -68,6 +68,8 @@ public:
     void SetVelocity(BodyId body, const math::Vec3& vel) override;
     math::Vec3 GetVelocity(BodyId body) const override;
     math::Vec3 GetPointVelocity(BodyId body, const math::Vec3& point) const override;
+    math::Vec3 GetAngularVelocity(BodyId body) const override;
+    void AddAngularImpulse(BodyId body, const math::Vec3& impulse) override;
     void ApplyImpulse(BodyId body, const math::Vec3& impulse,
                       const math::Vec3& point) override;
     void SetMass(BodyId body, float mass) override;
