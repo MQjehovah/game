@@ -550,6 +550,7 @@ local function pushState()
     relay = relayDone and 2 or ((radioMastFixed and 1) or 0),
     fire = campfireOn and 1 or 0,
     fireFuel = math.floor(campfireFuelMin or 0),
+    oil = math.floor(oilLife or 100),
   })
 end
 
@@ -1718,6 +1719,9 @@ local function applyState(s)
   end
   if s.fireFuel ~= nil and setCampfireFuel ~= nil then
     setCampfireFuel(s.fireFuel)
+  end
+  if s.oil ~= nil and setOilLife ~= nil then
+    setOilLife(s.oil)
   end
   if s.high ~= nil then
     local hb = (s.high == 1 or s.high == true)

@@ -56,6 +56,12 @@ function oilChangeCost()
   return math.max(1, math.ceil(miss / 25))
 end
 
+-- 统一设置机油寿命（联机客机按服务器值同步）
+function setOilLife(v)
+  if v == nil then return end
+  oilLife = math.max(0, math.min(100, tonumber(v) or 0))
+end
+
 -- 在加油站更换机油；返回 ok, cost, note
 function serviceOilAtGasstop()
   local cost = oilChangeCost()

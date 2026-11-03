@@ -1537,6 +1537,21 @@ function runSelfTest()
        string.format("100=%.3f 20=%.3f 0=%.3f", full, mid, low))
   end
 
+  -- 联机机油同步：按服务器值设置并夹紧到 0–100
+  do
+    local keep = oilLife
+    setOilLife(55)
+    local mid = math.abs((oilLife or 0) - 55) < 1e-6
+    setOilLife(200)
+    local high = (oilLife or 0) == 100
+    setOilLife(-10)
+    local low = (oilLife or -1) == 0
+    oilLife = keep
+    ok(r, "oil sync", mid and high and low,
+       string.format("mid=%s high=%s low=%s", tostring(mid),
+                     tostring(high), tostring(low)))
+  end
+
   -- 续航估算：无实测时用 1.6L/100m 基准，有实测按实测油耗
   do
     local sf, sd, sfu = fuel, tripDistance, tripFuel
