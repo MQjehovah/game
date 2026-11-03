@@ -1123,9 +1123,16 @@ function repairRadioMast()
     SetVisible(radioMast.beacon, true)
     radioMast.lit = true
   end
+  -- 修好后的实际回报：信标常亮 + 一份应急补给
+  if addItem ~= nil then
+    addItem("fuelcan", 1)
+    addItem("repairkit", 1)
+  end
   if PlaySfx then PlaySfx("repair") end
-  if addJournal ~= nil then addJournal("修好了仓库无线电塔", "goal") end
-  toast.text = "无线电塔修好了——顶端红灯常亮，仓库成为荒野里的信标"
+  if addJournal ~= nil then
+    addJournal("修好了仓库无线电塔（补给：燃油罐+修理包）", "goal")
+  end
+  toast.text = "无线电塔修好了——信标常亮，收到一份应急补给（燃油罐+修理包）"
   toast.t = 5.0
   return true
 end

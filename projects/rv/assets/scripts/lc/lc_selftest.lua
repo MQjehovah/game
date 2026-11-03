@@ -2429,11 +2429,12 @@ function runSelfTest()
                      tostring(night), tostring(dayOff)))
   end
 
-  -- 长线目标：无线电塔修理（材料不足失败、足够则扣材料并常亮）
+  -- 长线目标：无线电塔修理（材料不足失败、足够则扣材料、常亮并给补给）
   do
     local sm = materials.metal or 0
     local se = materials.electronics or 0
     local keepFixed = radioMastFixed
+    local cans0, kits0 = inv.fuelcan or 0, inv.repairkit or 0
     radioMastFixed = false
     materials.metal, materials.electronics = 2, 0
     local poor = repairRadioMast()
@@ -2442,13 +2443,18 @@ function runSelfTest()
     local okFix = repairRadioMast()
     local paid = (materials.metal or 0) == 4 and (materials.electronics or 0) == 2
     local fixed = radioMastFixed == true
+    local supplied = (inv.fuelcan or 0) == cans0 + 1 and
+                     (inv.repairkit or 0) == kits0 + 1
     radioMastFixed = keepFixed
     materials.metal, materials.electronics = sm, se
+    inv.fuelcan = cans0 > 0 and cans0 or nil
+    inv.repairkit = kits0 > 0 and kits0 or nil
     ok(r, "radio mast repair", (poor == false) and poorKept and okFix and
-       paid and fixed,
-       string.format("poor=%s paid=%s fixed=%s metal=%d elec=%d",
+       paid and fixed and supplied,
+       string.format("poor=%s paid=%s fixed=%s supply=%s metal=%d elec=%d",
                      tostring(poor), tostring(paid), tostring(fixed),
-                     materials.metal or 0, materials.electronics or 0))
+                     tostring(supplied), materials.metal or 0,
+                     materials.electronics or 0))
   end
 
   -- 天气/时段影响钓鱼：雨天更好、深夜更难
