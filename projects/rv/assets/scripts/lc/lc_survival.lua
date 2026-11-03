@@ -310,6 +310,38 @@ function fishingRecordText()
   return string.format("钓鱼纪录 %.0fcm · %d 条", bestFish or 0, fishCaught or 0)
 end
 
+-- 鱼竿升级：每级上钩率 +7%、鱼尺寸 +4cm
+function rodCatchBonus()
+  return (upgrades and upgrades.rod or 0) * 0.07
+end
+
+function rodSizeBonus()
+  return (upgrades and upgrades.rod or 0) * 4
+end
+
+function upgradeRod()
+  upgrades.rod = upgrades.rod or 0
+  if upgrades.rod >= 3 then
+    toast.text = "鱼竿已经满级"
+    toast.t = 1.8
+    return false
+  end
+  local lv = upgrades.rod
+  local cost = { wood = 2 + lv * 2, cloth = 1 + lv }
+  if not canAfford(cost) then
+    toast.text = "升级材料不足：" .. costText(cost)
+    toast.t = 2.2
+    return false
+  end
+  payCost(cost)
+  upgrades.rod = lv + 1
+  if PlaySfx then PlaySfx("repair") end
+  toast.text = string.format("鱼竿升级到 Lv%d — 上钩率 +%d%%，尺寸 +%dcm",
+                             upgrades.rod, upgrades.rod * 7, upgrades.rod * 4)
+  toast.t = 2.6
+  return true
+end
+
 -- 钓鱼：按权重抽鱼种，并在该鱼种的尺寸区间内取一个尺寸
 function rollFish()
   local total = 0
@@ -341,11 +373,13 @@ end
 function finishFishing(force)
   local usedBait = fishingBait == true
   fishingBait = false
-  local success = force or usedBait or math.random() < 0.78
+  local chance = 0.78 + (rodCatchBonus and rodCatchBonus() or 0)
+  local success = force or usedBait or math.random() < chance
   fishingT = 0
   if success then
     local name, size, sp = rollFish()
-    if usedBait then size = math.min(sp.max, size + 10) end
+    local bonus = (rodSizeBonus and rodSizeBonus() or 0) + (usedBait and 10 or 0)
+    if bonus > 0 then size = math.min(sp.max, size + bonus) end
     local n = 1 + ((math.random() < 0.30) and 1 or 0)
     if size >= 55 then n = n + 1 end
     if usedBait then n = n + 1 end

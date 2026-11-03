@@ -108,6 +108,21 @@ function runSelfTest()
        string.format("max %d->%d lv %d->%d", max0, max1, clv, newLv))
   end
 
+  -- 鱼竿升级：上钩率 +7%/级、尺寸 +4cm/级
+  do
+    local lv0 = upgrades.rod or 0
+    materials.wood = (materials.wood or 0) + 12
+    materials.cloth = (materials.cloth or 0) + 12
+    if lv0 < 3 then upgradeRod() end
+    local newLv = upgrades.rod or 0
+    local bonus = rodCatchBonus()
+    local size = rodSizeBonus()
+    local upOk = newLv == lv0 + 1 and bonus > 0 and size > 0
+    upgrades.rod = lv0
+    ok(r, "fishing rod upgrade", upOk,
+       string.format("lv %d->%d bonus=%.2f size=%dcm", lv0, newLv, bonus, size))
+  end
+
   -- 低强度威胁
   local h0 = #horde
   spawnAmbientZombie()

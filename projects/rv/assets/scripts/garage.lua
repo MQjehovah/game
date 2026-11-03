@@ -1310,6 +1310,7 @@ function on_update(ent, dt)
         if ActionPressed(tostring(i)) then repairPart(part.id) end
       end
       if ActionPressed("5") and upgradeCargo ~= nil then upgradeCargo() end
+      if ActionPressed("6") and upgradeRod ~= nil then upgradeRod() end
     end
     updateCamera(dt)
     return
