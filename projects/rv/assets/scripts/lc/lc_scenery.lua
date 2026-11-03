@@ -1828,6 +1828,29 @@ function campfireAudible(dist)
   return (dist or 1e9) < 14
 end
 
+-- 夜间蟋蟀：晴天/阴天的夜晚随机鸣叫，雨雪天安静
+function nightCricketsActive()
+  if not (isNight ~= nil and isNight()) then return false end
+  if weather == "rain" or weather == "snow" then return false end
+  return true
+end
+
+function cricketInterval()
+  return 3.5 + math.random() * 3.0
+end
+
+function updateNightCrickets(dt)
+  if not nightCricketsActive() then
+    cricketT = 0
+    return
+  end
+  cricketT = (cricketT or 0) - (dt or 0)
+  if cricketT > 0 then return end
+  cricketT = cricketInterval()
+  cricketPlays = (cricketPlays or 0) + 1
+  if PlaySfx then PlaySfx("cricket") end
+end
+
 function updateCampfireAudio(dt)
   if campfire == nil then return end
   if not campfireOn then return end

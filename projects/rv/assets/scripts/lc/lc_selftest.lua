@@ -1681,6 +1681,35 @@ function runSelfTest()
                      inv.meal or 0, inv.rawfood or 0))
   end
 
+  -- 夜间蟋蟀：晴天夜晚会鸣叫，雨雪/白天安静
+  do
+    local sc, sw = clock, weather
+    clock = 23 * 60
+    weather = "clear"
+    local clearNight = nightCricketsActive()
+    weather = "rain"
+    local rainy = nightCricketsActive()
+    weather = "snow"
+    local snowy = nightCricketsActive()
+    weather = "clear"
+    clock = 12 * 60
+    local daytime = nightCricketsActive()
+    local iv = cricketInterval()
+    local keepT, keepP = cricketT, cricketPlays
+    clock, weather = 23 * 60, "clear"
+    cricketT, cricketPlays = 0, 0
+    updateNightCrickets(0.1)
+    local played = (cricketPlays or 0) == 1
+    cricketT, cricketPlays = keepT, keepP
+    weather, clock = sw, sc
+    ok(r, "night crickets",
+       clearNight and not rainy and not snowy and not daytime and
+       iv >= 3.5 and iv <= 6.5 and played,
+       string.format("clear=%s rain=%s snow=%s day=%s iv=%.1f played=%s",
+                     tostring(clearNight), tostring(rainy), tostring(snowy),
+                     tostring(daytime), iv, tostring(played)))
+  end
+
   -- 主路土肩：沥青边缘与草地的过渡
   do
     local n = #roadShoulders
