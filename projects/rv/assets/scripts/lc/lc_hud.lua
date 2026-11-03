@@ -1038,16 +1038,21 @@ function drawJournal()
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
-  local pw, ph = 640, 420
+  local pw, ph = 640, 440
   local px = math.floor((vw - pw) * 0.5)
   local py = math.floor((vh - ph) * 0.5)
   DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.94)
   DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.95)
   drawTextCentered("旅行日志", vw * 0.5, py + 12, 20, 0.98, 0.90, 0.68, 1)
   DrawText("J / E 关闭", px + pw - 108, py + 16, 12, 0.68, 0.70, 0.64, 1)
+  drawTextCentered(string.format(
+    "货运 %d 单 · 里程 %.1fkm · 钓鱼 %d 条 · 探索 %d/%d · 连送 %d",
+    jobDelivered or 0, (tripDistance or 0) / 1000, fishCaught or 0,
+    visitedCount or 0, #NODES, jobStreak or 0),
+    vw * 0.5, py + 42, 12, 0.78, 0.80, 0.72, 1)
   local n = #journal
   local show = math.min(12, n)
-  local yy = py + 48
+  local yy = py + 70
   if n == 0 then
     DrawText("还没有记录——去跑一单、钓条鱼或探索新地点",
              px + 24, yy, 13, 0.72, 0.74, 0.68, 1)
