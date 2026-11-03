@@ -165,7 +165,7 @@ function jobAccept(idx)
     destId = offer.destId, destName = offer.destName, danger = offer.danger,
     cargo = offer.cargo, cargoId = offer.cargoId, crates = offer.crates,
     weight = offer.weight, distance = offer.distance,
-    pay = offer.pay, fuel = offer.fuel, stage = "carry",
+    pay = offer.pay, fuel = offer.fuel, stage = "carry", condition = 1.0,
   }
   jobUI = false
   jobOffers = {}
@@ -176,6 +176,17 @@ function jobAccept(idx)
   toast.t = 4.5
   if PlaySfx then PlaySfx("pickup") end
   return true
+end
+
+-- 撞击损伤货物：drop 是前后速度差（m/s）；货况过低时结算打折。
+function jobApplyImpact(drop)
+  if job == nil then return end
+  local before = job.condition or 1.0
+  job.condition = math.max(0, before - math.min(0.5, (drop or 0) * 0.05))
+  if before >= 0.5 and job.condition < 0.5 then
+    toast.text = "货物受损过半！送达报酬会明显打折"
+    toast.t = 3.2
+  end
 end
 
 function jobAbandon()
@@ -195,15 +206,18 @@ end
 
 function jobComplete()
   if job == nil then return false end
+  local cond = math.max(0, math.min(1, job.condition or 1.0))
+  local scale = 0.55 + 0.45 * cond
   local pay = job.pay or {}
   local got = {}
   for mat, n in pairs(pay) do
-    if n > 0 then
-      materials[mat] = (materials[mat] or 0) + n
-      got[#got + 1] = MAT_NAMES[mat] .. "+" .. n
+    local v = math.floor(n * scale + 0.5)
+    if v > 0 then
+      materials[mat] = (materials[mat] or 0) + v
+      got[#got + 1] = MAT_NAMES[mat] .. "+" .. v
     end
   end
-  local fuelGot = job.fuel or 0
+  local fuelGot = math.floor((job.fuel or 0) * scale + 0.5)
   if fuelGot > 0 then
     local before = fuel
     fuel = math.min(VEH.tank, fuel + fuelGot)
@@ -217,7 +231,8 @@ function jobComplete()
   recomputeStats()
   SpawnFloatText(rv.x, 1.8, rv.z,
                  "送达 " .. name .. " x" .. crates, false, 1.6, 1.0, 0.86, 0.4)
-  toast.text = string.format("货运完成：%s%s", table.concat(got, " "),
+  toast.text = string.format("货运完成（货况 %.0f%%）：%s%s", cond * 100,
+                             table.concat(got, " "),
                              fuelGot > 0 and ("  燃料+" .. math.floor(fuelGot + 0.5) .. "L") or "")
   toast.t = 4.5
   if PlaySfx then PlaySfx("pickup") end

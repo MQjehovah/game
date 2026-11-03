@@ -931,6 +931,20 @@ function runSelfTest()
   ok(r, "job abandon unloads cargo",
      job == nil and stats.weight < carried and #jobCargoEnts == 0,
      string.format("weight %.0f->%.0f", carried, stats.weight))
+
+  -- 货损：撞击掉货况，结算按货况打折（0.55 + 0.45*货况）
+  jobRefreshOffers("gasstop")
+  jobAccept(1)
+  local fullMetal = job and job.pay and job.pay.metal or 0
+  jobApplyImpact(8)
+  local cond = job and job.condition or 1
+  local metalBefore = materials.metal or 0
+  atNode = job and job.destId or nil
+  updateJobs(1 / 60)
+  local gained = (materials.metal or 0) - metalBefore
+  ok(r, "job cargo damage",
+     job == nil and cond < 0.7 and gained >= 1 and gained < fullMetal,
+     string.format("cond=%.2f metal=%d/%d", cond, gained, fullMetal))
   atNode = nil
 
   -- 公路轮廓桩：沿路肩生成、避开营地/建筑

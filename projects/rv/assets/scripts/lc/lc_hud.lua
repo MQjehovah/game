@@ -796,8 +796,15 @@ function drawJobTracker(vw)
   if (job.fuel or 0) > 0 then
     payText = payText .. (payText ~= "" and "  " or "") .. "燃料+" .. job.fuel .. "L"
   end
-  DrawText(string.format("%.0fm  ·  %s", dist, payText), bx + 12, 68, 12,
-           0.80, 0.84, 0.78, 1)
+  local cond = math.max(0, math.min(1, job.condition or 1.0))
+  local cr, cg, cb = 0.80, 0.84, 0.78
+  if cond < 0.5 then
+    cr, cg, cb = 0.95, 0.42, 0.34
+  elseif cond < 0.8 then
+    cr, cg, cb = 0.95, 0.76, 0.36
+  end
+  DrawText(string.format("%.0fm · 货况 %.0f%% · %s", dist, cond * 100, payText),
+           bx + 12, 68, 12, cr, cg, cb, 1)
   DrawRect(bx + 12, 84, bw - 24, 3, 0.14, 0.15, 0.14, 0.9)
   DrawRect(bx + 12, 84, (bw - 24) * done, 3, 0.78, 0.66, 0.32, 1)
   drawJobWaypoint(vw)
