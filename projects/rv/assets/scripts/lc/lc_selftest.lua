@@ -2831,6 +2831,17 @@ function runSelfTest()
                      driving, parked, empty))
   end
 
+  -- 电瓶低电量提示：低于 20% 且净功率为负才提示
+  do
+    local low = batteryLowText(0.1, 1.0, -0.5)
+    local charging = batteryLowText(0.1, 1.0, 0.5)
+    local okBatt = batteryLowText(0.5, 1.0, -0.5)
+    ok(r, "battery low hint",
+       low ~= nil and charging == nil and okBatt == nil,
+       string.format("low=%s charging=%s ok=%s", tostring(low),
+                     tostring(charging), tostring(okBatt)))
+  end
+
   -- 鸟群：白天活跃、夜间隐藏
   do
     local sc = clock

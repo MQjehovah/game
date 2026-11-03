@@ -297,6 +297,16 @@ function alternatorPower(phaseValue, fuelValue)
   return 0
 end
 
+-- 电瓶低电量提示：余量 <20% 且净功率为负时给出充电建议
+function batteryLowText(charge, cap, net)
+  local c = charge or 0
+  local m = cap or 0
+  if m <= 0 then return nil end
+  if c / m >= 0.2 then return nil end
+  if (net or 0) >= 0 then return nil end
+  return string.format("电瓶电量低（%.0f%%）——开车充电或开发电机", c / m * 100)
+end
+
 -- 每帧推进电池（游戏时间：1 现实秒 = timeScale 游戏分钟）
 function updatePower(dt)
   local aux = auxPowerDraw(interiorLightsOn, (#rvHeadlights or 0) > 0)
@@ -304,6 +314,14 @@ function updatePower(dt)
   local net = (stats.powerGen or 0) - (stats.powerDraw or 0) - aux + alt
   local hours = (dt or 0) * SURVIVAL.timeScale / 60
   batteryCharge = batteryStep(batteryCharge or 0, net, hours, batteryCapacity())
+  local lowText = batteryLowText(batteryCharge, batteryCapacity(), net)
+  if lowText ~= nil and not lastWarn.battery then
+    lastWarn.battery = true
+    toast.text = lowText
+    toast.t = 3.4
+  elseif (batteryCharge or 0) / math.max(0.001, batteryCapacity()) > 0.35 then
+    lastWarn.battery = false
+  end
 end
 
 function useWater(amount)
