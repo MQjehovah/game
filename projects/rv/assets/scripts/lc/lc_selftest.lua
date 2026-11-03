@@ -2431,6 +2431,39 @@ function runSelfTest()
                      gotBrew, leftBeans, leftWater))
   end
 
+  -- 篝火菜单：按指定料理制作（fish / coffee），材料不足不消耗
+  do
+    local keepOn, keepFuel = campfireOn, campfireFuelMin
+    local kf, kfish = inv.rawfish, inv.fish or 0
+    local kc, kbrew = inv.coffee, inv.brew or 0
+    local kw, keepGoal = water, dailyGoal
+    local kt, kv = toast.text, toast.t
+    setCampfireLit(true)
+    campfireFuelMin, dailyGoal = 500, nil
+    inv.rawfish, inv.fish = 1, 0
+    inv.coffee, inv.brew, water = 1, 0, 60
+    local canFish = campfireCan("fish")
+    local canCoffee = campfireCan("coffee")
+    local cookedFish = campfireCook("fish")
+    local cookedCoffee = campfireCook("coffee")
+    local gotFishN = inv.fish or 0
+    local gotBrewN = inv.brew or 0
+    local leftWater = water or 0
+    local gotFish = gotFishN == 1
+    local gotBrew = gotBrewN == 1
+    local spentWater = math.abs(leftWater - 45) < 1e-6
+    inv.rawfish, inv.fish = kf, kfish
+    inv.coffee, inv.brew = kc, kbrew
+    water, dailyGoal = kw, keepGoal
+    campfireOn, campfireFuelMin = keepOn, keepFuel
+    toast.text, toast.t = kt, kv
+    ok(r, "campfire menu",
+       canFish and canCoffee and cookedFish and cookedCoffee and gotFish and
+       gotBrew and spentWater,
+       string.format("fish=%d brew=%d water=%.0f", gotFishN, gotBrewN,
+                     leftWater))
+  end
+
   -- 篝火烹饪消耗燃料：每次 10 游戏分钟
   do
     local keepOn, keepFuel = campfireOn, campfireFuelMin

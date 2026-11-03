@@ -1668,7 +1668,72 @@ local function spendCookFuel()
   end
 end
 
-function cookAtCampfire()
+-- 篝火可做的料理：是否满足材料
+function campfireCan(kind)
+  if kind == "fish" then return hasItem("rawfish", 1) end
+  if kind == "water" then return hasItem("dirtywater", 1) end
+  if kind == "stew" then
+    return hasItem("rawfood", 1) and (inv.berry or 0) >= 2
+  end
+  if kind == "meal" then return hasItem("rawfood", 1) end
+  if kind == "coffee" then
+    return hasItem("coffee", 1) and (water or 0) >= 15
+  end
+  return false
+end
+
+-- 篝火烹饪菜单条目
+function campfireRecipeList()
+  return {
+    { kind = "fish",   label = "烤鱼（生鱼 x1）" },
+    { kind = "water",  label = "煮沸浑水（+15L 净水）" },
+    { kind = "stew",   label = "浆果炖肉（生食材 + 野浆果 x2）" },
+    { kind = "meal",   label = "热饭（生食材 x1）" },
+    { kind = "coffee", label = "热咖啡（咖啡豆 + 15L 水）" },
+  }
+end
+
+-- 按指定料理制作（材料不足返回 false）
+function campfireCook(kind)
+  if not campfireCan(kind) then
+    toast.text = "材料不足——做不了这道"
+    toast.t = 2.0
+    return false
+  end
+  if kind == "fish" then
+    takeItem("rawfish", 1)
+    addItem("fish", 1)
+    if addDailyProgress ~= nil then addDailyProgress("cook", 1) end
+    toast.text = "篝火烤好一条鱼（烤鱼 +1）"
+  elseif kind == "water" then
+    takeItem("dirtywater", 1)
+    addWater(15)
+    toast.text = "煮沸一份浑水 — 水箱 +15L"
+  elseif kind == "stew" then
+    takeItem("rawfood", 1)
+    takeItem("berry", 2)
+    addItem("stew", 1)
+    if addDailyProgress ~= nil then addDailyProgress("cook", 1) end
+    toast.text = "篝火炖好一锅浆果炖肉（+1）"
+  elseif kind == "meal" then
+    takeItem("rawfood", 1)
+    addItem("meal", 1)
+    if addDailyProgress ~= nil then addDailyProgress("cook", 1) end
+    toast.text = "篝火烤好一份野味（热饭 +1）"
+  elseif kind == "coffee" then
+    takeItem("coffee", 1)
+    useWater(15)
+    addItem("brew", 1)
+    toast.text = "篝火煮好一壶热咖啡（+1，提神保暖）"
+  end
+  spendCookFuel()
+  if PlaySfx then PlaySfx("cook") end
+  toast.t = 2.6
+  return true
+end
+
+-- choice 为空时沿用自动优先级（鱼→水→炖肉→热饭→咖啡）
+function cookAtCampfire(choice)
   if campfireOn == false then
     toast.text = "篝火熄灭了——按 G 添柴后再做饭"
     toast.t = 2.6
@@ -1679,53 +1744,9 @@ function cookAtCampfire()
     toast.t = 2.6
     return false
   end
-  if takeItem("rawfish", 1) then
-    addItem("fish", 1)
-    spendCookFuel()
-    if PlaySfx then PlaySfx("cook") end
-    if addDailyProgress ~= nil then addDailyProgress("cook", 1) end
-    toast.text = "篝火烤好一条鱼（烤鱼 +1）"
-    toast.t = 2.4
-    return true
-  end
-  -- 其次煮浑水：1 份浑水 -> +15L 净水
-  if takeItem("dirtywater", 1) then
-    addWater(15)
-    spendCookFuel()
-    if PlaySfx then PlaySfx("cook") end
-    toast.text = "煮沸一份浑水 — 水箱 +15L"
-    toast.t = 2.4
-    return true
-  end
-  -- 没有生鱼/浑水时，把生食材烤成热饭；有野浆果则炖成浆果炖肉
-  if takeItem("rawfood", 1) then
-    if (inv.berry or 0) >= 2 and takeItem("berry", 2) then
-      addItem("stew", 1)
-      spendCookFuel()
-      if PlaySfx then PlaySfx("cook") end
-      if addDailyProgress ~= nil then addDailyProgress("cook", 1) end
-      toast.text = "篝火炖好一锅浆果炖肉（+1）"
-      toast.t = 2.4
-      return true
-    end
-    addItem("meal", 1)
-    spendCookFuel()
-    if PlaySfx then PlaySfx("cook") end
-    if addDailyProgress ~= nil then addDailyProgress("cook", 1) end
-    toast.text = "篝火烤好一份野味（热饭 +1）"
-    toast.t = 2.4
-    return true
-  end
-  -- 没有食材时，有咖啡豆和净水可煮一壶热咖啡（无电也能提神）
-  if hasItem("coffee", 1) and (water or 0) >= 15 then
-    takeItem("coffee", 1)
-    useWater(15)
-    addItem("brew", 1)
-    spendCookFuel()
-    if PlaySfx then PlaySfx("cook") end
-    toast.text = "篝火煮好一壶热咖啡（+1，提神保暖）"
-    toast.t = 2.6
-    return true
+  if choice ~= nil then return campfireCook(choice) end
+  for _, kind in ipairs({ "fish", "water", "stew", "meal", "coffee" }) do
+    if campfireCan(kind) then return campfireCook(kind) end
   end
   toast.text = "没有生鱼/浑水/生食材 — 去水塘钓/取水或搜刮食物"
   toast.t = 2.2

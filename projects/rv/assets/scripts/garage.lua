@@ -1257,6 +1257,14 @@ function on_start()
     fuel = fuelMax() * 0.12
     setPhase("driving")
     driveView = "chase"
+  elseif startMode == "campfiremenu" then
+    addItem("rawfish", 2)
+    addItem("rawfood", 1)
+    addItem("berry", 3)
+    addItem("coffee", 1)
+    water = math.max(water or 0, 30)
+    campfireMenuOpen = true
+    setPhase("parked")
   elseif startMode == "raincab" then
     setWeather("rain")
     setPhase("driving")
@@ -1736,6 +1744,24 @@ function on_update(ent, dt)
     return
   end
 
+  -- 篝火烹饪菜单：1-5 选择料理，0 / E 关闭
+  if campfireMenuOpen then
+    if ActionPressed("e") or ActionPressed("0") then
+      campfireMenuOpen = false
+    else
+      local list = campfireRecipeList and campfireRecipeList() or {}
+      for i = 1, #list do
+        if ActionPressed(tostring(i)) then
+          if cookAtCampfire ~= nil then cookAtCampfire(list[i].kind) end
+          campfireMenuOpen = false
+          break
+        end
+      end
+    end
+    updateCamera(dt)
+    return
+  end
+
   -- 灶台菜单打开时暂停移动/交互，只处理配方按键
   if stationUI then
     if ActionPressed("e") then stationUI = nil end
@@ -1876,6 +1902,7 @@ function on_render()
   end
   if invOpen then drawInventoryPanel() end
   if stationUI then drawStationMenu() end
+  if campfireMenuOpen then drawCampfireMenu() end
   if jobUI then drawJobPanel() end
   if jobResult then drawJobResult() end
   if morningReport then drawMorningReport() end

@@ -2011,3 +2011,33 @@ function drawMaintenancePanel()
   end
 end
 
+-- 篝火烹饪菜单：1-5 选择料理，0 / E 关闭
+function drawCampfireMenu()
+  if not campfireMenuOpen then return end
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local list = campfireRecipeList and campfireRecipeList() or {}
+  local pw, ph = 470, 100 + #list * 30
+  local px = math.floor((vw - pw) * 0.5)
+  local py = math.floor((vh - ph) * 0.5)
+  DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.94)
+  DrawRectOutline(px, py, pw, ph, 0.62, 0.48, 0.30, 0.95)
+  drawTextCentered("篝火烹饪", vw * 0.5, py + 12, 20, 0.98, 0.88, 0.64, 1)
+  DrawText("1-5 选择   0 / E 关闭", px + pw - 176, py + 16, 12,
+           0.68, 0.70, 0.64, 1)
+  DrawText(string.format("燃料 %.0f 分钟", campfireFuelMin or 0),
+           px + 22, py + 44, 12, 0.80, 0.82, 0.72, 1)
+  local yy = py + 70
+  for i, rec in ipairs(list) do
+    local ok2 = (campfireCan == nil) or campfireCan(rec.kind)
+    DrawRect(px + 16, yy - 4, pw - 32, 26,
+             ok2 and 0.08 or 0.11, 0.07, 0.05, 0.75)
+    DrawText("[" .. i .. "]", px + 26, yy, 14,
+             ok2 and 0.95 or 0.55, ok2 and 0.85 or 0.55, 0.55, 1)
+    DrawText(rec.label, px + 66, yy, 13,
+             ok2 and 0.92 or 0.58, ok2 and 0.88 or 0.60, 0.74, 1)
+    yy = yy + 30
+  end
+end
+

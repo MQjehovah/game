@@ -352,7 +352,12 @@ function doInteract()
     jobOpenBoard()
     return true
   elseif nearAction.kind == "campfire" then
-    cookAtCampfire()
+    -- 单机开菜单自选料理；联机保持服务端自动烹饪
+    if coopRole == nil then
+      campfireMenuOpen = true
+    else
+      cookAtCampfire()
+    end
     return true
   elseif nearAction.kind == "berry" then
     gatherBerries(nearAction.index)
