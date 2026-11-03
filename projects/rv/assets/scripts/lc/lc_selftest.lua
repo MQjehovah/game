@@ -1871,6 +1871,22 @@ function runSelfTest()
        string.format("cab=%d chase=%d clear=%d", cab, chase, clear))
   end
 
+  -- 雨刷：在 -0.20~0.42 之间来回摆动
+  do
+    local a0 = wiperAngle(0)
+    local a1 = wiperAngle(0.9)
+    local a2 = wiperAngle(1.8)
+    local bounded = true
+    for i = 0, 20 do
+      local a = wiperAngle(i * 0.1)
+      if a < -0.21 or a > 0.43 then bounded = false end
+    end
+    ok(r, "rain wipers",
+       math.abs(a0 + 0.20) < 1e-6 and a1 > a0 and
+       math.abs(a2 - a0) < 1e-6 and bounded,
+       string.format("a0=%.2f a1=%.2f wrap=%.2f", a0, a1, a2))
+  end
+
   -- 载重影响刹车：越重越刹不住
   do
     local empty = brakeRate(1.0)

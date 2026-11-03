@@ -68,6 +68,14 @@ function windshieldDropCount()
   return 0
 end
 
+-- 雨刷角度：驾驶席视角下周期性来回摆动（-0.20 ~ 0.42 rad）
+function wiperAngle(t)
+  local period = 1.8
+  local p = ((t or 0) % period) / period
+  local sweep = (p < 0.5) and (p * 2) or (2 - p * 2)
+  return -0.20 + sweep * 0.62
+end
+
 -- 路面抓地折减：雨天湿滑、雪天更滑；带防滑链时雨雪抓地提高
 function weatherGripScale()
   local base = 1.0
@@ -255,6 +263,20 @@ function drawWeatherOverlay()
       local y = (i * 89 + math.floor(weatherT * 55)) % vh
       DrawCircle(x, y, 2 + (i % 3), 1, 0.72, 0.80, 0.90, 0.18, false)
       DrawLine(x, y, x + 1, y + 5 + (i % 4), 1, 0.72, 0.80, 0.90, 0.12)
+    end
+    -- 驾驶席视角：雨刷来回摆动（只在挡风玻璃下沿，避免遮挡视线）
+    if phase == "driving" and driveView == "cab" then
+      local t = weatherT or 0
+      for k = 0, 1 do
+        local ang = wiperAngle(t + k * 0.22) * 1.4
+        local cx = vw * (0.34 + k * 0.32)
+        local cy = vh * 0.99
+        local len = vh * 0.20
+        local wx = cx + math.sin(ang) * len
+        local wy = cy - math.cos(ang) * len
+        DrawLine(cx, cy, wx, wy, 4, 0.06, 0.07, 0.08, 0.55)
+        DrawLine(cx, cy, wx, wy, 2, 0.20, 0.21, 0.22, 0.45)
+      end
     end
   elseif weather == "snow" then
     DrawRect(0, 0, vw, vh, 0.55, 0.60, 0.68, 0.12)
