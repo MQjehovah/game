@@ -163,6 +163,20 @@ function updateGearShiftFx()
   return shifted
 end
 
+-- 倒车提示：挂倒挡后每 0.8s 响一声
+function updateReverseBeep(dt)
+  if (rv.speed or 0) > -0.5 then
+    reverseBeepT = 0
+    return false
+  end
+  reverseBeepT = (reverseBeepT or 0) - (dt or 0)
+  if reverseBeepT > 0 then return false end
+  reverseBeepT = 0.8
+  reverseBeeps = (reverseBeeps or 0) + 1
+  if PlaySfx then PlaySfx("beep") end
+  return true
+end
+
 -- 引擎水温：高速/重载升温，低速/怠速散热；过热时限制最高车速并缓慢磨损引擎
 function engineHeatRate(speed, loadRatio)
   local v = math.min(1, math.abs(speed or 0) / DRIVE.maxSpeed)

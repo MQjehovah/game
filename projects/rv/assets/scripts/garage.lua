@@ -1467,6 +1467,7 @@ function on_update(ent, dt)
     if ActionPressed("y") and callTow ~= nil then callTow() end
     updateDrive(dt)
     if updateGearShiftFx ~= nil then updateGearShiftFx() end
+    if updateReverseBeep ~= nil then updateReverseBeep(dt) end
     if updateWheelDust ~= nil then updateWheelDust(dt) end
     updateCamera(dt)
     return

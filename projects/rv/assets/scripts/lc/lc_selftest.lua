@@ -1524,6 +1524,24 @@ function runSelfTest()
        string.format("starts=%d", starts))
   end
 
+  -- 倒车提示音：挂倒挡按 0.8s 间隔响
+  do
+    local keepSpeed, keepT = rv.speed, reverseBeepT
+    local keepBeeps = reverseBeeps
+    rv.speed, reverseBeepT, reverseBeeps = -1.0, 0, 0
+    local first = updateReverseBeep(0.1)
+    local again = updateReverseBeep(0.1)
+    local beeps = reverseBeeps or 0
+    rv.speed = 2.0
+    local forward = updateReverseBeep(0.1)
+    rv.speed, reverseBeepT, reverseBeeps = keepSpeed, keepT, keepBeeps
+    ok(r, "reverse beep", first == true and again == false and beeps == 1 and
+       forward == false,
+       string.format("first=%s again=%s beeps=%d forward=%s",
+                     tostring(first), tostring(again), beeps,
+                     tostring(forward)))
+  end
+
   -- 夜间步行手电：夜里生成、白天移除
   do
     local sc, sfOn, sfFoot = clock, flashlightOn, onFoot
