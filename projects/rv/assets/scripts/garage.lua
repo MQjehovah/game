@@ -1664,6 +1664,11 @@ function on_update(ent, dt)
   if not buildMode and ActionPressed("g") and addCampfireWood ~= nil then
     addCampfireWood()
   end
+  -- 步行在房车旁按 X 也能鸣笛
+  if ActionPressed("x") and honk ~= nil and
+     canHonkFromFoot(onFoot, nearRv(), buildMode) then
+    honk()
+  end
   -- 步行时按 C 取下/装上防滑链（避免干路车速惩罚）
   if not buildMode and onFoot and ActionPressed("c") and
      hasItem ~= nil and hasItem("chains", 1) then

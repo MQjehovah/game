@@ -452,6 +452,11 @@ function updateBlowout(dt)
 end
 
 -- 房车喇叭：短促双音，吓跑附近感染者（不造成伤害）
+-- 步行时能否鸣笛：需要人在房车旁且不在建造模式
+function canHonkFromFoot(onFootValue, nearRvValue, buildModeValue)
+  return onFootValue == true and nearRvValue == true and not buildModeValue
+end
+
 function honk()
   if (rv.honkCd or 0) > 0 then return false end
   rv.honkCd = 0.8

@@ -4550,6 +4550,20 @@ function runSelfTest()
        string.format("dry=%.2f grass=%.2f none=%.2f", dry, grass, none))
   end
 
+  -- 步行鸣笛：必须步行、在房车旁、非建造模式
+  do
+    local near = canHonkFromFoot(true, true, false)
+    local far = canHonkFromFoot(true, false, false)
+    local driving = canHonkFromFoot(false, true, false)
+    local building = canHonkFromFoot(true, true, true)
+    ok(r, "on-foot horn",
+       near == true and far == false and driving == false and
+       building == false,
+       string.format("near=%s far=%s driving=%s build=%s",
+                     tostring(near), tostring(far), tostring(driving),
+                     tostring(building)))
+  end
+
   -- 防滑链可取下：取下后雨雪抓地不再加成、干路不再减速
   do
     local keepChains, keepOn = inv.chains, chainsOn
