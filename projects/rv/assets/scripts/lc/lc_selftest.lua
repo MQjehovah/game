@@ -1825,6 +1825,23 @@ function runSelfTest()
                      tostring(high), tostring(low)))
   end
 
+  -- 车况同步串：dur:engine:tires:battery:temp 可解析
+  do
+    local kd, ke, kt = dur, parts.engine, parts.tires
+    local kb, kt2 = parts.battery, engineTemp
+    dur, parts.engine, parts.tires, parts.battery = 80, 70, 60, 55
+    engineTemp = 90
+    local token = vehicleConditionToken()
+    local veh = parseVehicleCondition(token)
+    local bad = parseVehicleCondition("nope")
+    dur, parts.engine, parts.tires = kd, ke, kt
+    parts.battery, engineTemp = kb, kt2
+    ok(r, "vehicle condition sync",
+       veh ~= nil and veh.dur == 80 and veh.engine == 70 and
+       veh.tires == 60 and veh.battery == 55 and veh.temp == 90 and bad == nil,
+       string.format("token=%s", tostring(token)))
+  end
+
   -- 续航估算：无实测时用 1.6L/100m 基准，有实测按实测油耗
   do
     local sf, sd, sfu = fuel, tripDistance, tripFuel

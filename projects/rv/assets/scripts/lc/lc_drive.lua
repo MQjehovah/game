@@ -62,6 +62,26 @@ function setOilLife(v)
   oilLife = math.max(0, math.min(100, tonumber(v) or 0))
 end
 
+-- 车况同步串：dur:engine:tires:battery:temp（联机客机显示用）
+function vehicleConditionToken()
+  return string.format("%d:%d:%d:%d:%d",
+    math.floor(dur or 100), math.floor((parts and parts.engine) or 100),
+    math.floor((parts and parts.tires) or 100),
+    math.floor((parts and parts.battery) or 100),
+    math.floor(engineTemp or 20))
+end
+
+function parseVehicleCondition(str)
+  if type(str) ~= "string" then return nil end
+  local out = {}
+  for n in string.gmatch(str, "%-?%d+") do
+    out[#out + 1] = tonumber(n) or 0
+  end
+  if #out < 5 then return nil end
+  return { dur = out[1], engine = out[2], tires = out[3],
+           battery = out[4], temp = out[5] }
+end
+
 -- 在加油站更换机油；返回 ok, cost, note
 function serviceOilAtGasstop()
   local cost = oilChangeCost()

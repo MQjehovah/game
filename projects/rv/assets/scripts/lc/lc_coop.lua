@@ -561,6 +561,7 @@ local function pushState()
     fireFuel = math.floor(campfireFuelMin or 0),
     oil = math.floor(oilLife or 100),
     coolant = math.floor(coolant or 100),
+    veh = vehicleConditionToken and vehicleConditionToken() or "-",
     warm = math.floor(warmthMin or 0),
     rest = math.floor(restedMin or 0),
     chains = (chainsOn ~= false) and 1 or 0,
@@ -1377,6 +1378,16 @@ local function serverUpdate(dt)
     pushState()
   end
 
+  -- Test-only co-op vehicle condition sync: force values and print the token.
+  if coop.vehDemo and not coop.vehDemoDone and coop.autoT >= 3.0 then
+    coop.vehDemoDone = true
+    dur, parts.engine, parts.tires, parts.battery = 72, 60, 55, 80
+    engineTemp = 95
+    print(string.format("[coop-veh] demo token=%s",
+                        vehicleConditionToken and vehicleConditionToken() or "-"))
+    pushState()
+  end
+
   -- Test-only co-op camp woodpile: stand by it and take a log.
   if coop.woodDemo and not coop.woodDemoDone and coop.autoT >= 3.0 then
     coop.woodDemoDone = true
@@ -1935,6 +1946,15 @@ local function applyState(s)
   end
   if s.coolant ~= nil then
     coolant = math.max(0, math.min(100, tonumber(s.coolant) or 100))
+  end
+  if s.veh ~= nil and parseVehicleCondition ~= nil then
+    coop.veh = parseVehicleCondition(tostring(s.veh))
+    if coop.veh ~= nil and not coop.vehLogged then
+      coop.vehLogged = true
+      print(string.format("[coop-veh] dur=%d engine=%d tires=%d battery=%d temp=%d",
+                          coop.veh.dur, coop.veh.engine, coop.veh.tires,
+                          coop.veh.battery, coop.veh.temp))
+    end
   end
   if s.warm ~= nil and setWarmth ~= nil then
     setWarmth(s.warm)
@@ -2731,6 +2751,7 @@ function coopInitWorld(role)
     coop.vendingDemo = readFlag("coop_vending.txt")
     coop.chainsDemo = readFlag("coop_chains.txt")
     coop.woodDemo = readFlag("coop_wood.txt")
+    coop.vehDemo = readFlag("coop_veh.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2857,6 +2878,7 @@ function coopInitWorld(role)
     coop.vendingDemo = readFlag("coop_vending.txt")
     coop.chainsDemo = readFlag("coop_chains.txt")
     coop.woodDemo = readFlag("coop_wood.txt")
+    coop.vehDemo = readFlag("coop_veh.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
@@ -2999,8 +3021,8 @@ function coopDrawHud()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
 
-  DrawRect(14, 14, 390, 386, 0.035, 0.045, 0.055, 0.90)
-  DrawRectOutline(14, 14, 390, 386, 0.52, 0.50, 0.40, 0.95)
+  DrawRect(14, 14, 390, 400, 0.035, 0.045, 0.055, 0.90)
+  DrawRectOutline(14, 14, 390, 400, 0.52, 0.50, 0.40, 0.95)
   DrawText("房车合作 · 主世界", 26, 24, 18, 0.98, 0.90, 0.68, 1)
   DrawText(string.format("角色 %s   槽位 %d   客户端 %.0f", tostring(coop.role), coop.mySlot,
            coop.myClientId or 0), 26, 50, 11, 0.72, 0.74, 0.70, 1)
@@ -3018,19 +3040,25 @@ function coopDrawHud()
            #crates, #sortedInstances(), poiInsideCount(),
            coop.invMeal or 0, coop.invWater or 0),
            26, 128, 12, 0.80, 0.82, 0.76, 1)
+  if coop.veh ~= nil then
+    DrawText(string.format("车况  车体%d%% 引擎%d%% 轮胎%d%% 电瓶%d%% 水温%d°C",
+             coop.veh.dur, coop.veh.engine, coop.veh.tires,
+             coop.veh.battery, coop.veh.temp),
+             26, 146, 11, 0.74, 0.80, 0.72, 1)
+  end
 
-  drawBar(26, 152, 200, "生命", (needs.health or 0) / 100, 0.85, 0.30, 0.30)
-  drawBar(26, 172, 200, "饥饿", (needs.hunger or 0) / 100, 0.88, 0.64, 0.28)
-  drawBar(26, 192, 200, "口渴", (needs.thirst or 0) / 100, 0.30, 0.58, 0.88)
-  drawBar(26, 212, 200, "体力", (needs.energy or 0) / 100, 0.42, 0.80, 0.42)
-  drawBar(26, 232, 200, "卫生", (needs.hygiene or 0) / 100, 0.66, 0.52, 0.86)
+  drawBar(26, 164, 200, "生命", (needs.health or 0) / 100, 0.85, 0.30, 0.30)
+  drawBar(26, 184, 200, "饥饿", (needs.hunger or 0) / 100, 0.88, 0.64, 0.28)
+  drawBar(26, 204, 200, "口渴", (needs.thirst or 0) / 100, 0.30, 0.58, 0.88)
+  drawBar(26, 224, 200, "体力", (needs.energy or 0) / 100, 0.42, 0.80, 0.42)
+  drawBar(26, 244, 200, "卫生", (needs.hygiene or 0) / 100, 0.66, 0.52, 0.86)
 
   DrawText(string.format("家具  灶台%s 冰箱%s 床%s 咖啡%s 种植%s 工作台%s",
            furnMark("stove"), furnMark("fridge"), furnMark("bed"),
            furnMark("coffee"), furnMark("plant"), furnMark("workbench")),
-           26, 260, 11, 0.80, 0.82, 0.76, 1)
+           26, 272, 11, 0.80, 0.82, 0.76, 1)
 
-  DrawText("玩家", 26, 284, 12, 0.95, 0.88, 0.66, 1)
+  DrawText("玩家", 26, 296, 12, 0.95, 0.88, 0.66, 1)
   for i = 1, MAX_SLOTS do
     local s = coop.slots[i]
     local text
@@ -3043,10 +3071,10 @@ function coopDrawHud()
     else
       text = string.format("P%d 等待加入", i)
     end
-    DrawText(text, 26, 302 + (i - 1) * 17, 12, 0.80, 0.82, 0.76, 1)
+    DrawText(text, 26, 314 + (i - 1) * 17, 12, 0.80, 0.82, 0.76, 1)
   end
   DrawText("WASD 移动  L 车灯  F 驾驶  E 搜箱  1 吃  2 喝  3 睡  G 灶台  R 维修  Q 加油  K 工台  C 做饭  N 修塔  T 添柴  V 采果  Z 鱼笼  J 链条",
-           26, 378, 10, 0.66, 0.68, 0.64, 1)
+           26, 392, 10, 0.66, 0.68, 0.64, 1)
 
   DrawText(string.format("网络 %s", (GetVar("netConnected") == 1) and "已连接" or "未连接"),
            vw - 170, 22, 12, 0.72, 0.78, 0.76, 1)
