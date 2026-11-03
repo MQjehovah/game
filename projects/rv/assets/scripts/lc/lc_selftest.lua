@@ -3301,6 +3301,21 @@ function runSelfTest()
                      materials.metal or 0, inv.fuelcan or 0))
   end
 
+  -- 以物易物：金属 x3 → 修理包 x1
+  do
+    local km, kr = materials.metal or 0, inv.repairkit or 0
+    materials.metal = 3
+    inv.repairkit = nil
+    local traded = doTrade(5)
+    local kit = (inv.repairkit or 0) == 1
+    local spent = (materials.metal or 0) == 0
+    materials.metal = km
+    inv.repairkit = kr > 0 and kr or nil
+    ok(r, "repair kit trade", traded and kit and spent,
+       string.format("traded=%s kit=%d metal=%d", tostring(traded),
+                     inv.repairkit or 0, materials.metal or 0))
+  end
+
   -- 长期里程碑：探索 3 个地点一次性发奖，且不会重复发
   do
     local keep = milestones

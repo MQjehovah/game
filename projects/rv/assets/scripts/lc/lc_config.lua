@@ -214,6 +214,8 @@ TRADES = {
     cost = { metal = 4 }, give = { fuel = 12 } },
   { id = "metal_chains", name = "金属 x4 → 防滑链 x1",
     cost = { metal = 4 }, give = { item = "chains", n = 1 } },
+  { id = "metal_kit",   name = "金属 x3 → 修理包 x1",
+    cost = { metal = 3 }, give = { item = "repairkit", n = 1 } },
 }
 
 -- 每日目标（随天数刷新；完成给少量燃料/材料）
