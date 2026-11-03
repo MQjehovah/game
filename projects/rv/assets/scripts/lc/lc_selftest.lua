@@ -4379,6 +4379,17 @@ function runSelfTest()
                      tostring(WEATHER_NAMES.snow), grip, wind))
   end
 
+  -- 雪天防滑链提示：没链条才提示，已有链条/非雪天不提示
+  do
+    local bare = snowChainHint("snow", false)
+    local chained = snowChainHint("snow", true)
+    local rain = snowChainHint("rain", false)
+    ok(r, "snow chain hint",
+       bare ~= nil and chained == nil and rain == nil,
+       string.format("bare=%s chained=%s rain=%s", tostring(bare),
+                     tostring(chained), tostring(rain)))
+  end
+
   -- 防滑链：雨雪天提高抓地，且不会被 useItem 消耗
   do
     local sw = weather

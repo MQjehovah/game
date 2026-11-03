@@ -59,9 +59,21 @@ function setWeather(id)
   end
   if recomputeStats then recomputeStats() end  -- 太阳能随天气变化
   if toast and WEATHER_NAMES[weather] then
-    toast.text = "天气：" .. WEATHER_NAMES[weather]
-    toast.t = 3.0
+    local line = "天气：" .. WEATHER_NAMES[weather]
+    local hint = snowChainHint(weather,
+      hasItem ~= nil and hasItem("chains", 1))
+    if hint ~= nil then line = line .. " · " .. hint end
+    toast.text = line
+    toast.t = hint ~= nil and 4.2 or 3.0
   end
+end
+
+-- 雪天未带防滑链时的提示
+function snowChainHint(weatherValue, chained)
+  if weatherValue == "snow" and not chained then
+    return "可到营地货运板换防滑链（4-9）"
+  end
+  return nil
 end
 
 function rollWeather()
