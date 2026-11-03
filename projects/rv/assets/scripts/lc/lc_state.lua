@@ -65,6 +65,7 @@ rvTaillights = {}             -- 刹车/倒车尾灯
 campProps = {}                -- 营地陈设（遮阳棚/木桌/物资箱/营地灯）
 visitedPois = {}              -- 已首次抵达的地点（探索奖励去重）
 visitedCount = 0
+interiorLightsOn = true       -- 车内灯开关（L）
 
 -- 搜刮 / 低强度威胁
 stopBag, stopThreat, evacT = {}, 0, -1

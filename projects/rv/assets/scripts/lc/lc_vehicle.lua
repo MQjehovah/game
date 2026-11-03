@@ -86,11 +86,32 @@ function spawnInterior()
     if ent ~= nil then
       SetScale(ent, d.sx, d.sy, d.sz)
       rvInterior[#rvInterior + 1] = {
-        ent = ent, lx = d.lx, ly = d.ly, lz = d.lz,
+        ent = ent, pre = d.pre, lx = d.lx, ly = d.ly, lz = d.lz,
         sx = d.sx, sy = d.sy, sz = d.sz, hideInCab = d.hideInCab,
       }
     end
   end
+end
+
+-- 车内灯开关（L）：rv_lamp 带点光，SetVisible 只能隐藏网格、灯还亮着，
+-- 所以真正熄灭要 Despawn，再开时按原局部坐标重新生成。
+function setInteriorLights(on)
+  if rvInterior == nil then return end
+  for _, p in ipairs(rvInterior) do
+    if p.pre == "rv_lamp" then
+      if on and p.ent == nil then
+        local e = SpawnPrefab("rv_lamp", { x = rv.x, y = -60, z = rv.z })
+        if e ~= nil then
+          SetScale(e, p.sx or 0.16, p.sy or 0.05, p.sz or 0.16)
+          p.ent = e
+        end
+      elseif not on and p.ent ~= nil then
+        Despawn(p.ent)
+        p.ent = nil
+      end
+    end
+  end
+  interiorLightsOn = on and true or false
 end
 
 -- 公路贴花：跟随房车，按里程滚动虚线（Nomad Drive 的公路感）
@@ -150,8 +171,10 @@ function applyRvTransform()
   if rvInterior then
     local hideCab = (phase == "driving" and driveView == "cab")
     for _, p in ipairs(rvInterior) do
-      setTilted(p.ent, p.lx, p.ly, p.lz, 0)
-      if p.hideInCab then SetVisible(p.ent, not hideCab) end
+      if p.ent ~= nil then
+        setTilted(p.ent, p.lx, p.ly, p.lz, 0)
+        if p.hideInCab then SetVisible(p.ent, not hideCab) end
+      end
     end
   end
   -- Wheels: use the per-wheel rigid body pose when available (real suspension

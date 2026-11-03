@@ -1038,6 +1038,22 @@ function runSelfTest()
                      rIdle, rLow, rHigh, rLoad))
   end
 
+  -- 车内灯开关：Despawn 真正熄灯，再开时重新生成
+  do
+    setInteriorLights(false)
+    local off = 0
+    for _, p in ipairs(rvInterior or {}) do
+      if p.pre == "rv_lamp" and p.ent == nil then off = off + 1 end
+    end
+    setInteriorLights(true)
+    local on = 0
+    for _, p in ipairs(rvInterior or {}) do
+      if p.pre == "rv_lamp" and p.ent ~= nil then on = on + 1 end
+    end
+    ok(r, "rv interior light toggle", off >= 1 and on >= 1 and interiorLightsOn == true,
+       string.format("off=%d on=%d state=%s", off, on, tostring(interiorLightsOn)))
+  end
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")

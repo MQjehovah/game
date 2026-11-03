@@ -580,7 +580,7 @@ function on_start()
   if startMode == "look_back" then
     px, pz = -1.8, -7.5
   end
-  if startMode == "inside" or startMode == "inside_night"
+  if startMode == "inside" or startMode == "inside_night" or startMode == "inside_dark"
      or startMode == "place" or startMode == "place_night"
      or startMode == "stove" or startMode == "bench" then
     px, pz, pyaw = -0.5, -2.6, 0
@@ -772,7 +772,7 @@ function on_start()
     end
   end
   if startMode == "side_night" then clock = 22 * 60 end
-  if startMode == "night" or startMode == "inside_night"
+  if startMode == "night" or startMode == "inside_night" or startMode == "inside_dark"
      or startMode == "place_night" or startMode == "night_drive" then
     clock = 22 * 60
   end
@@ -838,6 +838,8 @@ function on_start()
     setWeather("rain")
     setPhase("driving")
     driveView = "chase"
+  elseif startMode == "inside_dark" then
+    setInteriorLights(false)
   elseif startMode == "drive" or startMode == "night_drive" or autoPilot or rv.steerDemo then
     setPhase("driving")
   elseif startMode == "utilroof" then
@@ -1052,6 +1054,11 @@ function on_update(ent, dt)
   ensureHelpers()
   if ActionPressed("m") then mapOpen = not mapOpen end
   if ActionPressed("i") then invOpen = not invOpen end
+  if ActionPressed("l") and setInteriorLights ~= nil then
+    setInteriorLights(not interiorLightsOn)
+    toast.text = interiorLightsOn and "车内灯已打开" or "车内灯已关闭"
+    toast.t = 2.0
+  end
   if hitMarkT > 0 then hitMarkT = hitMarkT - dt end
   if recoilT > 0 then recoilT = recoilT - dt end
   if fireT > 0 then fireT = fireT - dt end
