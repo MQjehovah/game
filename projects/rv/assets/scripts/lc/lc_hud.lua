@@ -1279,14 +1279,13 @@ function drawJobPanel()
            bonusAvail and 0.45 or 0.62, 1)
   if jobReputation ~= nil then
     local rep = jobReputation()
-    drawTextRight(string.format("信誉 x%.2f（已完成 %d 单）", rep,
-                                jobDelivered or 0),
-                  px + pw - 20, py + 60, 12, 0.80, 0.78, 0.62, 1)
-  end
-  if (jobStreak or 0) >= 3 then
-    drawTextRight(string.format("连送 %d 单  ×%.2f", jobStreak,
-                                jobStreakBonus and jobStreakBonus() or 1),
-                  px + pw - 20, py + 76, 11, 0.86, 0.72, 0.44, 1)
+    local repText = string.format("信誉 x%.2f（已完成 %d 单）", rep,
+                                  jobDelivered or 0)
+    if (jobStreak or 0) >= 3 then
+      repText = string.format("信誉 x%.2f · 连送 %d 单 x%.2f", rep,
+                              jobStreak, jobStreakBonus and jobStreakBonus() or 1)
+    end
+    drawTextRight(repText, px + pw - 20, py + 60, 12, 0.80, 0.78, 0.62, 1)
   end
 
   if job ~= nil then
