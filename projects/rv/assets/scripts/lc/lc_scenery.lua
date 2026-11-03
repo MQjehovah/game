@@ -274,28 +274,68 @@ function spawnPoiWindows(nd)
   print(string.format("[glass] intact panes at %s = %d (%s)", nd.id, #panes, kind))
 end
 
--- Nine-piece fracture layout per pane, in normalised pane-local coordinates:
--- u, v (-0.5..0.5), width/height fraction, mesh variant, yaw. Each break
--- mirrors/rotates/jitters this layout and swaps mesh variants from a seed so
--- two breaks no longer look identical.
-local GLASS_FRAGS = {
-  { -0.29,  0.29, 0.36, 0.34, 1,  0.35 },
-  {  0.00,  0.30, 0.36, 0.34, 2, -0.55 },
-  {  0.30,  0.28, 0.34, 0.34, 3,  0.90 },
-  { -0.30,  0.00, 0.34, 0.36, 4, -0.85 },
-  {  0.00,  0.00, 0.36, 0.36, 5,  0.20 },
-  {  0.30,  0.00, 0.34, 0.36, 2,  1.15 },
-  { -0.29, -0.30, 0.36, 0.32, 3, -0.25 },
-  {  0.00, -0.31, 0.36, 0.32, 4,  0.65 },
-  {  0.30, -0.29, 0.34, 0.32, 1, -1.05 },
-}
+-- Runtime Voronoi fracture.  Each break scatters 7..12 sites inside the pane,
+-- then clips the pane rectangle against the perpendicular bisector of every
+-- site pair to obtain that site's convex cell.  A shard mesh is picked from
+-- the pre-generated 12-variant pool and scaled to the cell's bounding box, so
+-- the crack layout (count, positions, sizes) is genuinely generated per break
+-- instead of mirroring one fixed 3x3 table. The server seed drives the LCG, so
+-- every peer rebuilds identical cells.
+local GLASS_VARIANTS = 12
 
--- Deterministic LCG: the server picks a seed and broadcasts it, so every
--- client reproduces the exact same crack layout from the same integer.
+-- Deterministic LCG (Numerical Recipes constants, modulus 2^31) so the
+-- server's seed maps to the same cells on every peer. Operands stay below
+-- 2^53, so the double arithmetic is exact.
 local function glassRand(seed, k)
-  local x = (seed + k * 1103515245 + 12345) % 2147483648
-  x = (x * 1103515245 + 12345) % 2147483648
+  local x = (seed + k * 1013904223 + 1664525) % 2147483648
+  x = (x * 1664525 + 1013904223) % 2147483648
   return x / 2147483648
+end
+
+-- Sutherland-Hodgman clip: keep the half-plane closer to site (ax, ay).
+local function clipGlassCell(poly, ax, ay, bx, by)
+  local out = {}
+  local n = #poly
+  if n == 0 then return out end
+  local mx, my = (ax + bx) * 0.5, (ay + by) * 0.5
+  local dx, dy = bx - ax, by - ay
+  local px, py = poly[n][1], poly[n][2]
+  local pd = (px - mx) * dx + (py - my) * dy
+  for i = 1, n do
+    local cx, cy = poly[i][1], poly[i][2]
+    local cd = (cx - mx) * dx + (cy - my) * dy
+    if cd <= 0 then
+      if pd > 0 then
+        local t = pd / (pd - cd)
+        out[#out + 1] = { px + (cx - px) * t, py + (cy - py) * t }
+      end
+      out[#out + 1] = { cx, cy }
+    elseif pd <= 0 then
+      local t = pd / (pd - cd)
+      out[#out + 1] = { px + (cx - px) * t, py + (cy - py) * t }
+    end
+    px, py, pd = cx, cy, cd
+  end
+  return out
+end
+
+-- 7..12 well-spaced sites in normalised pane space.
+local function voronoiSites(seed, index)
+  local count = 7 + math.floor(glassRand(seed, index * 17 + 1) * 6)
+  local sites = {}
+  local tries = 0
+  while #sites < count and tries < 400 do
+    tries = tries + 1
+    local u = -0.47 + glassRand(seed, index * 131 + tries * 7) * 0.94
+    local v = -0.47 + glassRand(seed, index * 211 + tries * 13) * 0.94
+    local ok = true
+    for j = 1, #sites do
+      local du, dv = sites[j][1] - u, sites[j][2] - v
+      if du * du + dv * dv < 0.026 then ok = false break end
+    end
+    if ok then sites[#sites + 1] = { u, v } end
+  end
+  return sites
 end
 
 -- Fresh seed per break. The engine RNG is fixed-seed per process, so mix in
@@ -309,7 +349,7 @@ local function nextGlassSeed()
   return ((math.random(1, 1000000) + t * 7919) % 1000000) + 1
 end
 
--- One-shot break: remove the intact pane, then spawn the seeded fracture set.
+-- One-shot break: remove the intact pane, then build the Voronoi shard set.
 function breakPoiWindows(nd, reason, seed)
   if nd == nil then return false end
   local g = poiGlass[nd.id]
@@ -326,41 +366,57 @@ function breakPoiWindows(nd, reason, seed)
     local nx, nz = math.sin(pane.rot), math.cos(pane.rot)
     local tx, tz = math.cos(pane.rot), -math.sin(pane.rot)
     local ps = seed + pi * 977
-    local mirror = (glassRand(ps, 1) < 0.5) and -1.0 or 1.0
-    local rot = math.floor(glassRand(ps, 2) * 4.0) * (math.pi * 0.5)
-    local cr, sr = math.cos(rot), math.sin(rot)
-    for fi, f in ipairs(GLASS_FRAGS) do
-      -- Mirror + rotate the crack cell, then jitter it slightly.
-      local u = (f[1] * cr - f[2] * sr) * mirror
-      local v = f[1] * sr + f[2] * cr
-      u = u + (glassRand(ps, 10 + fi) - 0.5) * 0.07
-      v = v + (glassRand(ps, 40 + fi) - 0.5) * 0.07
-      local variant = 1 + math.floor(glassRand(ps, 70 + fi) * 5.0)
-      local sizeK = 0.80 + glassRand(ps, 100 + fi) * 0.40
-      local yaw = pane.rot + f[6] + (glassRand(ps, 130 + fi) - 0.5) * 1.6
-      local ox, oy = u * pane.sx, v * pane.sy
-      local sx = pane.x + tx * ox + nx * 0.05
-      local sy = pane.y + oy
-      local sz = pane.z + tz * ox + nz * 0.05
-      local e = SpawnPrefab("rv_glass_frag" .. variant, { x = sx, y = sy, z = sz })
-      if e ~= nil then
-        SetScale(e, f[3] * sizeK * pane.sx, 1.0, f[4] * sizeK * pane.sy)
-        SetRotationY(e, yaw)
-        local outward = 0.8 + glassRand(ps, 160 + fi) * 1.3
-        poiShards[#poiShards + 1] = {
-          ent = e, x = sx, y = sy, z = sz,
-          vx = nx * outward + tx * (u * 3.0),
-          vy = 1.2 + glassRand(ps, 190 + fi) * 1.8 + math.max(0, oy) * 2.0,
-          vz = nz * outward + tz * (u * 3.0),
-          yaw = yaw,
-          spin = (glassRand(ps, 220 + fi) - 0.5) * 2.4,
-          settled = false,
-        }
-        made = made + 1
+    local sites = voronoiSites(ps, pi)
+    local rect = { { -0.5, -0.5 }, { 0.5, -0.5 }, { 0.5, 0.5 }, { -0.5, 0.5 } }
+    for si, site in ipairs(sites) do
+      local poly = rect
+      for sj, other in ipairs(sites) do
+        if sj ~= si then
+          poly = clipGlassCell(poly, site[1], site[2], other[1], other[2])
+          if #poly < 3 then break end
+        end
+      end
+      if #poly >= 3 then
+        local minU, maxU, minV, maxV = 1e9, -1e9, 1e9, -1e9
+        local cu, cv = 0.0, 0.0
+        for _, p in ipairs(poly) do
+          minU = math.min(minU, p[1]); maxU = math.max(maxU, p[1])
+          minV = math.min(minV, p[2]); maxV = math.max(maxV, p[2])
+          cu = cu + p[1]; cv = cv + p[2]
+        end
+        local w, h = maxU - minU, maxV - minV
+        if w > 0.05 and h > 0.05 then
+          cu, cv = cu / #poly, cv / #poly
+          local variant = 1 + math.floor(glassRand(ps, 300 + si) * GLASS_VARIANTS)
+          if variant > GLASS_VARIANTS then variant = GLASS_VARIANTS end
+          local ox, oy = cu * pane.sx, cv * pane.sy
+          local sx = pane.x + tx * ox + nx * 0.05
+          local sy = pane.y + oy
+          local sz = pane.z + tz * ox + nz * 0.05
+          local e = SpawnPrefab("rv_glass_frag" .. variant, { x = sx, y = sy, z = sz })
+          if e ~= nil then
+            SetScale(e, w * pane.sx, 1.0, h * pane.sy)
+            -- Rotate the shard within the pane plane (organic pieces read fine
+            -- at any angle; the cell itself is already positioned exactly).
+            local yaw = pane.rot + (glassRand(ps, 400 + si) - 0.5) * math.pi
+            SetRotationY(e, yaw)
+            local outward = 0.8 + glassRand(ps, 500 + si) * 1.4
+            poiShards[#poiShards + 1] = {
+              ent = e, x = sx, y = sy, z = sz,
+              vx = nx * outward + tx * (cu * 3.2),
+              vy = 1.2 + glassRand(ps, 600 + si) * 1.8 + math.max(0, cv) * pane.sy * 2.0,
+              vz = nz * outward + tz * (cu * 3.2),
+              yaw = yaw,
+              spin = (glassRand(ps, 700 + si) - 0.5) * 2.6,
+              settled = false,
+            }
+            made = made + 1
+          end
+        end
       end
     end
   end
-  print(string.format("[glass] broke windows at %s (%s, %d fracture shards, seed=%d)",
+  print(string.format("[glass] broke windows at %s (%s, %d voronoi shards, seed=%d)",
         nd.id, reason or "enter", made, seed))
   return true
 end

@@ -415,6 +415,10 @@ local function pushState()
   coop.seq = coop.seq + 1
   local players = {}
   local anyInside = false
+  local function q3(v)
+    v = tonumber(v) or 0
+    return math.floor(v * 1000 + 0.5) / 1000
+  end
   for i = 1, MAX_SLOTS do
     local s = coop.slots[i]
     if s.joined and s.inside then anyInside = true end
@@ -422,12 +426,19 @@ local function pushState()
   for i = 1, MAX_SLOTS do
     local s = coop.slots[i]
     players[i] = {
-      c = s.client, x = s.x, z = s.z, y = s.yaw,
+      c = s.client, x = q3(s.x), z = q3(s.z), y = q3(s.yaw),
       j = s.joined and 1 or 0,
       ins = s.inside and 1 or 0,
       st = (s.seat == "driver" and 2) or (s.seat == "passenger" and 1) or 0,
       k = s.key,
     }
+  end
+  -- Quantise the slow-moving needs/clock so the game_state JSON stays well
+  -- below the engine's 1 KB RPC string cap (glass list would otherwise push it
+  -- over and every state after a break would fail to parse on clients).
+  local needsOut = {}
+  for k, v in pairs(needs) do
+    needsOut[k] = math.floor((tonumber(v) or 0) * 10 + 0.5) / 10
   end
   local invList = {}
   for id, n in pairs(inv) do
@@ -442,9 +453,14 @@ local function pushState()
     local gb = poiGlassBrokenList()
     if gb ~= nil and gb ~= "" then glass = gb end
   end
+  local rvOut = { x = q3(coop.rv.x), z = q3(coop.rv.z),
+                  yaw = q3(coop.rv.yaw), speed = q3(coop.rv.speed) }
   Rpc("game_state", {
-    seq = coop.seq, rv = coop.rv, players = players, needs = needs,
-    fuel = fuel, water = water, day = day, clock = clock,
+    seq = coop.seq, rv = rvOut, players = players, needs = needsOut,
+    fuel = math.floor((fuel or 0) * 10 + 0.5) / 10,
+    water = math.floor((water or 0) * 10 + 0.5) / 10,
+    day = day,
+    clock = math.floor((clock or 0) * 10 + 0.5) / 10,
     weather = coop.weather, lights = coop.lights and 1 or 0,
     materials = materials, inv = invList, furn = furnOn,
     crates = #crates, furnCount = #sortedInstances(), worldSeq = coop.worldSeq,

@@ -1,0 +1,27 @@
+{
+  "components": {
+    "transform": {
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "rot": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
+    "mesh": {
+      "meshKey": "gltf:assets/models/rv/rv_glass_frag10.gltf",
+      "castShadow": false,
+      "receiveShadow": false
+    }
+  }
+}

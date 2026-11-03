@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Generate pre-fractured glass shard meshes: rv_glass_frag1..5.gltf.
+"""Generate pre-fractured glass shard meshes: rv_glass_frag1..12.gltf.
 
 Each shard is a thin irregular prism lying roughly in the XZ plane (with a
 small baked X tilt so settled debris reads as glass chips on the ground rather
-than standing panes). The runtime spawns a fixed nine-piece layout per window
-pane, so a break always separates along the same crack pattern.
+than standing panes). The shapes are convex hulls of random point clouds, so
+they read like Voronoi cells; at runtime the script computes a fresh Voronoi
+layout per break from the server seed and picks a mesh from this pool for each
+cell, so the crack pattern changes every time.
 
 Both primitives use BLEND materials: the hidden material-0 primitive keeps the
 importer's default slot, and having it transparent puts the whole entity in the
@@ -12,6 +14,7 @@ transparent render pass.
 """
 import json
 import math
+import random
 import struct
 from pathlib import Path
 
@@ -19,16 +22,50 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "projects/rv/assets/models/rv"
 PREFABS = ROOT / "projects/rv/assets/prefabs"
 
-# Irregular convex polygons in XZ, roughly unit sized.
-SHAPES = [
-    [(-0.50, -0.30), (0.48, -0.45), (0.10, 0.48)],
-    [(-0.48, -0.40), (0.25, -0.48), (0.50, 0.15), (-0.10, 0.46)],
-    [(-0.45, -0.20), (0.05, -0.50), (0.50, -0.10), (0.30, 0.42), (-0.28, 0.38)],
-    [(-0.50, 0.30), (-0.20, -0.42), (0.50, -0.20), (0.35, 0.45)],
-    [(-0.40, 0.35), (0.42, 0.48), (0.05, -0.45)],
-]
 
-TILTS = [0.0, 0.20, -0.30, 0.45, -0.55]
+def convex_hull(points):
+    """Monotone-chain convex hull; returns counter-clockwise points."""
+    pts = sorted(set(points))
+    if len(pts) < 3:
+        return pts
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower = []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    upper = []
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def _shard_shape(rng, target_n):
+    """Irregular convex polygon roughly unit-sized, from a random point cloud."""
+    while True:
+        cloud = [(rng.uniform(-0.5, 0.5), rng.uniform(-0.5, 0.5))
+                 for _ in range(target_n * 3)]
+        hull = convex_hull(cloud)
+        if 3 <= len(hull) <= target_n + 3:
+            # Normalise so the largest extent fits in [-0.5, 0.5].
+            xs = [p[0] for p in hull]
+            zs = [p[1] for p in hull]
+            span = max(max(xs) - min(xs), max(zs) - min(zs), 1e-3)
+            k = 0.96 / span
+            cx = (max(xs) + min(xs)) * 0.5
+            cz = (max(zs) + min(zs)) * 0.5
+            return [((p[0] - cx) * k, (p[1] - cz) * k) for p in hull]
+
+
+_rng = random.Random(20261103)
+SHAPES = [_shard_shape(_rng, _rng.choice((3, 4, 4, 5, 5, 6, 6, 7)))
+          for _ in range(12)]
+TILTS = [_rng.uniform(-0.6, 0.6) for _ in range(len(SHAPES))]
 THICK = 0.035
 
 

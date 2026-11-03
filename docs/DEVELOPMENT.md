@@ -739,7 +739,10 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   随状态下发，客户端通过 GameVar `netControlKey` 认领自己的 `CTransformBind` 实体，
   `ReconcileControlled` 只纠正该实体（房车合作项目由此支持 4 个客户端各自预测）。
 - **RPC 字符串上限**：`kMaxStringBytes` 1024，容得下约 1KB 的 JSON 状态包；
-  可靠通道的 `maxFrameBytes` 仍把单个 UDP 帧限制在 ~1.2KB。
+  可靠通道的 `maxFrameBytes` 仍把单个 UDP 帧限制在 ~1.2KB。`projects/rv` 的
+  `game_state` 因此把玩家坐标/朝向量化到 3 位小数、需求/油水/时钟量化到 1 位小数，
+  给 `glass=<id>:<seed>` 留出余量——否则破碎后的状态包会超过 1KB 被截断，
+  客户端 `Json.Parse` 失败后不再应用任何状态（表现为日志停在破碎前一帧）。
 - **客户端同步**（`client::ClientSync`）：快照环形缓冲 + 相邻插值（yaw 最短弧，渲染时钟
   落后 6 tick ≈100ms）+ 本地预测（同场景同 seed 跑本地 `GameRuntime`）+
   **快照对齐回滚**（分歧超阈值即纠正）；1Hz Ping 心跳。
@@ -803,15 +806,17 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   两端 `smoke assertions passed`。客户端 smoke 的“controlled moved”判定改为
   XZ 水平距离，脚本化演示向任意方向传送也能通过。
 - **可破碎橱窗**（`projects/rv`）：`tools/gen_rv_windows.py` 生成 `rv_window_glass`
-  （半透明 BLEND 面板），`tools/gen_rv_glass_frags.py` 生成 `rv_glass_frag1..5`
-  （5 种不规则薄棱柱）；`lc_scenery.spawnPoiWindows()` 按 POI 类型为商店/加油站/
-  仓库/商场/湖边木屋/诊所生成两扇前窗玻璃，`breakPoiWindowsAt()` 在玩家进入或攻击时
-  把每扇面板按 3×3 裂纹分离为 9 块碎片（共 18 块），并用 seed 镜像/旋转/抖动布局、
-  替换网格变体与尺寸，因此每次破碎花纹不同；`updatePoiWindows()` 施加向外 + 重力速度、
-  落地弹跳后让碎片永久留在地面；服务器选 seed 并把 `glass=<id>:<seed>` 写入
-  `game_state`（变化时立即 `pushState()`），客户端用 `applyPoiGlassState()` 按同一 seed
-  重建相同布局；日志 `[glass] broke windows at ruin/... (enter, 18 fracture shards, seed=N)`
-  与 `... (server, 18 fracture shards, seed=N)`，`coop_glassview.txt` 提供门窗特写镜头。
+  （半透明 BLEND 面板），`tools/gen_rv_glass_frags.py` 生成 `rv_glass_frag1..12`
+  （12 种不规则薄棱柱，形状取自随机点云凸包）；`lc_scenery.spawnPoiWindows()` 按 POI
+  类型为商店/加油站/仓库/商场/湖边木屋/诊所生成两扇前窗玻璃，`breakPoiWindowsAt()` 在
+  玩家进入或攻击时做**运行时 Voronoi 分裂**：`voronoiSites()` 按 seed 撒 7–12 个站点，
+  `clipGlassCell()` 用站点两两的垂直平分线（Sutherland-Hodgman 裁剪）把面板矩形切成
+  凸多边形单元，再从 12 种网格池中选网格、按单元包围盒缩放；`updatePoiWindows()` 施加
+  向外 + 重力速度、落地弹跳后让碎片永久留在地面；服务器选 seed 并把
+  `glass=<id>:<seed>` 写入 `game_state`（变化时立即 `pushState()`），客户端用
+  `applyPoiGlassState()` 按同一 seed 重建相同布局；日志
+  `[glass] broke windows at ruin/... (enter, N voronoi shards, seed=N)` 与
+  `... (server, N voronoi shards, seed=N)`，`coop_glassview.txt` 提供门窗特写镜头。
 - **商品包装图集**（`projects/rv`）：`tools/gen_rv_product_atlas.py` 生成
   `assets/models/rv/rv_products.png`（4×4 包装格），`tools/rv_atlas.py` 提供
   `tile_uvs()` / `product_material()` / `atlas_extras()`；商店/加油站/商场/仓库/
