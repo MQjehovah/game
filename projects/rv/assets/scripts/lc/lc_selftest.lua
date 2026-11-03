@@ -194,6 +194,25 @@ function runSelfTest()
                      parts.engine or 0, inv.repairkit or 0))
   end
 
+  -- 维修最差部件（联机工作台命令复用）
+  do
+    local sb, se, st, sbat = dur, parts.engine, parts.tires, parts.battery
+    local sm, sel = materials.metal or 0, materials.electronics or 0
+    local k0 = inv.repairkit
+    inv.repairkit = nil
+    dur, parts.engine, parts.tires, parts.battery = 100, 40, 100, 100
+    materials.metal, materials.electronics = 6, 4
+    local fixed = repairWorstPart()
+    local engineUp = (parts.engine or 0) == 65
+    local spent = (materials.metal or 0) < 6
+    dur, parts.engine, parts.tires, parts.battery = sb, se, st, sbat
+    materials.metal, materials.electronics = sm, sel
+    inv.repairkit = k0
+    ok(r, "repair worst part", fixed and engineUp and spent,
+       string.format("fixed=%s engine=%d metal=%d", tostring(fixed),
+                     parts.engine or 0, materials.metal or 0))
+  end
+
   -- 游荡威胁（离开营地安全区才能刷）
   do
     local h0 = #horde

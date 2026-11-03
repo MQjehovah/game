@@ -1156,7 +1156,6 @@ function repairPart(id)
       payCost(cost)
       upgrades[id] = lv + 1
       if id == "tires" and resetTirePressure ~= nil then resetTirePressure() end
-    if id == "tires" and clearBlowout ~= nil then clearBlowout() end
       if id == "tires" and clearBlowout ~= nil then clearBlowout() end
       if addDailyProgress ~= nil then addDailyProgress("repair", 1) end
       if PlaySfx then PlaySfx("repair") end
@@ -1198,6 +1197,21 @@ function repairPart(id)
   if addDailyProgress ~= nil then addDailyProgress("repair", 1) end
   toast.t = 2.4
   return true
+end
+
+-- 维修当前最差的部件（联机工作台命令复用；满状态时不触发升级）
+function repairWorstPart()
+  local target, val = nil, 101
+  for _, p in ipairs(REPAIR_PARTS or {}) do
+    local v = partValue(p.id)
+    if v < val then target, val = p.id, v end
+  end
+  if target == nil or val >= 99.5 then
+    toast.text = "车况良好，不需要维修"
+    toast.t = 2.0
+    return false
+  end
+  return repairPart(target)
 end
 
 function cookRecipe(id)

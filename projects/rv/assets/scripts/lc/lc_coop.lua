@@ -750,6 +750,15 @@ local function serverHandleCommand(clientId, a)
     print(string.format("[coop-fuel] ok=%s fuel=%.1f->%.1f cans=%d",
                         tostring(okFuel), before, fuel or 0, inv.fuelcan or 0))
     pushState()
+  elseif t == "workbench_repair" then
+    local before = (parts and parts.engine) or 100
+    local okFix = false
+    if repairWorstPart ~= nil then okFix = repairWorstPart() end
+    print(string.format("[coop-shop] ok=%s engine=%.0f->%.0f metal=%d",
+                        tostring(okFix), before,
+                        (parts and parts.engine) or 0,
+                        (materials and materials.metal) or 0))
+    pushState()
   elseif t == "eat" then
     local id = chooseFood()
     if id ~= nil and useItem(id) then
@@ -1021,6 +1030,21 @@ local function serverUpdate(dt)
     if useFuelCan ~= nil then okFuel = useFuelCan() end
     print(string.format("[coop-fuel] demo ok=%s fuel=%.1f cans=%d",
                         tostring(okFuel), fuel or 0, inv.fuelcan or 0))
+    pushState()
+  end
+
+  -- Test-only co-op workbench repair: damage the engine, give materials,
+  -- repair the worst part server-side.
+  if coop.workbenchDemo and not coop.workbenchDemoDone and coop.autoT >= 3.0 then
+    coop.workbenchDemoDone = true
+    if parts ~= nil then parts.engine = 40 end
+    materials.metal = (materials.metal or 0) + 6
+    materials.electronics = (materials.electronics or 0) + 4
+    local okFix = false
+    if repairWorstPart ~= nil then okFix = repairWorstPart() end
+    print(string.format("[coop-shop] demo ok=%s engine=%.0f metal=%d",
+                        tostring(okFix), (parts and parts.engine) or 0,
+                        (materials and materials.metal) or 0))
     pushState()
   end
 
@@ -1774,6 +1798,7 @@ local function clientUpdate(dt)
     if ActionPressed("h") then Rpc("game_cmd", { type = "highbeam" }) end
     if ActionPressed("r") then Rpc("game_cmd", { type = "repair" }) end
     if ActionPressed("q") then Rpc("game_cmd", { type = "refuel_can" }) end
+    if ActionPressed("k") then Rpc("game_cmd", { type = "workbench_repair" }) end
     if coop.highDemo and not coop.highDemoDone then
       coop.highDemoT = (coop.highDemoT or 0) + dt
       if coop.highDemoT >= 3.0 and GetVar("netConnected") == 1 then
@@ -2226,6 +2251,7 @@ function coopInitWorld(role)
     coop.refuelDemo = readFlag("coop_refuel.txt")
     coop.repairDemo = readFlag("coop_repair.txt")
     coop.fuelDemo = readFlag("coop_fuel.txt")
+    coop.workbenchDemo = readFlag("coop_workbench.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2337,6 +2363,7 @@ function coopInitWorld(role)
     coop.refuelDemo = readFlag("coop_refuel.txt")
     coop.repairDemo = readFlag("coop_repair.txt")
     coop.fuelDemo = readFlag("coop_fuel.txt")
+    coop.workbenchDemo = readFlag("coop_workbench.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
