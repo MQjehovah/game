@@ -607,7 +607,7 @@ function drawDriveHud()
   local ratio = stats.weight / weightMax()
   local over = ratio > 1.0
 
-  local pw, ph = 210, 186
+  local pw, ph = 210, 202
   local px, py = 10, vh - ph - 10
   DrawRect(px, py, pw, ph, 0.08, 0.09, 0.10, 0.72)
   DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.9)
@@ -662,14 +662,22 @@ function drawDriveHud()
     DrawText(string.format("胎温 %.0f°C · 胎压 %.1fbar", hottest, pAvg),
              px + 14, py + 158, 11, tr, tg, tb, 1)
   end
+  -- 水温：过热变红，提示松油门散热
+  local et = engineTemp or 20
+  local hot = et >= (VEH.tempOverheat or 110)
+  local tr2, tg2, tb2 = 0.74, 0.82, 0.86
+  if et > (VEH.tempOverheat or 110) - 18 then tr2, tg2, tb2 = 0.95, 0.78, 0.35 end
+  if hot then tr2, tg2, tb2 = 0.98, 0.40, 0.30 end
+  DrawText(string.format("水温 %.0f°C%s", et, hot and "  过热!" or ""),
+           px + 14, py + 172, 11, tr2, tg2, tb2, 1)
   -- 行程电脑：累计里程 + 百公里油耗（车速/载重曲线的直观反馈）
   local l100 = tripL100 and tripL100() or 0
   if (tripDistance or 0) >= 20 then
     DrawText(string.format("行程 %.1fkm · %.1fL/100km", tripDistance / 1000, l100),
-             px + 14, py + 172, 11, 0.74, 0.80, 0.72, 1)
+             px + 14, py + 186, 11, 0.74, 0.80, 0.72, 1)
   else
     DrawText(string.format("行程 %.0fm · 油耗 —", tripDistance or 0),
-             px + 14, py + 172, 11, 0.68, 0.70, 0.64, 1)
+             px + 14, py + 186, 11, 0.68, 0.70, 0.64, 1)
   end
 
   drawNeedsPanel(vw - 230, 10, 220)

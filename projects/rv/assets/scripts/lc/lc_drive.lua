@@ -126,6 +126,32 @@ function rvGearInfo(speed)
   return g, rpm
 end
 
+-- 引擎水温：高速/重载升温，低速/怠速散热；过热时限制最高车速并缓慢磨损引擎
+function engineHeatRate(speed, loadRatio)
+  local v = math.min(1, math.abs(speed or 0) / DRIVE.maxSpeed)
+  local load = 1 + math.max(0, (loadRatio or 1) - 1.0) * 0.8
+  local heat = (VEH.tempHeat or 5.5) * v * v * load
+  local cool = (VEH.tempCool or 1.0) + 0.30 * v
+  return heat - cool
+end
+
+function stepEngineTemp(temp, speed, loadRatio, dt)
+  local t = (temp or 20) + engineHeatRate(speed, loadRatio) * (dt or 0)
+  return math.max(20, math.min(VEH.tempMax or 125, t))
+end
+
+function updateEngineTemp(dt, ratio)
+  engineTemp = stepEngineTemp(engineTemp or 20, rv.speed or 0, ratio, dt)
+  rv.engineHot = engineTemp >= (VEH.tempOverheat or 110)
+  if rv.engineHot and not rv.heatWarned then
+    rv.heatWarned = true
+    toast.text = "引擎过热！松油门滑行一会儿，或停车怠速散热"
+    toast.t = 4.0
+  elseif not rv.engineHot then
+    rv.heatWarned = false
+  end
+end
+
 function updateDrive(dt)
   local throttle = (ActionDown("w") and 1 or 0) - (ActionDown("s") and 1 or 0)
   -- Positive yaw turns toward -X, which is screen-right when facing +Z, so
@@ -261,6 +287,12 @@ function updateDrive(dt)
   end
   maxSp = maxSp * (0.5 + 0.5 * dur / VEH.durMax)
   if isRainy and isRainy() then maxSp = maxSp * 0.82 end  -- 雨天/雾天减速
+  -- 引擎水温：过热时限制最高车速，并缓慢磨损引擎
+  updateEngineTemp(dt, ratio)
+  if rv.engineHot then
+    maxSp = maxSp * 0.65
+    parts.engine = math.max(0, (parts.engine or 100) - 0.6 * dt)
+  end
   if fuel <= VEH.tank * 0.2 and not fuelWarned then
     fuelWarned = true
     toast.text = "油量低！加油站加满 / 路边捡燃油桶"

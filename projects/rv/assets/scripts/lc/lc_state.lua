@@ -104,6 +104,7 @@ ambientT = 0
 fishingT, fishingTotal = 0, 0
 fishingBait = false
 rawFoodAge = 0                 -- 生食材累计腐败进度（游戏分钟）
+engineTemp = 20               -- 引擎水温（°C）
 rawSpoilWarned = false
 ponds = {}
 campfire = nil

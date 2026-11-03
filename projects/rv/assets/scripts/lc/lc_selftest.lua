@@ -1809,6 +1809,24 @@ function runSelfTest()
                      tostring(moved), #driveDeer))
   end
 
+  -- 引擎水温：全油门升温、怠速降温、过热限速
+  do
+    local keepTemp = engineTemp
+    engineTemp = 20
+    for _ = 1, 600 do
+      engineTemp = stepEngineTemp(engineTemp, 9.0, 1.0, 0.1)
+    end
+    local hot = engineTemp >= (VEH.tempOverheat or 110)
+    local peak = engineTemp
+    for _ = 1, 400 do
+      engineTemp = stepEngineTemp(engineTemp, 0.0, 1.0, 0.1)
+    end
+    local cooled = engineTemp < peak - 20
+    engineTemp = keepTemp
+    ok(r, "engine temperature", hot and cooled and peak <= (VEH.tempMax or 125),
+       string.format("peak=%.0f cooled=%.0f", peak, engineTemp))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock
