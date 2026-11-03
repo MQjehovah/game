@@ -4246,6 +4246,23 @@ function runSelfTest()
        string.format("total=%d none=%s one=%s", total, none, one))
   end
 
+  -- 笔记收集进度文案
+  do
+    local keep = notesFound
+    notesFound = {}
+    local none = loreProgressText() or ""
+    local first = LORE_NOTES and LORE_NOTES[1] or nil
+    if first ~= nil then notesFound[first.id] = true end
+    local one = loreProgressText() or ""
+    local total = #(LORE_NOTES or {})
+    notesFound = keep
+    local noneOk = none:find("0/" .. total, 1, true) ~= nil
+    local oneOk = one:find("1/" .. total, 1, true) ~= nil
+    ok(r, "lore progress text",
+       total >= 6 and noneOk and oneOk,
+       string.format("none=%s one=%s", none, one))
+  end
+
   -- 地点特色掉落：数据完整，且物品都在 ITEMS 里
   do
     local function has(id, item)

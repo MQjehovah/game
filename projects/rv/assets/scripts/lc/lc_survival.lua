@@ -1132,6 +1132,17 @@ function checkExplorationMilestone()
   return true
 end
 
+-- 笔记收集进度文案（地图/日志用）
+function loreProgressText()
+  local total = #(LORE_NOTES or {})
+  if total <= 0 then return nil end
+  local found = 0
+  for _, d in ipairs(LORE_NOTES) do
+    if notesFound[d.id] then found = found + 1 end
+  end
+  return string.format("笔记 %d/%d", found, total)
+end
+
 -- 读取路牌笔记：写入旅行日志，集齐全部后给一次性奖励
 function readLoreNote(index)
   local n = loreNotes and loreNotes[index] or nil

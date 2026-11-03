@@ -1644,8 +1644,12 @@ function drawMapHud()
   end
   DrawText("● 房车    ● 地点（越红越危险）  ? 未探索    — 公路    ◎ 货运目标",
            px + 16, py + ph - 24, 12, 0.7, 0.7, 0.65, 1)
-  DrawText(string.format("已探索 %d / %d 个地点", visitedCount or 0, #NODES),
-           px + pw - 16, py + ph - 24, 12, 0.7, 0.7, 0.65, 1, true)
+  local exploreText = string.format("已探索 %d / %d 个地点", visitedCount or 0, #NODES)
+  if loreProgressText ~= nil then
+    local lp = loreProgressText()
+    if lp ~= nil then exploreText = exploreText .. " · " .. lp end
+  end
+  DrawText(exploreText, px + pw - 16, py + ph - 24, 12, 0.7, 0.7, 0.65, 1, true)
   if fishingRecordText ~= nil then
     drawTextCentered(fishingRecordText(), px + pw * 0.5, py + ph - 42, 12,
                      0.72, 0.76, 0.68, 1)
