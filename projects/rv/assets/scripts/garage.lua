@@ -93,6 +93,7 @@ function setPhase(m)
     driveView = "cab"
     driveLookYaw, driveLookPitch = 0, 0
     SetVar("cameraMouseLock", 1)
+    if playEngineStart ~= nil then playEngineStart() end
     toast.text = "上路！W 油门  S 刹车  A/D 转向  空格 停车  C 视角"
     toast.t = 4.5
   end

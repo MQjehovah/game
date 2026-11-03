@@ -1505,6 +1505,17 @@ function runSelfTest()
                      tostring(counted), tostring(again)))
   end
 
+  -- 启动引擎：打火音效计数
+  do
+    local keep = rv.engineStarts
+    rv.engineStarts = 0
+    playEngineStart()
+    local starts = rv.engineStarts or 0
+    rv.engineStarts = keep
+    ok(r, "engine start cue", starts == 1,
+       string.format("starts=%d", starts))
+  end
+
   -- 夜间步行手电：夜里生成、白天移除
   do
     local sc, sfOn, sfFoot = clock, flashlightOn, onFoot

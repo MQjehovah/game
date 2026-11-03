@@ -144,6 +144,12 @@ function rvGearInfo(speed)
   return g, rpm
 end
 
+-- 启动引擎：打火声 + 计数（自检用）
+function playEngineStart()
+  rv.engineStarts = (rv.engineStarts or 0) + 1
+  if PlaySfx then PlaySfx("engine_start") end
+end
+
 -- 自动换挡时的轻微“咔哒”声（只在行驶中换挡时触发）
 function updateGearShiftFx()
   local g = rvGearInfo(rv.speed or 0)
