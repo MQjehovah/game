@@ -1054,6 +1054,18 @@ function runSelfTest()
        string.format("off=%d on=%d state=%s", off, on, tostring(interiorLightsOn)))
   end
 
+  -- 行程电脑：百公里油耗换算
+  do
+    local sd, sf = tripDistance, tripFuel
+    tripDistance, tripFuel = 1000, 30
+    local e1 = tripL100()
+    tripDistance, tripFuel = 10, 5
+    local e2 = tripL100()
+    tripDistance, tripFuel = sd, sf
+    ok(r, "rv trip economy", math.abs(e1 - 3.0) < 1e-6 and e2 == 0,
+       string.format("30L/1000m=%.2f L/100km short=%s", e1, tostring(e2)))
+  end
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")

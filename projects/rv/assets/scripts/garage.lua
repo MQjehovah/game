@@ -840,6 +840,10 @@ function on_start()
     driveView = "chase"
   elseif startMode == "inside_dark" then
     setInteriorLights(false)
+  elseif startMode == "tripview" then
+    tripDistance, tripFuel = 1240, 42
+    setPhase("driving")
+    driveView = "chase"
   elseif startMode == "drive" or startMode == "night_drive" or autoPilot or rv.steerDemo then
     setPhase("driving")
   elseif startMode == "utilroof" then

@@ -66,6 +66,7 @@ campProps = {}                -- 营地陈设（遮阳棚/木桌/物资箱/营�
 visitedPois = {}              -- 已首次抵达的地点（探索奖励去重）
 visitedCount = 0
 interiorLightsOn = true       -- 车内灯开关（L）
+tripDistance, tripFuel = 0, 0 -- 行程统计：米 / 升
 
 -- 搜刮 / 低强度威胁
 stopBag, stopThreat, evacT = {}, 0, -1

@@ -39,6 +39,12 @@ function fuelBurnRate(speed, loadRatio, throttle)
   return idle
 end
 
+-- 行程百公里油耗（L/100km）；里程太短时返回 0，避免怠速把数字拉爆。
+function tripL100()
+  if (tripDistance or 0) < 20 then return 0 end
+  return (tripFuel or 0) / tripDistance * 100
+end
+
 function updateDrive(dt)
   local throttle = (ActionDown("w") and 1 or 0) - (ActionDown("s") and 1 or 0)
   -- Positive yaw turns toward -X, which is screen-right when facing +Z, so
@@ -162,8 +168,10 @@ function updateDrive(dt)
   -- 燃油：怠速基线 + 车速/载重相关。踩油门越快越费油，载重再叠一层；
   -- 低速巡航比全速省油（每分钟的油量表变化能看出来）。没油 = 龟速挪窝。
   if fuel > 0 then
+    local before = fuel
     local rate = fuelBurnRate(rv.speed or 0, ratio, throttle)
     fuel = math.max(0, fuel - rate * dt)
+    tripFuel = (tripFuel or 0) + (before - fuel)
   end
   if fuel <= 0 then
     maxSp = math.min(maxSp, VEH.limpSpeed)
@@ -260,6 +268,7 @@ function updateDrive(dt)
   -- 零件磨损（按行驶里程）
   local meters = math.abs(rv.speed) * dt
   if meters > 0 then
+    tripDistance = (tripDistance or 0) + meters
     parts.engine = math.max(0, parts.engine - VEH.partWear.engine * meters)
     parts.tires = math.max(0, parts.tires - VEH.partWear.tires * meters)
     parts.battery = math.max(0, parts.battery - VEH.partWear.battery * meters)
