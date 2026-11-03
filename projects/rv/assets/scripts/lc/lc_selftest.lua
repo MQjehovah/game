@@ -2011,6 +2011,19 @@ function runSelfTest()
        string.format("towers=%d parts=%d", n, parts))
   end
 
+  -- 货箱按货物类型换颜色
+  do
+    local med = jobCargoPrefab and jobCargoPrefab("med")
+    local parts = jobCargoPrefab and jobCargoPrefab("parts")
+    local elec = jobCargoPrefab and jobCargoPrefab("elec")
+    local grain = jobCargoPrefab and jobCargoPrefab("grain")
+    ok(r, "cargo crate variants",
+       med ~= nil and parts ~= nil and elec ~= nil and grain ~= nil and
+       med ~= parts and parts ~= elec and elec ~= grain,
+       string.format("med=%s parts=%s elec=%s grain=%s", tostring(med),
+                     tostring(parts), tostring(elec), tostring(grain)))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

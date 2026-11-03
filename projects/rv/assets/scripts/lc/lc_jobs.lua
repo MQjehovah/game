@@ -67,12 +67,24 @@ function jobDespawnCargo()
   jobCargoEnts = {}
 end
 
+local CARGO_PREFAB = {
+  med = "rv_cargo_med",     -- 白色医疗箱
+  parts = "rv_panel_dark",   -- 深灰机械件
+  elec = "rv_cargo_elec",    -- 蓝色电子件
+  grain = "rv_cargo_crate",  -- 木色粮袋
+}
+
+function jobCargoPrefab(cargoId)
+  return CARGO_PREFAB[cargoId] or "rv_cargo_crate"
+end
+
 function jobSpawnCargo()
   jobDespawnCargo()
   if job == nil or coopRole ~= nil then return end
   local n = math.min(JOBS.maxCargo, job.crates or 1)
+  local pre = jobCargoPrefab(job.cargoId)
   for i = 1, n do
-    local e = SpawnPrefab("rv_cargo_crate", { x = rv.x, y = -60, z = rv.z })
+    local e = SpawnPrefab(pre, { x = rv.x, y = -60, z = rv.z })
     if e ~= nil then
       SetScale(e, 0.52, 0.52, 0.52)
       jobCargoEnts[#jobCargoEnts + 1] = e
