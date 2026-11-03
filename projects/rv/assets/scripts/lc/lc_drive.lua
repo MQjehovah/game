@@ -450,6 +450,13 @@ function speedBlowoutScale(speed)
   return math.min(2.2, 1.0 + (v - 5) * 0.4)
 end
 
+-- 胎温对爆胎风险的影响：超过 100°C 后风险上升，最高 ×3
+function tireTempBlowoutScale(temp)
+  local t = temp or 22
+  if t <= 100 then return 1.0 end
+  return math.min(3.0, 1.0 + (t - 100) * 0.08)
+end
+
 function clearBlowout()
   rv.blowout = false
   rv.blowoutWarned = false
@@ -485,8 +492,13 @@ function updateBlowout(dt)
   for i = 1, 4 do
     pMin = math.min(pMin, (rv.tirePressureCold or {})[i] or 2.4)
   end
+  local hottest = 22
+  for i = 1, 4 do
+    hottest = math.max(hottest, (rv.tireTemps or {})[i] or 22)
+  end
   local risk = blowoutRisk(parts and parts.tires or 100, pMin) *
-               speedBlowoutScale(rv.speed)
+               speedBlowoutScale(rv.speed) *
+               tireTempBlowoutScale(hottest)
   if risk > 0 and math.random() < risk * (dt or 0) then
     triggerBlowout()
   end

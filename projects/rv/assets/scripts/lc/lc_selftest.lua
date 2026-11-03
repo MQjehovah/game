@@ -3986,6 +3986,18 @@ function runSelfTest()
                      slow, mid, fast, cap))
   end
 
+  -- 胎温影响爆胎风险：超过 100°C 后上升，有上限
+  do
+    local cool = tireTempBlowoutScale(60)
+    local warm = tireTempBlowoutScale(110)
+    local hot = tireTempBlowoutScale(125)
+    local cap = tireTempBlowoutScale(300)
+    ok(r, "tire temp blowout risk",
+       cool == 1.0 and warm > 1.0 and hot > warm and cap <= 3.0,
+       string.format("60=%.2f 110=%.2f 125=%.2f cap=%.2f",
+                     cool, warm, hot, cap))
+  end
+
   -- 爆胎音效：触发一次爆胎会播放 bang 并计数
   do
     local keepBlow, keepBangs = rv.blowout, rv.blowoutBangs
