@@ -1832,6 +1832,39 @@ function runSelfTest()
                      tostring(night), iv, tostring(played)))
   end
 
+  -- 远处狼嚎：夜晚远离营地才会出现，营地/白天/雨雪安静
+  do
+    local sc, sw = clock, weather
+    local sx, sz, sf = rv.x, rv.z, onFoot
+    onFoot = false
+    clock, weather = 23 * 60, "clear"
+    rv.x, rv.z = 150, 150
+    local farNight = howlActive()
+    rv.x, rv.z = 0, 0
+    local atCamp = howlActive()
+    rv.x, rv.z = 150, 150
+    clock = 12 * 60
+    local daytime = howlActive()
+    clock = 23 * 60
+    weather = "rain"
+    local rainy = howlActive()
+    clock, weather = 23 * 60, "clear"
+    local iv = howlInterval()
+    local keepT, keepP = howlT, howlPlays
+    howlT, howlPlays = 0, 0
+    updateNightHowls(0.1)
+    local played = (howlPlays or 0) == 1
+    howlT, howlPlays = keepT, keepP
+    rv.x, rv.z, onFoot = sx, sz, sf
+    weather, clock = sw, sc
+    ok(r, "night howls",
+       farNight and not atCamp and not daytime and not rainy and
+       iv >= 45 and iv <= 90 and played,
+       string.format("far=%s camp=%s day=%s rain=%s iv=%.1f played=%s",
+                     tostring(farNight), tostring(atCamp), tostring(daytime),
+                     tostring(rainy), iv, tostring(played)))
+  end
+
   -- 主路土肩：沥青边缘与草地的过渡
   do
     local n = #roadShoulders

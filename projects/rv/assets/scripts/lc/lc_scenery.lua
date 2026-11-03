@@ -1874,6 +1874,37 @@ function updateDayBirds(dt)
   if PlaySfx then PlaySfx("birds") end
 end
 
+-- 远处狼嚎：夜晚、非雨雪、远离营地时偶尔传来（营地附近安全）
+function howlActive()
+  if not (isNight ~= nil and isNight()) then return false end
+  if weather == "rain" or weather == "snow" then return false end
+  local lx, lz = rv.x or 0, rv.z or 0
+  if onFoot and player ~= nil and player.active then
+    lx, lz = player.x or lx, player.z or lz
+  end
+  local camp = (nodeById ~= nil) and nodeById("camp") or nil
+  local cx, cz = 0, 0
+  if camp ~= nil then cx, cz = camp.x, camp.z end
+  local dx, dz = lx - cx, lz - cz
+  return dx * dx + dz * dz > 80 * 80
+end
+
+function howlInterval()
+  return 45 + math.random() * 45
+end
+
+function updateNightHowls(dt)
+  if not howlActive() then
+    howlT = 0
+    return
+  end
+  howlT = (howlT or 0) - (dt or 0)
+  if howlT > 0 then return end
+  howlT = howlInterval()
+  howlPlays = (howlPlays or 0) + 1
+  if PlaySfx then PlaySfx("howl") end
+end
+
 -- 营地附近的浆果丛：采摘后约 12 秒再生
 function spawnBerryBushes()
   for _, b in ipairs(berryBushes) do Despawn(b.ent) end
