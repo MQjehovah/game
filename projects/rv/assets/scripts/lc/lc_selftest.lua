@@ -2694,6 +2694,24 @@ function runSelfTest()
                      tostring(fixedFirst)))
   end
 
+  -- 完成信号中继后切换为救援队广播池
+  do
+    local keepFixed, keepRelay = radioMastFixed, relayDone
+    radioMastFixed, relayDone = false, false
+    local normal = radioBroadcastPool()[1]
+    radioMastFixed, relayDone = true, false
+    local fixed = radioBroadcastPool()[1]
+    radioMastFixed, relayDone = true, true
+    local relay = radioBroadcastPool()[1]
+    local switched = relay ~= fixed and relay ~= normal and
+                     (RADIO_BROADCASTS_RELAY == nil or
+                      relay == RADIO_BROADCASTS_RELAY[1])
+    radioMastFixed, relayDone = keepFixed, keepRelay
+    ok(r, "radio post-relay", switched,
+       string.format("normal=%s fixed=%s relay=%s", tostring(normal),
+                     tostring(fixed), tostring(relay)))
+  end
+
   -- 收音机天气警告：根据下一段天气给出提示
   do
     local keep = weatherNextId

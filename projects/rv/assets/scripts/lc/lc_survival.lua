@@ -520,6 +520,10 @@ end
 -- 收音机广播：开启后按游戏分钟间隔播报路况/天气提示
 -- 当前收音机广播池：修好无线电塔后优先播报“信号恢复”内容
 function radioBroadcastPool()
+  if relayDone and RADIO_BROADCASTS_RELAY ~= nil and
+     #RADIO_BROADCASTS_RELAY > 0 then
+    return RADIO_BROADCASTS_RELAY
+  end
   if radioMastFixed and RADIO_BROADCASTS_FIXED ~= nil and
      #RADIO_BROADCASTS_FIXED > 0 then
     return RADIO_BROADCASTS_FIXED
