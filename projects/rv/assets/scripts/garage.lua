@@ -461,11 +461,10 @@ function on_start()
   if coopRole ~= nil then
     coopInitWorld(coopRole)
   end
-  -- Server and single-player simulate the RV on four wheel bodies; clients
-  -- receive the authoritative pose (gy/pitch/roll) instead.
-  if coopRole ~= "client" then
-    spawnRvWheelBodies()
-  end
+  -- Server, single-player and clients all keep local wheel bodies: the server
+  -- simulates them authoritatively, clients use them for local suspension
+  -- prediction from the replicated chassis pose.
+  spawnRvWheelBodies()
 
   if coopRole == nil then
   -- 第一人称出生：车右后侧，面朝房车（Nomad Drive 式开场）

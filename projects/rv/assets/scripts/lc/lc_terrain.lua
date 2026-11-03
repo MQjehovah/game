@@ -372,6 +372,39 @@ function ackermannAngles(steer, wheelbase, track)
   return -outer, -inner
 end
 
+-- Client-side wheel prediction: the chassis pose is replicated from the server,
+-- so only the four wheel bodies are advanced locally (suspension + rolling).
+function updateWheelPrediction(dt)
+  if rv.wheelBodies == nil then return end
+  local step = math.min(dt or 0.016, 0.033)
+  for i, w in ipairs(WHEELS) do
+    local wb = rv.wheelBodies[i]
+    if wb ~= nil then
+      if PhysicsActivate ~= nil then PhysicsActivate(wb.body) end
+      local bp = PhysicsGetPosition(wb.body)
+      local bv = PhysicsGetVelocity(wb.body)
+      if bp ~= nil then
+        local ground = terrainHeight(bp.x, bp.z)
+        local target = ground + 0.38 + SUSP_REST
+        local vy = bv and bv.y or 0
+        local force = SUSP_K * (target - bp.y) - SUSP_C * vy
+        if force > WHEEL_BODY_MAX_F then force = WHEEL_BODY_MAX_F end
+        if force < -WHEEL_BODY_MAX_F then force = -WHEEL_BODY_MAX_F end
+        PhysicsApplyImpulse(wb.body, { x = 0, y = force * step, z = 0 },
+                            { x = bp.x, y = bp.y, z = bp.z })
+        local vLong = 0
+        if bv ~= nil then
+          vLong = bv.x * math.sin(rv.yaw) + bv.z * math.cos(rv.yaw)
+        end
+        rv.wheelSpinI = rv.wheelSpinI or {}
+        rv.wheelSpinI[i] = ((rv.wheelSpinI[i] or 0) -
+                            vLong * step / 0.40) % (math.pi * 2)
+      end
+    end
+  end
+  updateWheelMotion(dt)
+end
+
 function updateRvPhysics(dt)
   if rvBody == nil or PhysicsApplyImpulse == nil or PhysicsGetPosition == nil
      or PhysicsGetRotation == nil then

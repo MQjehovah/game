@@ -300,6 +300,15 @@ function runSelfTest()
          rv.wheelBodies[1].body ~= nil and rv.wheelBodies[4].body ~= nil,
          string.format("bodies=%d", #rv.wheelBodies))
     end
+    if updateWheelPrediction ~= nil and rv.wheelBodies ~= nil then
+      updateWheelPrediction(1 / 60)
+      local okW = true
+      for i = 1, #rv.wheelBodies do
+        local bp = PhysicsGetPosition(rv.wheelBodies[i].body)
+        if bp == nil or bp.y ~= bp.y then okW = false end
+      end
+      ok(r, "rv wheel prediction", okW, "local suspension step ok")
+    end
     if tireGripImpulse ~= nil then
       local dt = 1 / 60
       local grip = tireGripImpulse(3.0, 3000, 1200, dt)

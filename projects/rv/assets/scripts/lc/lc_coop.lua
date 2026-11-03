@@ -1476,6 +1476,14 @@ local function clientUpdate(dt)
   elseif updateRvTilt ~= nil then
     updateRvTilt(dt)
   end
+  -- Client-side suspension: the chassis pose is authoritative, but the wheel
+  -- bodies are predicted locally so the wheels follow the terrain smoothly.
+  if rvBody ~= nil then
+    PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + (rv.groundY or 0), z = rv.z })
+    PhysicsSetVelocity(rvBody, { x = 0, y = 0, z = 0 })
+    if rvQuat ~= nil then PhysicsSetRotation(rvBody, rvQuat()) end
+  end
+  if updateWheelPrediction ~= nil then updateWheelPrediction(dt) end
   fuel, water, day, clock = coop.fuel, coop.water, coop.day, coop.clock
   applyRvTransform()
   -- Inside the RV: hide the exterior shell so the first-person view sees the

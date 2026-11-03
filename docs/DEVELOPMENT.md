@@ -825,7 +825,8 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `PhysicsAddSliderJoint` / `PhysicsActivate`
   （`physics.hpp`/`physics.cpp`/`jolt_world.*`/`bindings.cpp`）。
   合作服务器运行同一套四轮刚体物理，把车体 `gy/pitch/roll/yaw` 写入
-  `game_state`；客户端不建车轮刚体，只复制姿态。
+  `game_state`；客户端也建本地车轮刚体，用服务器姿态 + 本地地形运行
+  `updateWheelPrediction()`，只预测悬挂行程/滚动。
   没有物理后端时回退到 `updateRvSuspension()` 的四点平面拟合与
   脚本偏航（±0.35rad 限幅、10Hz 平滑）。
   **四个车轮是独立实体**（`rv_wheel.gltf`，`tools/gen_rv_wheel.py`；
@@ -844,8 +845,9 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `rv wheel steer` / `rv physics suspension binding` /
   `rv tire grip binding` / `rv tire grip model` / `rv surface grip` /
   `rv ackermann steering` / `rv slip traction` / `rv wheel body binding` /
-  `rv wheel bodies` / `rv attitude roundtrip` / `rv yaw attitude roundtrip`，
-  总计 **47/47 PASS**。
+  `rv wheel bodies` / `rv wheel prediction` / `rv attitude roundtrip` /
+  `rv yaw attitude roundtrip`，
+  总计 **48/48 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），
