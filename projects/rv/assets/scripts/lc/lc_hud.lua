@@ -583,7 +583,8 @@ function drawMorningReport()
   local a = math.min(1, (morningReport.t or 0) * 1.6)
   DrawRect(px, py, pw, ph, 0.05, 0.055, 0.065, 0.94 * a)
   DrawRectOutline(px, py, pw, ph, 0.62, 0.56, 0.38, a)
-  drawTextCentered(string.format("第 %d 天 · 清晨", morningReport.day or 1),
+  drawTextCentered(string.format("第 %d 天 · %s清晨", morningReport.day or 1,
+                   morningReport.camp and "营地" or ""),
                    vw * 0.5, py + 12, 22, 0.98, 0.90, 0.66, a)
   DrawText(string.format("天气 %s   油量 %.0f / %d L",
            (weatherName and weatherName()) or "晴",

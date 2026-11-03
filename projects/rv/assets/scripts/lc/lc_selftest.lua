@@ -2044,6 +2044,25 @@ function runSelfTest()
                      tostring(parts), tostring(elec), tostring(grain)))
   end
 
+  -- 营地休息加成：在营地睡觉回血更多，晨报标注“营地”
+  do
+    local sd, sc = day, clock
+    local sh, st2, se, sg = needs.health, needs.thirst, needs.energy, needs.hygiene
+    local sa = atNode
+    atNode = "camp"
+    needs.health, needs.energy, needs.hygiene = 50, 0, 100
+    sleepInBed()
+    local healthOk = needs.health == 64
+    local gotHealth = needs.health
+    local campOk = morningReport ~= nil and morningReport.camp == true
+    atNode = sa
+    day, clock = sd, sc
+    needs.health, needs.thirst, needs.energy, needs.hygiene = sh, st2, se, sg
+    morningReport = nil
+    ok(r, "camp rest bonus", healthOk and campOk,
+       string.format("health=%.0f camp=%s", gotHealth, tostring(campOk)))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

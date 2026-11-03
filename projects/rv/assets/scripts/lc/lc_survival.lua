@@ -378,15 +378,17 @@ function sleepInBed()
   -- 07:00 之前睡 = 当天早上；之后睡 = 第二天早上
   if clock >= 7 * 60 then day = day + 1 end
   clock = 7 * 60
-  local factor = hygieneEnergyFactor(needs.hygiene)
+  local atCamp = (atNode == "camp")
+  local factor = hygieneEnergyFactor(needs.hygiene) + (atCamp and 0.10 or 0)
   needs.energy = math.min(100, needs.energy + (100 - needs.energy) * factor)
   needs.hunger = math.max(0, needs.hunger - 20)
   needs.thirst = math.max(0, needs.thirst - 32)
   needs.hygiene = math.max(0, needs.hygiene - 10)
-  needs.health = math.min(100, needs.health + 8)
+  needs.health = math.min(100, needs.health + (atCamp and 14 or 8))
   if LC and LC.flow then LC.flow.emit("day_advanced") end
   morningReport = {
     day = day,
+    camp = atCamp,
     jobs = jobDelivered or 0,
     goal = dailyGoal and dailyGoal.name or nil,
     goalDone = dailyGoal and dailyGoal.done or false,
