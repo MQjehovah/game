@@ -696,6 +696,7 @@ function startFishing()
   if fishingT > 0 then return end
   fishingTotal = 5 + math.random() * 4
   fishingT = fishingTotal
+  fishingBite, fishingBiteT = false, 0
   fishingBait = false
   fishingDock = (nearDock ~= nil) and nearDock(player.x, player.z) or false
   if takeItem("bait", 1) then
@@ -828,6 +829,21 @@ function cookAtCampfire()
 end
 
 function updateFishing(dt)
+  -- 咬钩窗口：1.2s 内按 E 可稳定上钩；错过则按原概率结算
+  if fishingBite then
+    if ActionDown("w") or ActionDown("a") or ActionDown("s") or ActionDown("d") then
+      fishingBite, fishingBiteT = false, 0
+      toast.text = "你走动了，鱼跑了"
+      toast.t = 2.2
+      return
+    end
+    fishingBiteT = fishingBiteT - dt
+    if fishingBiteT <= 0 then
+      fishingBite, fishingBiteT = false, 0
+      finishFishing()
+    end
+    return
+  end
   if fishingT <= 0 then return end
   if ActionDown("w") or ActionDown("a") or ActionDown("s") or ActionDown("d") then
     fishingT = 0
@@ -836,7 +852,12 @@ function updateFishing(dt)
     return
   end
   fishingT = fishingT - dt
-  if fishingT <= 0 then finishFishing() end
+  if fishingT <= 0 then
+    fishingBite = true
+    fishingBiteT = 1.2
+    toast.text = "咬钩了！按 E 收线"
+    toast.t = 1.6
+  end
 end
 
 function updatePlants(dt)

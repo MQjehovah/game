@@ -1583,6 +1583,19 @@ function runSelfTest()
        string.format("%s %.0fcm best=%.0f", tostring(name), size, bestFish or 0))
   end
 
+  -- 咬钩窗口：倒计时结束后进入 1.2s 收线窗口
+  do
+    local keepT, keepB, keepBT = fishingT, fishingBite, fishingBiteT
+    fishingT, fishingBite, fishingBiteT = 0.01, false, 0
+    updateFishing(0.05)
+    local opened = fishingBite == true and
+                   math.abs((fishingBiteT or 0) - 1.2) < 1e-6
+    local biteNow, biteTNow = fishingBite, fishingBiteT
+    fishingT, fishingBite, fishingBiteT = keepT, keepB, keepBT
+    ok(r, "fishing bite window", opened,
+       string.format("bite=%s t=%.2f", tostring(biteNow), biteTNow or 0))
+  end
+
   -- 各鱼种最大尺寸/条数记录
   do
     local keepR, keepC = fishRecords, fishCounts

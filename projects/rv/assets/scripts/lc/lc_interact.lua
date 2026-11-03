@@ -178,6 +178,12 @@ function updateInteraction()
 end
 
 function doInteract()
+  -- 咬钩窗口内按 E：稳定收线
+  if fishingBite then
+    fishingBite, fishingBiteT = false, 0
+    finishFishing(true)
+    return true
+  end
   if nearAction == nil then return false end
   if nearAction.kind == "crate" then
     searchCrate(nearAction.index)
