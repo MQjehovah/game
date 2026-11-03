@@ -1502,6 +1502,16 @@ function runSelfTest()
                      fullScale, lowScale, lowCost, tostring(refilled)))
   end
 
+  -- 机油劣化增加油耗（最高 +8%）
+  do
+    local full = engineOilFuelScale(100)
+    local mid = engineOilFuelScale(20)
+    local low = engineOilFuelScale(0)
+    ok(r, "oil fuel penalty",
+       full == 1.0 and mid > full and low > mid and low <= 1.08,
+       string.format("100=%.3f 20=%.3f 0=%.3f", full, mid, low))
+  end
+
   -- 续航估算：无实测时用 1.6L/100m 基准，有实测按实测油耗
   do
     local sf, sd, sfu = fuel, tripDistance, tripFuel

@@ -69,13 +69,21 @@ function serviceOilAtGasstop()
   return true, cost, string.format("更换机油（%d 金属）", cost)
 end
 
+-- 机油劣化对油耗的影响：低于 40% 时油耗略升（最高 +8%）
+function engineOilFuelScale(o)
+  local v = o or 100
+  if v >= 40 then return 1.0 end
+  return 1.0 + math.min(0.08, (40 - v) * 0.002)
+end
+
 function fuelBurnRate(speed, loadRatio, throttle)
   local v = math.min(1, math.abs(speed or 0) / DRIVE.maxSpeed)
   local ratio = loadRatio or 1
   local load = 1 + math.max(0, ratio - 1) * 0.60 +
                math.max(0, math.min(ratio, 1) - 0.75) * 0.20
   local idle = VEH.idleBurn or 0.010
-  local eff = tirePressureFuelScale(avgTirePressure())
+  local eff = tirePressureFuelScale(avgTirePressure()) *
+              engineOilFuelScale(oilLife)
   if (throttle or 0) > 0 then
     return (idle + VEH.burn * (0.30 + 0.70 * v) * load) * eff
   elseif (throttle or 0) < 0 then
