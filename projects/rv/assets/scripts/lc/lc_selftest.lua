@@ -968,6 +968,19 @@ function runSelfTest()
        "SetEnvironmentField skyTop/ambientStrength")
   end
 
+  -- 营地陈设：遮阳棚/木桌凳/物资箱/营地灯
+  do
+    local n = #campProps
+    local awning = 0
+    for _, p in ipairs(campProps) do
+      if p.x > 3.0 and p.x < 6.0 and p.z > 3.8 and p.z < 6.4 then
+        awning = awning + 1
+      end
+    end
+    ok(r, "camp props", n >= 12 and awning >= 8,
+       string.format("props=%d awning=%d", n, awning))
+  end
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")

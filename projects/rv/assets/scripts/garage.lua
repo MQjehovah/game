@@ -372,6 +372,7 @@ function on_start()
   end
   if updateTerrainLod ~= nil then updateTerrainLod(0, true) end
   spawnMarkers()
+  if spawnCampProps ~= nil then spawnCampProps() end
   if spawnJobBoard ~= nil then spawnJobBoard() end
   do  -- 验证钩子
     local flag = ReadText("autopilot_on.txt")
@@ -610,6 +611,11 @@ function on_start()
     -- Test-only: stand at camp looking north at the gas-stop contract target.
     px, pz = 4.6, -10.5
     pyaw = dirYaw(-4.6, 70.5)
+  end
+  if startMode == "campview" then
+    -- Test-only: look from the east side into the camp props (awning/table/lamp).
+    px, pz = 8.2, -1.5
+    pyaw = dirYaw(-3.7, 6.5)
   end
   if startMode == "furnview" then
     -- Test-only interior view down the furniture wall.

@@ -1142,3 +1142,43 @@ function spawnMarkers()
     end
   end
 end
+
+-- 营地陈设：遮阳棚 + 木桌凳 + 物资箱 + 暖光营地灯，让出生点像一个
+-- 真正驻扎下来的落脚点，而不是空旷路口。纯装饰，不参与碰撞。
+function spawnCampProps()
+  campProps = {}
+  local function prop(pre, x, y, z, sx, sy, sz, rot)
+    local e = SpawnPrefab(pre, { x = x, y = y, z = z })
+    if e ~= nil then
+      SetScale(e, sx, sy, sz)
+      if rot then SetRotationY(e, rot) end
+      campProps[#campProps + 1] = { ent = e, x = x, z = z }
+    end
+    return e
+  end
+  local function gy(x, z)
+    return (terrainHeight and terrainHeight(x, z)) or 0
+  end
+  -- 遮阳棚：四根木柱 + 浅色棚顶
+  for _, p in ipairs({ { 3.6, 4.2 }, { 5.4, 4.2 }, { 3.6, 6.0 }, { 5.4, 6.0 } }) do
+    prop("rv_camp_wood", p[1], gy(p[1], p[2]) + 1.15, p[2], 0.12, 2.30, 0.12)
+  end
+  prop("rv_panel_light", 4.5, gy(4.5, 5.1) + 2.33, 5.1, 2.50, 0.10, 2.30, 0.10)
+  -- 木桌 + 四条腿 + 两侧长凳
+  local tx, tz = 4.5, 5.0
+  local ty = gy(tx, tz)
+  prop("rv_camp_wood", tx, ty + 0.78, tz, 1.70, 0.08, 0.85)
+  for _, p in ipairs({ { -0.72, -0.32 }, { 0.72, -0.32 },
+                       { -0.72, 0.32 }, { 0.72, 0.32 } }) do
+    prop("rv_camp_wood", tx + p[1], ty + 0.39, tz + p[2], 0.09, 0.78, 0.09)
+  end
+  prop("rv_camp_wood", tx, ty + 0.44, tz - 0.92, 1.70, 0.07, 0.28)
+  prop("rv_camp_wood", tx, ty + 0.44, tz + 0.92, 1.70, 0.07, 0.28)
+  -- 物资箱 / 油桶
+  prop("rv_loot_crate", 6.5, gy(6.5, 2.4) + 0.30, 2.4, 0.60, 0.60, 0.60, 0.40)
+  prop("rv_loot_crate", 6.9, gy(6.9, 3.2) + 0.24, 3.2, 0.48, 0.48, 0.48, 1.10)
+  prop("rv_fuelcan", 5.9, gy(5.9, 2.2) + 0.34, 2.2, 0.50, 0.70, 0.50, 0.30)
+  -- 营地灯：木杆 + 暖光灯罩
+  prop("rv_marker", 5.9, gy(5.9, 5.9) + 1.30, 5.9, 0.09, 2.60, 0.09)
+  prop("rv_lamp", 5.9, gy(5.9, 5.9) + 2.56, 5.9, 0.18, 0.10, 0.18)
+end
