@@ -173,6 +173,20 @@ Value NativeSetRotationY(IScriptHost& host, void* user) {
     return Value::Nil();
 }
 
+// SetRotationEuler(entity, pitch, roll, yaw): full local rotation, radians.
+// Pitch rotates around local X, roll around local Z, yaw around Y; used by the
+// RV to tilt with terrain while keeping its heading.
+Value NativeSetRotationEuler(IScriptHost& host, void* user) {
+    auto* ctx = static_cast<ScriptContext*>(user);
+    if (!ctx || !ctx->sceneSetEuler) return Value::Nil();
+    ecs::Entity e = EntityFromValue(host.GetArg(0));
+    ctx->sceneSetEuler(e,
+                       static_cast<float>(NumberArg(host, 1, 0.0)),
+                       static_cast<float>(NumberArg(host, 2, 0.0)),
+                       static_cast<float>(NumberArg(host, 3, 0.0)));
+    return Value::Nil();
+}
+
 // SetLook(entity, dx, dy, dz): aim an entity's forward (local -Z) along a world
 // direction with +Y up. Used to aim the camera while keeping its downward pitch
 // (SetRotationY would replace the rotation with yaw-only). No-op without a hook.
@@ -2440,6 +2454,7 @@ void RegisterEngineBindings(IScriptHost& host, ScriptContext& ctx) {
     host.Register("InputMouseDown", &NativeInputMouseDown, &ctx);
     host.Register("InputMousePressed", &NativeInputMousePressed, &ctx);
     host.Register("SetRotationY", &NativeSetRotationY, &ctx);
+    host.Register("SetRotationEuler", &NativeSetRotationEuler, &ctx);
     host.Register("SetLook", &NativeSetLook, &ctx);
     host.Register("GetHealth", &NativeGetHealth, &ctx);
     host.Register("GetMaxHealth", &NativeGetMaxHealth, &ctx);

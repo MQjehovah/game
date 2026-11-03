@@ -40,3 +40,19 @@ function terrainSlope(x, z)
   local dz = (terrainHeight(x, z + e) - terrainHeight(x, z - e)) / (2 * e)
   return dx, dz
 end
+
+-- RV pitch/roll from the terrain gradient, damped so it does not jitter.
+-- Pitch tilts the nose with the slope ahead, roll tilts the right side.
+function updateRvTilt(dt)
+  local dx, dz = terrainSlope(rv.x, rv.z)
+  local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
+  local dhF = dx * fx + dz * fz
+  local dhR = dx * math.cos(rv.yaw) - dz * math.sin(rv.yaw)
+  local tp = -math.atan(dhF)
+  local tr = math.atan(dhR)
+  tp = math.max(-0.35, math.min(0.35, tp))
+  tr = math.max(-0.35, math.min(0.35, tr))
+  local k = math.min(1, dt * 8)
+  rv.pitch = (rv.pitch or 0) + (tp - (rv.pitch or 0)) * k
+  rv.roll = (rv.roll or 0) + (tr - (rv.roll or 0)) * k
+end

@@ -1,6 +1,29 @@
 -- lc_drive.lua
 -- 行驶物理：Jolt 速度驱动/燃油/撞击耐久/临近节点
 
+-- Quaternion helpers so the physics body tilts with the terrain like the
+-- visual shell (roll -> pitch -> yaw, matching SetRotationEuler).
+local function qAxis(x, y, z, ang)
+  local s = math.sin(ang * 0.5)
+  return { x = x * s, y = y * s, z = z * s, w = math.cos(ang * 0.5) }
+end
+
+local function qMul(a, b)
+  return {
+    x = a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+    y = a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+    z = a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+    w = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+  }
+end
+
+local function rvQuat()
+  local qy = qAxis(0, 1, 0, rv.yaw)
+  local qx = qAxis(1, 0, 0, rv.pitch or 0)
+  local qz = qAxis(0, 0, 1, rv.roll or 0)
+  return qMul(qMul(qy, qx), qz)
+end
+
 function updateDrive(dt)
   local throttle = (ActionDown("w") and 1 or 0) - (ActionDown("s") and 1 or 0)
   -- Positive yaw turns toward -X, which is screen-right when facing +Z, so
@@ -139,8 +162,7 @@ function updateDrive(dt)
   local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
   if rvBody then
     PhysicsSetVelocity(rvBody, { x = fx * rv.speed, y = bodyVy, z = fz * rv.speed })
-    local half = rv.yaw * 0.5
-    PhysicsSetRotation(rvBody, { x = 0, y = math.sin(half), z = 0, w = math.cos(half) })
+    PhysicsSetRotation(rvBody, rvQuat())
   else
     rv.x = rv.x + fx * rv.speed * dt
     rv.z = rv.z + fz * rv.speed * dt
@@ -149,8 +171,10 @@ function updateDrive(dt)
   -- Follow the embankment height (sampled from the same profile as the mesh).
   if terrainHeight ~= nil then
     rv.groundY = terrainFollow(rv.groundY or 0, rv.x, rv.z, dt, 10)
+    if updateRvTilt ~= nil then updateRvTilt(dt) end
     if rvBody then
       PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + rv.groundY, z = rv.z })
+      PhysicsSetRotation(rvBody, rvQuat())
     end
   end
 

@@ -74,47 +74,62 @@ end
 -- 公路贴花：跟随房车，按里程滚动虚线（Nomad Drive 的公路感）
 -- 公路现在是世界固定的，由 spawnRoadNetwork() 一次性生成，不再每帧跟随车头。
 
+-- Full 3D rotation of an RV-local offset by roll -> pitch -> yaw. Mirrors the
+-- engine SetRotationEuler order (q = yaw * pitch * roll).
+local function rvOffset(lx, ly, lz)
+  local cr, sr = math.cos(rv.roll or 0), math.sin(rv.roll or 0)
+  local x1 = lx * cr - ly * sr
+  local y1 = lx * sr + ly * cr
+  local z1 = lz
+  local cp, sp = math.cos(rv.pitch or 0), math.sin(rv.pitch or 0)
+  local y2 = y1 * cp - z1 * sp
+  local z2 = y1 * sp + z1 * cp
+  local cy, sy = math.cos(rv.yaw), math.sin(rv.yaw)
+  return x1 * cy + z2 * sy, y2, -x1 * sy + z2 * cy
+end
+
+local function setTilted(ent, lx, ly, lz, extraYaw)
+  local ox, oy, oz = rvOffset(lx, ly, lz)
+  SetPosition(ent, { x = rv.x + ox, y = (rv.groundY or 0) + oy, z = rv.z + oz })
+  local pitch, roll = rv.pitch or 0, rv.roll or 0
+  local yaw = rv.yaw + (extraYaw or 0)
+  if SetRotationEuler ~= nil then
+    SetRotationEuler(ent, pitch, roll, yaw)
+  else
+    SetRotationY(ent, yaw)
+  end
+end
+
 function applyRvTransform()
   local gy = rv.groundY or 0
   if rvParts then
     for _, p in ipairs(rvParts) do
-      local wx, wz = rotOf(p.lx, p.lz)
-      SetPosition(p.ent, { x = wx, y = p.ly + gy, z = wz })
-      SetRotationY(p.ent, rv.yaw)
+      setTilted(p.ent, p.lx, p.ly, p.lz, 0)
     end
   end
   if rvShell then
-    SetPosition(rvShell, { x = rv.x, y = gy, z = rv.z })
-    SetRotationY(rvShell, rv.yaw)
+    setTilted(rvShell, 0, 0, 0, 0)
     -- 驾驶席视角或人在车内时隐藏外壳：避免镜头钻进车窗/墙板
     SetVisible(rvShell, not (phase == "driving" and driveView == "cab")
                         and not isPlayerInsideRv())
   end
   if rvDoor ~= nil then
-    local dx, dz = rotOf(1.205, -3.54)
-    SetPosition(rvDoor, { x = dx, y = gy, z = dz })
-    SetRotationY(rvDoor, rv.yaw + (rvDoorAngle or 0))
+    setTilted(rvDoor, 1.205, 0, -3.54, rvDoorAngle or 0)
   end
   if rvInterior then
     local hideCab = (phase == "driving" and driveView == "cab")
     for _, p in ipairs(rvInterior) do
-      local wx, wz = rotOf(p.lx, p.lz)
-      SetPosition(p.ent, { x = wx, y = p.ly + gy, z = wz })
-      SetRotationY(p.ent, rv.yaw)
+      setTilted(p.ent, p.lx, p.ly, p.lz, 0)
       if p.hideInCab then SetVisible(p.ent, not hideCab) end
     end
   end
   for _, inst in pairs(instances) do
-    local wx, wz = rotOf(inst.lx, inst.lz)
-    SetPosition(inst.ent, { x = wx, y = inst.ly + gy, z = wz })
-    SetRotationY(inst.ent, rv.yaw + (inst.lrot or 0))
+    setTilted(inst.ent, inst.lx, inst.ly, inst.lz, inst.lrot or 0)
   end
   if gridFloorEnt ~= nil then
-    SetPosition(gridFloorEnt, { x = rv.x, y = FLOOR_Y + gy, z = rv.z })
-    SetRotationY(gridFloorEnt, rv.yaw)
+    setTilted(gridFloorEnt, 0, FLOOR_Y, 0, 0)
   end
   if gridRoofEnt ~= nil then
-    SetPosition(gridRoofEnt, { x = rv.x, y = ROOF_Y + gy, z = rv.z })
-    SetRotationY(gridRoofEnt, rv.yaw)
+    setTilted(gridRoofEnt, 0, ROOF_Y, 0, 0)
   end
 end

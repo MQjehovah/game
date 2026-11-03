@@ -62,7 +62,8 @@ function updateCamera(dt)
     -- 驾驶席在挡风玻璃后方（车头局部 z≈4.0），不要放到生活区中间，
     -- 否则车顶太阳能/行李架的背面会挡住半个屏幕。
     local ex, ez = rotOf(0.0, 3.15)
-    setFpsCamera(ex, 1.58 + (rv.groundY or 0), ez, rv.yaw + driveLookYaw, driveLookPitch)
+    local eyeY = 1.58 + (rv.groundY or 0) - math.sin(rv.pitch or 0) * 3.15
+    setFpsCamera(ex, eyeY, ez, rv.yaw + driveLookYaw, driveLookPitch)
     return
   end
 

@@ -799,13 +799,17 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   （约 570 实体）铺满营地/公路两侧，按 RV 位置回收；生成时避开路面、水塘、
   POI、土坡与 RV。`updateMeadowWind()` 以 20Hz、分 4 批让草/花绕根部轻摆；
   土坡顶部另种 90 株。实测追逐视角约 **91 FPS**。
-- **地形高度采样**（`projects/rv`）：`assets/scripts/lc/lc_terrain.lua` 与
+- **地形高度采样 / 坡面倾斜**（`projects/rv`）：`assets/scripts/lc/lc_terrain.lua` 与
   `tools/gen_rv_embankment.py` 共用同一截面表、噪声和收口公式；
   `terrainHeight(x,z)` / `terrainFollow()` 被步行（`player.groundY`、眼高、
   模型与枪械）、驾驶（`rv.groundY`、`applyRvTransform`、追逐/驾驶席/俯视相机）
   以及合作模式（服务器采样、`game_state` 的 `gy`/`rv.gy`、代理与客户端预测）
-  共同使用。自检新增 `terrain height profile` / `terrain ground follow`，
-  总计 **28/28 PASS**。
+  共同使用。`terrainSlope(x,z)` + `updateRvTilt()` 由梯度算出 `rv.pitch/rv.roll`
+  （±0.35rad 限幅、8Hz 阻尼）；`applyRvTransform()` 用 `rvOffset()` 对部件偏移做
+  roll→pitch→yaw 三维旋转，并通过**引擎新增的 `SetRotationEuler`**
+  （`bindings.cpp` / `game_runtime.cpp` / `bindings.hpp`）设置朝向，
+  物理刚体使用同样的四元数。自检新增 `terrain height profile` /
+  `terrain ground follow` / `rv slope tilt`，总计 **29/29 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

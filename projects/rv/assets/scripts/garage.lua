@@ -415,10 +415,11 @@ function on_start()
                            friction = 0.4, restitution = 0.05 })
 
   if startMode == "rvslope" then
-    -- Test-only: park the RV on the embankment so the height following is
-    -- visible in a screenshot (wheels sit on the slope, not inside it).
-    rv.x, rv.z = 19.0, 10.0
+    -- Test-only: park the RV on the steep part of the embankment so height
+    -- following and pitch/roll tilt are visible in a screenshot.
+    rv.x, rv.z = 13.0, 10.0
     rv.groundY = terrainHeight and terrainHeight(rv.x, rv.z) or 0
+    if updateRvTilt ~= nil then updateRvTilt(1.0) end
     applyRvTransform()
     if rvBody ~= nil then
       PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + rv.groundY, z = rv.z })
@@ -490,8 +491,8 @@ function on_start()
   end
   if startMode == "rvslope" then
     -- Test-only: the RV is parked on the embankment (see rvBody block).
-    px, pz = -9.0, -5.0
-    pyaw = dirYaw(9.0, 5.0)
+    px, pz = -7.0, -5.0
+    pyaw = dirYaw(7.0, 5.0)
   end
   if startMode == "poi" then
     -- 路边商店门口：用于检查可进入建筑（门洞/内衬/战利品）

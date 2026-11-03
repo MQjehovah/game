@@ -922,6 +922,7 @@ local function serverUpdate(dt)
     fuel = math.max(0, fuel - math.abs(rv.speed) * dt * 0.03)
     if terrainHeight ~= nil then
       rv.groundY = terrainFollow(rv.groundY or 0, rv.x, rv.z, dt, 10)
+      if updateRvTilt ~= nil then updateRvTilt(dt) end
       coop.rv.groundY = rv.groundY
     end
     applyRvTransform()
@@ -1433,6 +1434,7 @@ local function clientUpdate(dt)
   rv.yaw = coop.rv.yaw
   rv.speed = coop.rv.speed or 0
   rv.groundY = coop.rv.groundY or 0
+  if updateRvTilt ~= nil then updateRvTilt(dt) end
   fuel, water, day, clock = coop.fuel, coop.water, coop.day, coop.clock
   applyRvTransform()
   -- Inside the RV: hide the exterior shell so the first-person view sees the
@@ -1727,6 +1729,7 @@ function coopInitWorld(role)
       end
       rv.x, rv.z, rv.yaw = coop.rv.x, coop.rv.z, coop.rv.yaw
       if terrainHeight ~= nil then rv.groundY = terrainHeight(rv.x, rv.z) end
+      if updateRvTilt ~= nil then updateRvTilt(1.0) end
       applyRvTransform()
       if rvBody ~= nil then
         PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + (rv.groundY or 0), z = rv.z })

@@ -588,6 +588,15 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
         if (SceneTransform* t = world_.Get<SceneTransform>(e)) t->rot = q;
         if (script::CTransformBind* t = world_.Get<script::CTransformBind>(e)) t->rot = q;
     };
+    // SetRotationEuler: full local rotation (roll -> pitch -> yaw) so vehicles
+    // can tilt with terrain while keeping their heading.
+    scriptCtx_.sceneSetEuler = [this](ecs::Entity e, float pitch, float roll, float yaw) {
+        const math::Quat q = math::Quat::FromAxisAngle({0, 1, 0}, yaw) *
+                             math::Quat::FromAxisAngle({1, 0, 0}, pitch) *
+                             math::Quat::FromAxisAngle({0, 0, 1}, roll);
+        if (SceneTransform* t = world_.Get<SceneTransform>(e)) t->rot = q;
+        if (script::CTransformBind* t = world_.Get<script::CTransformBind>(e)) t->rot = q;
+    };
     // SetLook: aim the entity's forward (local -Z) along a world direction with
     // +Y up, so a camera can keep its pitch while being yawed.
     scriptCtx_.sceneSetLook = [this](ecs::Entity e, const math::Vec3& dir) {

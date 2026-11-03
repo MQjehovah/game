@@ -144,6 +144,9 @@ struct ScriptContext {
     std::function<math::Vec3(ecs::Entity)> sceneGetPos;   // null -> CTransformBind
     std::function<void(ecs::Entity, const math::Vec3&)> sceneSetPos;
     std::function<void(ecs::Entity, float)> sceneSetYaw;  // radians, Y-up
+    // Full local rotation from Euler angles (pitch around X, roll around Z,
+    // yaw around Y) for slopes/tilted vehicles. Null -> no-op.
+    std::function<void(ecs::Entity, float, float, float)> sceneSetEuler;
     // Points an entity's forward (local -Z, Gfx convention) along a world
     // direction with +Y up. Used to aim the camera (SetRotationY would drop the
     // downward pitch). Null -> SetLook is a no-op.

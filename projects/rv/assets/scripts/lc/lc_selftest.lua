@@ -165,6 +165,18 @@ function runSelfTest()
     ok(r, "terrain ground follow",
        math.abs(followed - hTop) < 0.001,
        string.format("follow=%.2f top=%.2f", followed, hTop))
+    if updateRvTilt ~= nil then
+      local kx, kz, ky = rv.x, rv.z, rv.yaw
+      local kp, kr = rv.pitch, rv.roll
+      rv.x, rv.z, rv.yaw = 13.0, 10.0, 0.0
+      rv.pitch, rv.roll = 0.0, 0.0
+      updateRvTilt(1.0)
+      ok(r, "rv slope tilt",
+         math.abs(rv.roll) > 0.15 and math.abs(rv.pitch) < 0.2,
+         string.format("pitch=%.2f roll=%.2f", rv.pitch, rv.roll))
+      rv.x, rv.z, rv.yaw = kx, kz, ky
+      rv.pitch, rv.roll = kp, kr
+    end
   end
 
   -- 地点物资箱刷在建筑内部，玩家需要从正门进入
