@@ -454,6 +454,7 @@ function sleepInBed()
     goalProgress = dailyGoal and dailyGoal.progress or 0,
     goalTarget = dailyGoal and dailyGoal.target or 0,
     fuel = fuel or 0,
+    forecast = weatherNextId,
     t = 5.0,
   }
   toast.text = string.format("睡到第 %d 天 07:00 — 体力恢复", day)

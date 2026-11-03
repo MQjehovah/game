@@ -2514,7 +2514,8 @@ function runSelfTest()
     sleepInBed()
     local rep = morningReport
     local okRep = rep ~= nil and (rep.day or 0) >= 1 and rep.jobs ~= nil and
-                  rep.fuel ~= nil and (rep.t or 0) > 0
+                  rep.fuel ~= nil and (rep.t or 0) > 0 and
+                  (rep.forecast == nil or WEATHER_NAMES[rep.forecast] ~= nil)
     day, clock = sd, sc
     needs.energy, needs.hunger, needs.thirst, needs.hygiene = se, sh, st, sg
     morningReport = nil

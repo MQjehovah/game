@@ -586,8 +586,11 @@ function drawMorningReport()
   drawTextCentered(string.format("第 %d 天 · %s清晨", morningReport.day or 1,
                    morningReport.camp and "营地" or ""),
                    vw * 0.5, py + 12, 22, 0.98, 0.90, 0.66, a)
-  DrawText(string.format("天气 %s   油量 %.0f / %d L",
+  local fc = morningReport.forecast
+  local fcName = (fc ~= nil and WEATHER_NAMES ~= nil and WEATHER_NAMES[fc]) or nil
+  DrawText(string.format("天气 %s%s   油量 %.0f / %d L",
            (weatherName and weatherName()) or "晴",
+           fcName and ("  →  " .. fcName) or "",
            morningReport.fuel or 0, fuelMax()),
            px + 22, py + 48, 13, 0.82, 0.84, 0.78, a)
   DrawText(string.format("累计完成货运 %d 单", morningReport.jobs or 0),
