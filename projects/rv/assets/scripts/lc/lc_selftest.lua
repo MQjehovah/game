@@ -3836,6 +3836,34 @@ function runSelfTest()
                      tostring(on), tostring(logged), tostring(reset)))
   end
 
+  -- 天气台（电台 3）：优先播报天气预报，且频率更高
+  do
+    local keepOn, keepStation = radioOn, radioStation
+    local keepT, keepNext = radioBroadcastT, radioBroadcastNext
+    local keepToast, keepTT = toast.text, toast.t
+    local keepFixed = radioMastFixed
+    local keepJournal = journal
+    local keepNextId = weatherNextId
+    journal = {}
+    radioMastFixed = true
+    weatherNextId = "rain"
+    radioOn, radioStation = true, 3
+    radioBroadcastT, radioBroadcastNext = 0, 0.1
+    local fired = updateRadioBroadcast(1)
+    local weatherLine = tostring(toast.text):find("天气台", 1, true) ~= nil
+    local newInterval = radioBroadcastNext or 0
+    local faster = newInterval > 0 and newInterval <= 70
+    radioOn, radioStation = keepOn, keepStation
+    radioBroadcastT, radioBroadcastNext = keepT, keepNext
+    toast.text, toast.t = keepToast, keepTT
+    radioMastFixed = keepFixed
+    weatherNextId = keepNextId
+    journal = keepJournal
+    ok(r, "weather radio", fired and weatherLine and faster,
+       string.format("fired=%s line=%s interval=%.0f", tostring(fired),
+                     tostring(weatherLine), newInterval))
+  end
+
   -- 修塔后收音机切换为“信号恢复”广播池
   do
     local keep = radioMastFixed

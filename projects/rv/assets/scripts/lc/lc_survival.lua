@@ -639,6 +639,14 @@ function updateRadioBroadcast(gm)
   local line
   if math.random() < (radioSignalLossChance and radioSignalLossChance() or 0) then
     line = "收音机：（沙沙……）信号很弱，听不清。修好无线电塔也许能好点。"
+  elseif (radioStation or 1) == 3 then
+    -- 天气台：更频繁地播报当前/下一段天气
+    radioBroadcastNext = 40 + math.random() * 30
+    local nowName = (WEATHER_NAMES and WEATHER_NAMES[weather]) or tostring(weather)
+    local nextName = (WEATHER_NAMES and WEATHER_NAMES[weatherNextId]) or "未知"
+    local hrs = (weatherHoursLeft and weatherHoursLeft()) or 0
+    line = string.format("天气台：现在%s，稍后转%s（约 %.1f 小时后）。",
+                         nowName, nextName, hrs)
   elseif warn ~= nil and math.random() < 0.5 then
     line = warn
   elseif #list > 0 then
