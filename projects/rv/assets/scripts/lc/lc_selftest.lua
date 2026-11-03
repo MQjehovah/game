@@ -1121,6 +1121,31 @@ function runSelfTest()
        string.format("night=%d day=%d", nightGain, dayGain))
   end
 
+  -- 雨天送达 +8%（与晴天同一单对比）
+  do
+    local sw, sc, sd, slast = weather, clock, day, lastJobDay
+    local jd, js = jobDelivered, jobStreak
+    local function deliverWith(weatherId)
+      weather = weatherId
+      day, clock, lastJobDay = 9, 12 * 60, 9
+      jobDelivered, jobStreak = 0, 0
+      jobRefreshOffers("gasstop")
+      jobAccept(1)
+      job.stops, job.stopIndex = nil, 1
+      job.pay = { metal = 10 }
+      job.condition = 1.0
+      local m0 = materials.metal or 0
+      jobComplete()
+      return (materials.metal or 0) - m0
+    end
+    local clearGain = deliverWith("clear")
+    local rainGain = deliverWith("rain")
+    weather, clock, day, lastJobDay = sw, sc, sd, slast
+    jobDelivered, jobStreak = jd, js
+    ok(r, "rain delivery bonus", rainGain == 11 and clearGain == 10,
+       string.format("clear=%d rain=%d", clearGain, rainGain))
+  end
+
   -- 雨天行驶：易碎货缓慢受潮掉货况
   do
     local sw, sp = weather, phase

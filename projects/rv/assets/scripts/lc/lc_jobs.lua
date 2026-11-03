@@ -361,6 +361,9 @@ function jobComplete()
   -- 夜间送达 +10%：夜跑视线差，但报酬更高
   local nightBonus = (isNight ~= nil and isNight())
   if nightBonus then scale = scale * 1.10 end
+  -- 雨天送达 +8%：湿滑路面的危险补贴
+  local rainBonus = (weather == "rain")
+  if rainBonus then scale = scale * 1.08 end
   -- 每天第一单：结算 +25%（把跨天/睡觉和货运循环串起来）
   local firstOfDay = jobDailyBonusAvailable()
   if firstOfDay then
@@ -399,7 +402,7 @@ function jobComplete()
   jobResult = {
     ok = true, cargo = name, crates = crates, cond = cond,
     got = table.concat(got, " "), fuel = fuelGot, jobs = jobDelivered,
-    bonus = firstOfDay, night = nightBonus, streak = jobStreak, t = 3.6,
+    bonus = firstOfDay, night = nightBonus, rain = rainBonus, streak = jobStreak, t = 3.6,
   }
   SpawnFloatText(rv.x, 1.8, rv.z,
                  "送达 " .. name .. " x" .. crates, false, 1.6, 1.0, 0.86, 0.4)
