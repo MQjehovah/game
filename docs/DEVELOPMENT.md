@@ -773,15 +773,17 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   等改为引用这些模型，网格槽位/层/`use` 交互钩子不变；`start_mode=furnview` /
   `furnall` / `utilall` / `utilclose` / `utilroof` 提供车内与车顶检查机位，
   `coop_cook.txt` 自动跑一次 `cookRecipe("meal")` 验证灶台交互。
-- **表面细节贴图**（`projects/rv`）：`tools/gen_rv_surfaces.py` 生成 12 张 256×256
-  中性灰度图（浅/深木纹、拉丝金属、深色金属、织物编织、塑料、玻璃、橡胶、车顶面板、
-  车身横向瓦楞、太阳能栅格、叶片斑驳）；`tools/rv_surfaces.py` 的 `face_uvs()`
-  按面法线选投影轴并用世界尺度平铺，`surface_extras()` 输出
-  images/textures/samplers（REPEAT 采样）；`rv_body.gltf` 与 20 个
-  `rv_furn_*.gltf` 的每个 primitive 都带 `TEXCOORD_0`，材质在保留
-  `baseColorFactor` 的前提下追加 `baseColorTexture`，因此调色板不变而表面有
-  木纹/拉丝/编织/瓦楞细节。启动日志可见 12 条
-  `loaded texture 'assets/models/rv/rv_tex_*.png'`。
+- **表面细节贴图**（`projects/rv`）：`tools/gen_rv_surfaces.py` 为 12 种表面各生成
+  3 张 256×256 贴图：底色细节、由高度场 Sobel 得到的切线空间法线、
+  以及 R=AO / G=粗糙度 / B=金属度的 ORM 图；另生成 `rv_tex_lamp.png` 与
+  `rv_tex_tail.png` 两张自发光图（大灯/尾灯）。
+  `tools/rv_surfaces.py` 的 `face_uvs()` 按面法线选投影轴并用世界尺度平铺，
+  `surface_extras()` 输出 38 张 images/textures 与 REPEAT sampler；
+  `rv_body.gltf` 与 20 个 `rv_furn_*.gltf` 的每个 primitive 都带 `TEXCOORD_0`，
+  材质在保留 `baseColorFactor` 的前提下追加 `baseColorTexture`、`normalTexture`、
+  `metallicRoughnessTexture`、`occlusionTexture`，`light`/`tail` 材质再加
+  `emissiveTexture`。启动日志可见 38 条
+  `loaded texture 'assets/models/rv/rv_tex_*.png'`（含 `_n` / `_orm`）。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

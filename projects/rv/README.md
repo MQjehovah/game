@@ -149,12 +149,16 @@
   太阳能板（边框/蓝色电池片/栅线/支架/接线盒）、通风扇（法兰/扇框/防护网/顶盖/
   摇柄）、咖啡机（机身/水箱/冲煮头/滴水盘/杯子/蒸汽棒/按键）、种植箱（木箱/土壤/
   幼苗/果实/支架）；预制体名与 `use` 交互钩子保持不变。
-- **表面细节贴图**：`tools/gen_rv_surfaces.py` 生成 12 张 256×256 中性灰度细节图
+- **表面细节贴图**：`tools/gen_rv_surfaces.py` 为 12 种表面各生成 **3 张** 256×256 贴图
   （浅/深木纹、拉丝金属、深色金属、织物编织、塑料、玻璃、轮胎橡胶、车顶面板、
-  车身横向瓦楞、太阳能栅格、叶片斑驳）；`tools/rv_surfaces.py` 为每个盒体面提供
-  平面投影 UV（按面法线选轴，世界尺度平铺），glTF 材质追加 `baseColorTexture`，
-  由原 `baseColorFactor` 着色 —— 车体与全部 20 类家具因此有了木纹/拉丝/编织/瓦楞
-  等真实表面变化，而调色板不变。
+  车身横向瓦楞、太阳能栅格、叶片斑驳）：
+  `rv_tex_<name>.png` 中性灰度底色细节、`rv_tex_<name>_n.png` 由高度场 Sobel 得到的
+  切线空间法线图、`rv_tex_<name>_orm.png`（R=AO、G=粗糙度、B=金属度）；
+  另有两张自发光贴图 `rv_tex_lamp.png` / `rv_tex_tail.png` 点亮大灯与尾灯。
+  `tools/rv_surfaces.py` 为每个盒体面提供平面投影 UV（按面法线选轴、世界尺度平铺），
+  glTF 材质同时追加 `baseColorTexture` / `normalTexture` / `metallicRoughnessTexture` /
+  `occlusionTexture` / `emissiveTexture`，由原 `baseColorFactor` 着色 ——
+  车体与全部 20 类家具因此有了木纹/拉丝/编织/瓦楞的表面明暗与凹凸，而调色板不变。
 - 车内保留独立内饰板/仪表台/暖光点光源；驾驶席视角隐藏外壳，追逐视角显示完整车体。
 - 公路改为 20 段 10m 深灰立方体 + 独立黄色虚线几何体：抬高路面并加 polygon offset，
   避免远距离 z-fighting 导致的整条路发白；不再依赖贴图/深度投影。
@@ -332,13 +336,17 @@ POI 墙体碰撞/门洞通行等。
   `rv_util_roof.png` 可见车顶太阳能板与通风扇。
   `coop_cook.txt` 双客户端跑 `[coop-cook] stove meal 0->1 ok=true`；
   自检的 `cook at stove` / `drink at sink` / `repair at workbench` 仍通过。
-- **表面贴图验证**：`tools/gen_rv_surfaces.py` 生成 12 张 `rv_tex_*.png`，
-  `rv_body.gltf` 与 20 个 `rv_furn_*.gltf` 的每个 primitive 都带 `TEXCOORD_0`
-  且材质引用对应贴图（启动日志可见 12 条 `loaded texture 'assets/models/rv/rv_tex_*'`）。
-  对比截图：改造前 `rv_hi_side3.png` / `rv_hi_interior2.png` / `rv_furn_view.png` 为
-  纯色盒体；改造后 `rv_tex_side3.png`（车身横向瓦楞 + 纵向板缝）、`rv_tex_front2.png`
-  （驾驶室侧面瓦楞）、`rv_tex_furn2.png`（吊柜/床架木纹、地面织物编织）、
-  `rv_tex_util.png`（工作台木纹、红色工具箱、蓝色水箱、地板编织）可见连续表面纹理。
+- **表面贴图验证**：`tools/gen_rv_surfaces.py` 生成 **38 张** `rv_tex_*.png`
+  （12 种表面 × 底色/法线/ORM + 2 张自发光），`rv_body.gltf` 与 20 个
+  `rv_furn_*.gltf` 的每个 primitive 都带 `TEXCOORD_0`，材质同时引用
+  `baseColorTexture` / `normalTexture` / `metallicRoughnessTexture` /
+  `occlusionTexture`（启动日志可见 38 条 `loaded texture 'assets/models/rv/rv_tex_*'`）。
+  对比截图：上一版 `rv_tex_furn2.png` / `rv_tex_util.png` 只有底色明暗；
+  本版 `rv_tex_normal_furn.png`（工作台/吊柜木纹出现凹陷与高光，红色工具箱有塑料高光）、
+  `rv_tex_normal_util.png`（工作台挂板木纹浮雕、蓝色水箱面板缝）、
+  `rv_tex_normal_body.png`（车身横向瓦楞的凹凸阴影）、`rv_tex_side3.png`
+  （车身瓦楞 + 纵向板缝）、`rv_tex_front2.png`（驾驶室侧面）。
+  自发光：`rv_tex_emit_front.png`（大灯发亮）、`rv_tex_emit_tail.png`（夜间尾灯红色发光）。
   `rv_tex_board.png` 双人上车截图中车门与车身同样带瓦楞纹理。
 - **可破碎橱窗验证**：`rv_window_glass.gltf` 使用 BLEND 材质，商店/加油站/仓库/商场/
   湖边木屋/诊所橱窗初始为半透明蓝色面板（`rv_glass_intact_close.png` 中窗内商品呈蓝色调，
@@ -417,8 +425,9 @@ POI 墙体碰撞/门洞通行等。
 - 房车车体已由 `tools/gen_rv_body.py` 升级为倒角车身、内凹车窗、轮拱、保险杠/
   防擦条、车顶设备与多段式内饰；20 类可摆放家具全部改由
   `tools/gen_rv_furniture.py` 生成多部件 glTF。两者都已接入
-  `tools/gen_rv_surfaces.py` 生成的 12 张表面细节贴图（木纹/拉丝金属/织物/橡胶/
-  车顶面板/车身瓦楞/太阳能栅格/叶片），每个 primitive 带平面投影 UV；
-  但几何仍是脚本化低模（盒体/棱柱组合），没有法线贴图、AO 或程序化曲面。
+  `tools/gen_rv_surfaces.py` 生成 12 种表面 ×（底色 + 法线 + ORM）+ 2 张自发光贴图，
+  共 38 张，每个 primitive 带平面投影 UV 并接入法线/粗糙度/金属度/AO/自发光；
+  但几何仍是脚本化低模（盒体/棱柱组合），法线图只是平面凸起近似，
+  没有真实曲面细分、视差贴图或手工建模的高精度资产。
 - 车辆零件是整体状态，不是可拆装的独立部件。
 - 音效是程序合成的占位音，缺少更丰富的环境声/音乐。

@@ -19,7 +19,8 @@ import math
 import struct
 from pathlib import Path
 
-from rv_surfaces import face_uvs, surface_extras, surface_material
+from rv_surfaces import (face_uvs, surface_emissive, surface_extras,
+                         surface_material)
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "projects/rv/assets/models/rv"
@@ -406,6 +407,9 @@ def main():
             None, "body", "roof", "metal_dark", "glass", "rubber", "metal",
             "plastic", "plastic", "body", "wood_light", "fabric")):
         surface_material(mat, tex)
+    # Self-glow for the head- and tail-lights (dedicated emissive maps).
+    surface_emissive(materials[7], "lamp")
+    surface_emissive(materials[8], "tail")
 
     buffer = b""
     views = []

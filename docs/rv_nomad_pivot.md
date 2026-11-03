@@ -202,13 +202,15 @@
   冲煮头/滴水盘/杯子/蒸汽棒、种植箱土壤/幼苗/果实/支架）；
   预制体名、网格槽位与 `use` 钩子不变，`start_mode=furnview` / `furnall` /
   `utilall` / `utilclose` / `utilroof` 提供车内/车顶检查机位。
-- **表面细节贴图**：`tools/gen_rv_surfaces.py` 生成 12 张 256×256 中性灰度图
-  （`rv_tex_wood_light/wood_dark/metal/metal_dark/fabric/plastic/glass/rubber/
-  roof/body/solar/leaf.png`）；`tools/rv_surfaces.py` 提供 `face_uvs()`（按面法线
-  选投影轴、世界尺度平铺）与 `surface_extras()`；`rv_body.gltf` 与 20 个
-  `rv_furn_*.gltf` 的每个 primitive 都带 `TEXCOORD_0`，材质在保留
-  `baseColorFactor` 的同时追加 `baseColorTexture`，因此木纹/拉丝金属/织物编织/
-  车身瓦楞等细节会随原调色板着色。
+- **表面细节贴图**：`tools/gen_rv_surfaces.py` 为 12 种表面各生成 3 张 256×256 贴图
+  （`rv_tex_<name>.png` 底色细节、`_n.png` 由高度场 Sobel 得到的切线空间法线、
+  `_orm.png` 的 R=AO / G=粗糙度 / B=金属度），另有两张自发光图
+  `rv_tex_lamp.png` / `rv_tex_tail.png`；`tools/rv_surfaces.py` 提供 `face_uvs()`
+  （按面法线选投影轴、世界尺度平铺）与 `surface_extras()`（38 张 images/textures）；
+  `rv_body.gltf` 与 20 个 `rv_furn_*.gltf` 的每个 primitive 都带 `TEXCOORD_0`，
+  材质在保留 `baseColorFactor` 的同时追加 `baseColorTexture` / `normalTexture` /
+  `metallicRoughnessTexture` / `occlusionTexture` / `emissiveTexture`，
+  因此木纹/拉丝金属/织物编织/车身瓦楞既有底色也有凹凸与高光。
 - **位姿快照**：两侧按相同顺序 `Spawn("player")` … `Spawn("player4")`；4 个代理都带
   `CTransformBind`。客户端 glTF 士兵可视实体每帧跟随代理，房车仍使用主世界 glTF 模型。
 - **每客户端实体所有权**：`EntityKey(entity)` + `netControlKey` GameVar；服务器把每个
@@ -333,9 +335,10 @@
    保险杠/防擦条、车顶设备与多段式仪表台/方向盘/驾驶席/吊柜；全部 20 类可摆放家具
    （床/灶台/冰箱/水槽/工作台/储物箱/电视/卫浴/药柜/武器架/暖器/水箱/电池/发电机/
    炮塔/太阳能板/通风扇/咖啡机/种植箱）也改由 `tools/gen_rv_furniture.py` 生成
-   多部件模型，并接入 12 张程序化表面细节贴图（木纹/拉丝金属/织物/橡胶/车身瓦楞/
-   太阳能栅格）与平面投影 UV；但几何仍是脚本化低模（盒体/棱柱组合），
-   没有法线贴图、AO 或程序化曲面；
+   多部件模型，并接入 12 种表面 ×（底色 + 法线 + ORM 贴图）+ 2 张自发光贴图
+   （木纹/拉丝金属/织物/橡胶/车身瓦楞/太阳能栅格），每个 primitive 有平面投影 UV；
+   但几何仍是脚本化低模（盒体/棱柱组合），法线图只是平面凸起近似，
+   没有曲面细分/视差贴图；
    商店/加油站/仓库/商场/湖边木屋/诊所前窗已支持透明玻璃，破碎时按 seed 运行时生成
    Voronoi 裂纹（每扇 7–12 块、位置/数量/大小每次不同），落地后保留为永久碎屑
    （状态与 seed 由服务器权威广播），但仍是“几何裁剪 + 预生成碎片网格”的近似，

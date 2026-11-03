@@ -453,6 +453,16 @@ function on_start()
     px, pz = -0.28, 1.90
     pyaw = math.pi
   end
+  if startMode == "texclose" then
+    -- Test-only close-up of the workbench (wood/pegboard normal maps).
+    px, pz = -0.35, 1.00
+    pyaw = math.pi * 0.5
+  end
+  if startMode == "texbody" then
+    -- Test-only close-up of the RV body side (rib/panel normal map).
+    px, pz = 3.40, 0.00
+    pyaw = -math.pi * 0.5
+  end
   if startMode == "poi" then
     -- 路边商店门口：用于检查可进入建筑（门洞/内衬/战利品）
     local nd = nodeById("ruin")
@@ -524,6 +534,8 @@ function on_start()
   elseif startMode == "look_down" then player.pitch = -0.9
   elseif startMode == "look_up" then player.pitch = 0.7
   elseif startMode == "utilclose" then player.pitch = -0.34
+  elseif startMode == "texclose" then player.pitch = -0.28
+  elseif startMode == "texbody" then player.pitch = 0.05
   end
   SetVar("cameraMouseLock", 1)
   updateInteraction()
