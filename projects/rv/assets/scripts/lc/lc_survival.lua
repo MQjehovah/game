@@ -335,6 +335,15 @@ function addWater(amount)
   water = math.max(0, math.min(waterMax(), water + amount))
 end
 
+-- 水箱快空提示：低于 10% 时提醒补水（营地/雨水/风车）
+function waterLowText(waterValue, maxValue)
+  local w = waterValue or 0
+  local m = maxValue or 0
+  if m <= 0 then return nil end
+  if w / m >= 0.10 then return nil end
+  return string.format("水箱快空了（%.0fL）——营地免费补水、雨天接雨或风车取水", w)
+end
+
 -- 农场风车水泵：基础每 60 游戏分钟可接 30L 水；升级后冷却 30 分钟
 WINDMILL_WATER_MINUTES = 60
 WINDMILL_UPGRADE_MINUTES = 30
@@ -1014,6 +1023,14 @@ function updateSurvival(dt)
     toast.text = "身上太脏 — 到卫生间洗漱（卫生差会睡不好）"
     toast.t = 3.4
   elseif needs.hygiene > 40 then lastWarn.hygiene = false end
+  local wLow = waterLowText(water, waterMax())
+  if wLow ~= nil and not lastWarn.water then
+    lastWarn.water = true
+    toast.text = wLow
+    toast.t = 3.6
+  elseif (water or 0) > waterMax() * 0.25 then
+    lastWarn.water = false
+  end
 
   -- 雨天接水
   if weather == "rain" and water < waterMax() then

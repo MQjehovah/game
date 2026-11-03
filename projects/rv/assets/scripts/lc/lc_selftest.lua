@@ -1862,6 +1862,17 @@ function runSelfTest()
                      tostring(edge), tostring(okCool)))
   end
 
+  -- 水箱快空提示：低于 10% 才提示
+  do
+    local low = waterLowText(5, 120)
+    local edge = waterLowText(12, 120)
+    local okW = waterLowText(60, 120)
+    ok(r, "low water hint",
+       low ~= nil and edge == nil and okW == nil,
+       string.format("low=%s edge=%s ok=%s", tostring(low),
+                     tostring(edge), tostring(okW)))
+  end
+
   -- 机油劣化增加油耗（最高 +8%）
   do
     local full = engineOilFuelScale(100)
