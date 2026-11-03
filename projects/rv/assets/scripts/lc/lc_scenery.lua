@@ -309,6 +309,39 @@ function spawnRoadsidePoles()
   spawnPolesAlong(0, 60, 0, 220, -1)
 end
 
+-- 主路两侧的废弃车/石块：交错分布，营造“有人来过又废弃”的公路感。
+function spawnRoadDebris()
+  roadDebris = {}
+  local function clearOf(x, z)
+    if x * x + z * z < 24 * 24 then return false end
+    for _, nd in ipairs(NODES) do
+      local dx, dz = nd.x - x, nd.z - z
+      if dx * dx + dz * dz < 10 * 10 then return false end
+      local cx, cz = poiCenter(nd)
+      local cdx, cdz = cx - x, cz - z
+      if cdx * cdx + cdz * cdz < 10 * 10 then return false end
+    end
+    return true
+  end
+  local n = 0
+  for z = -196, 196, 46 do
+    n = n + 1
+    local side = (n % 2 == 0) and 1 or -1
+    local x = side * (8.5 + math.random() * 2.5)
+    if clearOf(x, z) then
+      local pre = (n % 3 == 0) and "rv_rock" or "rv_wreck"
+      local e = SpawnPrefab(pre, { x = x, y = (terrainHeight and terrainHeight(x, z)) or 0,
+                                   z = z })
+      if e ~= nil then
+        local s = 0.75 + math.random() * 0.5
+        SetScale(e, s, s, s)
+        SetRotationY(e, math.random() * math.pi * 2)
+        roadDebris[#roadDebris + 1] = { ent = e, x = x, z = z }
+      end
+    end
+  end
+end
+
 -- 主路两侧的窄土肩：沥青边缘不再直接切到草地，远处看有碎石/泥过渡。
 function spawnRoadShoulders(ax, az, bx, bz)
   local dx, dz = bx - ax, bz - az

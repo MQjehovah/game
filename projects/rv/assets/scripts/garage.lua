@@ -375,6 +375,7 @@ function on_start()
   if not hasSave then preGeneratePois(6) end
   spawnRoadsidePoles()
   spawnRoadMarkers()
+  spawnRoadDebris()
   LC.flow.load("assets/flow/raid_wave.flow.json")
   LC.flow.load("assets/flow/stop_cycle.flow.json")
   LC.flow.load("assets/flow/drive_event.flow.json")

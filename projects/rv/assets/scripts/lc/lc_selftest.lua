@@ -1227,6 +1227,12 @@ function runSelfTest()
        string.format("t=0.50 alpha=%.2f", a))
   end
 
+  -- 主路两侧废弃车/石块
+  do
+    local n = #roadDebris
+    ok(r, "roadside debris", n >= 4, string.format("debris=%d", n))
+  end
+
   -- 存读档：行程/探索/货运单数
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
