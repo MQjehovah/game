@@ -941,6 +941,21 @@ function runSelfTest()
        string.format("posts=%d nearCamp=%d", n, bad))
   end
 
+  -- 夜间前大灯：夜里开车生成两盏聚光灯，白天/驻车移除
+  do
+    local savedClock, savedPhase = clock, phase
+    phase = "driving"
+    clock = 22 * 60
+    updateVehicleLights()
+    local onCount = #rvHeadlights
+    clock = 12 * 60
+    updateVehicleLights()
+    local offCount = #rvHeadlights
+    clock, phase = savedClock, savedPhase
+    ok(r, "rv night headlights", onCount == 2 and offCount == 0,
+       string.format("night=%d day=%d parts=%d", onCount, offCount, #rvParts))
+  end
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")

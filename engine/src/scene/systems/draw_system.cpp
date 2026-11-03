@@ -1322,11 +1322,24 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                     std::cos(sl.spotAngle * (1.0f - sl.spotSoftness) * math::kDegToRad);
                 const gfx::Color sc{sl.color.r * sl.intensity, sl.color.g * sl.intensity,
                                     sl.color.b * sl.intensity, sl.color.a};
-                renderer.SetSpotLight(slIndex++, st.pos, sl.spotDir, sc, sl.radius, inner, outer);
+                // The authored cone axis is local to the entity: rotate it into
+                // world space so a headlight prefab bolted to a vehicle follows
+                // its yaw/pitch/roll instead of always pointing at world -Z.
+                const math::Vec3 dir = st.rot.Rotate(sl.spotDir);
+                renderer.SetSpotLight(slIndex++, st.pos, dir, sc, sl.radius, inner, outer);
             });
+        const int activeSpots = slIndex;
         for (; slIndex < gfx::Renderer::kMaxSpotLights; ++slIndex)
             renderer.SetSpotLight(slIndex, {0.0f, 0.0f, 0.0f}, {0.0f, -1.0f, 0.0f},
                                   {0.0f, 0.0f, 0.0f, 1.0f}, 0.0f, 1.0f, 0.0f);
+        {
+            static int lastSpotCount = -1;
+            if (activeSpots != lastSpotCount) {
+                lastSpotCount = activeSpots;
+                NEON_LOG_CAT(neon::core::LogCategory::Gfx, neon::core::LogLevel::Info,
+                             "Renderer: active spot lights = %d", activeSpots);
+            }
+        }
         renderer.DrawSky();
     }
     // Scripts may have spawned/despawned sprite entities since the last frame.

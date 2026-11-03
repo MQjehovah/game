@@ -600,6 +600,12 @@ function on_start()
     px, pz = 5.6, -18.0
     pyaw = dirYaw(-1.4, 12.0)
   end
+  if startMode == "nightbeam" or startMode == "nightoff" then
+    -- Test-only: stand in front of the RV at night so the headlight cones
+    -- point back toward the camera and the lit road is visible.
+    px, pz = 7.4, 7.6
+    pyaw = dirYaw(-7.4, -3.4)
+  end
   if startMode == "furnview" then
     -- Test-only interior view down the furniture wall.
     px, pz = -0.72, 1.30
@@ -792,6 +798,15 @@ function on_start()
     jobAccept(1)
     setPhase("driving")
     driveView = "chase"
+  elseif startMode == "nighthead" then
+    clock = 22 * 60
+    setPhase("driving")
+    driveView = "chase"
+  elseif startMode == "nightbeam" then
+    clock = 22 * 60
+    rv.forceHeadlights = true
+  elseif startMode == "nightoff" then
+    clock = 22 * 60
   elseif startMode == "drive" or startMode == "night_drive" or autoPilot or rv.steerDemo then
     setPhase("driving")
   elseif startMode == "utilroof" then
@@ -992,6 +1007,7 @@ end
 function on_update(ent, dt)
   if updateTerrainLod ~= nil then updateTerrainLod(dt) end
   if updateJobs ~= nil then updateJobs(dt) end
+  if updateVehicleLights ~= nil then updateVehicleLights() end
   if coopRole ~= nil then
     coopUpdate(dt)
     if updatePoiWindows then updatePoiWindows(dt) end

@@ -60,6 +60,7 @@ jobBoard = nil                -- 营地货运板世界坐标
 jobCargoEnts = {}             -- 车顶货物可视化
 jobUI = false                 -- 货运板菜单是否打开
 roadMarkers = {}              -- 公路轮廓桩（反光桩）
+rvHeadlights = {}             -- 夜间前大灯（聚光灯，随车身旋转）
 
 -- 搜刮 / 低强度威胁
 stopBag, stopThreat, evacT = {}, 0, -1

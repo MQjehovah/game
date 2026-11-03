@@ -197,3 +197,52 @@ function applyRvTransform()
     setTilted(gridRoofEnt, 0, ROOF_Y, 0, 0)
   end
 end
+
+-- ===========================================================================
+-- 夜间前大灯：两盏聚光灯挂在车头，随车身旋转；白天/熄火时整个实体移除，
+-- 避免占用引擎有限的点光/聚光槽，也避免白天出现两道亮斑。
+-- ===========================================================================
+local HEADLIGHTS = {
+  { -0.78, 0.96, 4.26 },
+  {  0.78, 0.96, 4.26 },
+}
+
+function setRvHeadlights(on)
+  if rvParts == nil then return end
+  if on then
+    if #rvHeadlights > 0 then return end
+    for _, h in ipairs(HEADLIGHTS) do
+      local e = SpawnPrefab("rv_headlight", { x = rv.x, y = -60, z = rv.z })
+      if e ~= nil then
+        SetScale(e, 0.24, 0.17, 0.07)
+        local part = { ent = e, name = "headlight", lx = h[1], ly = h[2], lz = h[3] }
+        rvParts[#rvParts + 1] = part
+        rvHeadlights[#rvHeadlights + 1] = part
+        setTilted(e, part.lx, part.ly, part.lz, 0)
+      end
+    end
+  else
+    if #rvHeadlights == 0 then return end
+    for _, p in ipairs(rvHeadlights) do
+      Despawn(p.ent)
+      for i = #rvParts, 1, -1 do
+        if rvParts[i] == p then table.remove(rvParts, i) break end
+      end
+    end
+    rvHeadlights = {}
+  end
+end
+
+-- driving: 单机用 phase，联机由调用方传入“是否有人在开/车在动”
+function updateVehicleLights(driving)
+  local want = false
+  if isNight ~= nil and isNight() then
+    if driving == nil then
+      want = (phase == "driving")
+    else
+      want = driving and true or false
+    end
+  end
+  if rv.forceHeadlights then want = true end
+  setRvHeadlights(want)
+end

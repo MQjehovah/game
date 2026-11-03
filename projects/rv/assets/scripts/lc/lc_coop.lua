@@ -2165,6 +2165,13 @@ function coopUpdate(dt)
   else
     clientUpdate(dt)
   end
+  if updateVehicleLights ~= nil then
+    local driving = false
+    for i = 1, MAX_SLOTS do
+      if coop.slots[i].driving then driving = true end
+    end
+    updateVehicleLights(driving)
+  end
 end
 
 local function drawBar(x, y, w, label, frac, r, g, b)
