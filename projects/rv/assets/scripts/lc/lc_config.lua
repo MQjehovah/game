@@ -127,6 +127,7 @@ DRIVE = {
 -- 车辆：燃油 / 车体耐久
 VEH = {
   tank = 60, burn = 0.12, idleBurn = 0.010, limpSpeed = 1.5,
+  fuelPerLevel = 10,        -- 油箱每级 +10L
   cargoPerLevel = 300,      -- 货架每级 +300kg 载重上限
   baseBattery = 1.5,        -- 房车自带基础电池 kWh
   pressureWear = 0.00002,   -- 冷胎压随里程下降（bar/m，约 0.02bar/1000m）

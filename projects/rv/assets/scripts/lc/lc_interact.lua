@@ -138,9 +138,9 @@ function updateInteraction()
   end
 
   if nearRv() then
-    if hasItem("fuelcan", 1) and (fuel or 0) < VEH.tank - 0.5 then
+    if hasItem("fuelcan", 1) and (fuel or 0) < fuelMax() - 0.5 then
       nearAction = { kind = "refuel", verb = "加注燃油",
-                     detail = string.format("E 使用燃油罐（%.0f / %d L）", fuel, VEH.tank),
+                     detail = string.format("E 使用燃油罐（%.0f / %d L）", fuel, fuelMax()),
                      x = rv.x, z = rv.z }
     else
       nearAction = { kind = "rv", verb = "驾驶房车", detail = "W 油门 / 空格停车 / B 改装",

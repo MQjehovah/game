@@ -120,11 +120,11 @@ function drawRvStatus(x, y, w)
   DrawRectOutline(x, y, w, 190, 0.46, 0.50, 0.42, 0.85)
   DrawText("房车", x + 10, y + 6, 14, 0.90, 0.84, 0.62, 1)
   local yy = y + 26
-  local fLow = fuel / VEH.tank < 0.2
-  DrawText(string.format("燃油  %.0f / %d L", fuel, VEH.tank), x + 10, yy, 13,
+  local fLow = fuel / fuelMax() < 0.2
+  DrawText(string.format("燃油  %.0f / %d L", fuel, fuelMax()), x + 10, yy, 13,
            fLow and 1 or 0.86, fLow and 0.4 or 0.84, fLow and 0.3 or 0.78, 1)
   DrawRect(x + 10, yy + 17, w - 20, 4, 0.12, 0.12, 0.13, 0.9)
-  DrawRect(x + 10, yy + 17, (w - 20) * math.max(0, fuel / VEH.tank), 4,
+  DrawRect(x + 10, yy + 17, (w - 20) * math.max(0, fuel / fuelMax()), 4,
            fLow and 0.9 or 0.55, fLow and 0.25 or 0.78, 0.25, 1)
   yy = yy + 28
   DrawText(string.format("车况  %.0f%%", dur), x + 10, yy, 13,
@@ -588,7 +588,7 @@ function drawMorningReport()
                    vw * 0.5, py + 12, 22, 0.98, 0.90, 0.66, a)
   DrawText(string.format("天气 %s   油量 %.0f / %d L",
            (weatherName and weatherName()) or "晴",
-           morningReport.fuel or 0, VEH.tank),
+           morningReport.fuel or 0, fuelMax()),
            px + 22, py + 48, 13, 0.82, 0.84, 0.78, a)
   DrawText(string.format("累计完成货运 %d 单", morningReport.jobs or 0),
            px + 22, py + 70, 13, 0.82, 0.84, 0.78, a)
@@ -631,13 +631,13 @@ function drawDriveHud()
   DrawText("km/h", px + 84, py + 26, 15, 0.7, 0.68, 0.62, 1)
   DrawText("挡位 " .. gearText, px + 140, py + 26, 15, 0.6, 0.85, 0.95, 1)
   DrawText(string.format("%.0f rpm", rpm), px + 140, py + 44, 11, 0.55, 0.75, 0.82, 1)
-  local fLow = fuel / VEH.tank < 0.2
-  DrawText(string.format("燃料 %.0f / %d L%s", fuel, VEH.tank,
+  local fLow = fuel / fuelMax() < 0.2
+  DrawText(string.format("燃料 %.0f / %d L%s", fuel, fuelMax(),
            fuel <= 0 and "  没油了! 龟速" or (fLow and "  油量低!" or "")),
            px + 14, py + 60, 13, fLow and 1 or 0.85,
            fLow and 0.4 or 0.84, fLow and 0.3 or 0.8, 1)
   DrawRect(px + 14, py + 78, pw - 28, 5, 0.13, 0.13, 0.14, 0.9)
-  DrawRect(px + 14, py + 78, (pw - 28) * math.max(0, fuel / VEH.tank), 5,
+  DrawRect(px + 14, py + 78, (pw - 28) * math.max(0, fuel / fuelMax()), 5,
            0.5, 0.75, 0.2, 1)
   DrawText(string.format("车体 %.0f%%%s", dur, dur < 40 and "  需修理" or ""),
            px + 14, py + 92, 13, dur < 40 and 1 or 0.85,
@@ -797,7 +797,7 @@ function drawStationMenu()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
   local isStove = (stationUI.kind == "stove")
-  local rows = isStove and #RECIPES or (#REPAIR_PARTS + 5)
+  local rows = isStove and #RECIPES or (#REPAIR_PARTS + 6)
   local pw = 540
   local ph = 108 + rows * 58
   local px = math.floor((vw - pw) * 0.5)
@@ -952,7 +952,26 @@ function drawStationMenu()
                     (ok or maxed) and 0.72 or 0.28)
       yy = yy + 58
     end
-    drawTextCentered("按 1-4 维修 / 5 货架 / 6 鱼竿 / 7 修理包 / 8 篷布 / 9 水箱    E 关闭",
+    -- 油箱升级（第 10 项，按 0）
+    do
+      local lv = (upgrades and upgrades.fuel) or 0
+      local maxed = lv >= 3
+      local cost = { metal = 3 + lv, electronics = 1 + lv }
+      local ok = (not maxed) and canAfford(cost)
+      DrawRect(px + 16, yy - 4, pw - 32, 52, ok and 0.10 or 0.12,
+               ok and 0.12 or 0.08, ok and 0.09 or 0.08, 0.7)
+      DrawText("[0]", px + 26, yy, 16, ok and 0.95 or 0.5, ok and 0.85 or 0.5, 0.55, 1)
+      DrawText("油箱", px + 66, yy, 16, ok and 0.96 or 0.6, ok and 0.92 or 0.6, 0.82, 1)
+      DrawText(string.format("Lv%d · 容量 %dL", lv, fuelMax()),
+               px + 66, yy + 21, 12, 0.80, 0.80, 0.74, 1)
+      local rightText = maxed and "满级 Lv3" or
+        ("升级 Lv" .. lv .. "->" .. (lv + 1) .. "  " .. costText(cost))
+      drawTextRight(rightText, px + pw - 24, yy + 8, 12,
+                    (ok or maxed) and 0.85 or 1, (ok or maxed) and 0.82 or 0.35,
+                    (ok or maxed) and 0.72 or 0.28)
+      yy = yy + 58
+    end
+    drawTextCentered("1-4 维修 / 5 货架 / 6 鱼竿 / 7 修理包 / 8 篷布 / 9 水箱 / 0 油箱    E 关闭",
                      vw * 0.5, py + ph - 30, 13, 0.75, 0.75, 0.68, 1)
   end
 end

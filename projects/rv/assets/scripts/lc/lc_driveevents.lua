@@ -126,8 +126,8 @@ end
 function collectDriveProp(p)
   if p.kind == "fuelcan" then
     local v = 10 + math.random(0, 8)
-    fuel = math.min(VEH.tank, fuel + v)
-    fuelWarned = fuel > VEH.tank * 0.5 and false or fuelWarned
+    fuel = math.min(fuelMax(), fuel + v)
+    fuelWarned = fuel > fuelMax() * 0.5 and false or fuelWarned
     SpawnFloatText(p.x, 1.0, p.z, "燃料 +" .. v .. "L",
                    false, 1.2, 1.0, 0.85, 0.4)
   else

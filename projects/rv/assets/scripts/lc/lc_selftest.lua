@@ -128,6 +128,7 @@ function runSelfTest()
   do
     local lv0 = upgrades.water or 0
     local max0 = waterMax()
+    local w0 = water
     materials.metal = (materials.metal or 0) + 8
     materials.cloth = (materials.cloth or 0) + 8
     if lv0 < 3 then upgradeWater() end
@@ -135,7 +136,25 @@ function runSelfTest()
     local newLv = upgrades.water or 0
     local upOk = newLv == lv0 + 1 and max1 == max0 + 30
     upgrades.water = lv0
+    water = w0
     ok(r, "water tank upgrade", upOk,
+       string.format("capacity %d->%d lv %d->%d", max0, max1, lv0, newLv))
+  end
+
+  -- 油箱升级：容量 +10L/级
+  do
+    local lv0 = upgrades.fuel or 0
+    local max0 = fuelMax()
+    local f0 = fuel
+    materials.metal = (materials.metal or 0) + 12
+    materials.electronics = (materials.electronics or 0) + 8
+    if lv0 < 3 then upgradeFuel() end
+    local max1 = fuelMax()
+    local newLv = upgrades.fuel or 0
+    local upOk = newLv == lv0 + 1 and max1 == max0 + 10
+    upgrades.fuel = lv0
+    fuel = f0
+    ok(r, "fuel tank upgrade", upOk,
        string.format("capacity %d->%d lv %d->%d", max0, max1, lv0, newLv))
   end
 

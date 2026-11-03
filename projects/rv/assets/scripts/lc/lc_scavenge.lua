@@ -169,7 +169,7 @@ function firstVisitBonus(nd)
   local cloth = 1
   materials.metal = (materials.metal or 0) + metal
   materials.cloth = (materials.cloth or 0) + cloth
-  local fuelGot = math.min(VEH.tank - fuel, 4 + danger * 2)
+  local fuelGot = math.min(fuelMax() - fuel, 4 + danger * 2)
   if fuelGot > 0 then fuel = fuel + fuelGot end
   if addDailyProgress ~= nil then addDailyProgress("explore", 1) end
   return string.format("首次抵达 · 补给 金属片+%d 布料+%d 燃料+%dL",

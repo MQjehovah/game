@@ -232,6 +232,11 @@ function honk()
   return true
 end
 
+-- 油箱容量：基础 60L + 每级 10L
+function fuelMax()
+  return VEH.tank + (upgrades.fuel or 0) * (VEH.fuelPerLevel or 10)
+end
+
 function updateDrive(dt)
   local throttle = (ActionDown("w") and 1 or 0) - (ActionDown("s") and 1 or 0)
   -- Positive yaw turns toward -X, which is screen-right when facing +Z, so
@@ -379,11 +384,11 @@ function updateDrive(dt)
     maxSp = math.min(maxSp, 2.2)
     acc = acc * 0.45
   end
-  if fuel <= VEH.tank * 0.2 and not fuelWarned then
+  if fuel <= fuelMax() * 0.2 and not fuelWarned then
     fuelWarned = true
     toast.text = "油量低！加油站加满 / 路边捡燃油桶"
     toast.t = 3.5
-  elseif fuel > VEH.tank * 0.5 then
+  elseif fuel > fuelMax() * 0.5 then
     fuelWarned = false
   end
 

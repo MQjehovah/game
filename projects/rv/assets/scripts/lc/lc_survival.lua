@@ -9,7 +9,7 @@ function initSurvival()
   day = 1
   water = 80
   parts = { engine = 100, tires = 100, battery = 100 }
-  upgrades = { engine = 0, tires = 0, cargo = 0, rod = 0, water = 0 }
+  upgrades = { engine = 0, tires = 0, cargo = 0, rod = 0, water = 0, fuel = 0 }
   lastWarn = {}
   hurtT = 0
   if dailyGoal == nil and rollDailyGoal ~= nil then rollDailyGoal() end
@@ -147,7 +147,7 @@ function addDailyProgress(kind, amount)
     local got = {}
     for k, v in pairs(dailyGoal.reward or {}) do
       if k == "fuel" then
-        fuel = math.min(VEH.tank, fuel + v)
+        fuel = math.min(fuelMax(), fuel + v)
         got[#got + 1] = "燃料+" .. v .. "L"
       else
         materials[k] = (materials[k] or 0) + v
@@ -173,7 +173,7 @@ function checkMilestones(kind, value)
       for k, v in pairs(m.reward or {}) do
         if k == "fuel" then
           local before = fuel
-          fuel = math.min(VEH.tank, fuel + v)
+          fuel = math.min(fuelMax(), fuel + v)
           got[#got + 1] = string.format("燃料+%dL", math.floor(fuel - before + 0.5))
         else
           materials[k] = (materials[k] or 0) + v
@@ -297,7 +297,7 @@ function useFuelCan()
   local it = ITEMS.fuelcan
   if it == nil or not takeItem("fuelcan", 1) then return false end
   local before = fuel or 0
-  fuel = math.min(VEH.tank, before + (it.amount or 10))
+  fuel = math.min(fuelMax(), before + (it.amount or 10))
   local got = fuel - before
   if got <= 0.01 then
     addItem("fuelcan", 1)  -- 油箱已满，不浪费
@@ -306,7 +306,7 @@ function useFuelCan()
     return false
   end
   if PlaySfx then PlaySfx("pickup") end
-  toast.text = string.format("加注 %0.0fL 燃料（%.0f / %d L）", got, fuel, VEH.tank)
+  toast.text = string.format("加注 %0.0fL 燃料（%.0f / %d L）", got, fuel, fuelMax())
   toast.t = 2.4
   return true
 end
@@ -825,6 +825,30 @@ function upgradeWater()
   if PlaySfx then PlaySfx("repair") end
   toast.text = string.format("水箱升级到 Lv%d — 容量 %dL",
                              upgrades.water, waterMax())
+  toast.t = 2.6
+  return true
+end
+
+function upgradeFuel()
+  upgrades.fuel = upgrades.fuel or 0
+  if upgrades.fuel >= 3 then
+    toast.text = "油箱已经满级"
+    toast.t = 1.8
+    return false
+  end
+  local lv = upgrades.fuel
+  local cost = { metal = 3 + lv, electronics = 1 + lv }
+  if not canAfford(cost) then
+    toast.text = "升级材料不足：" .. costText(cost)
+    toast.t = 2.2
+    return false
+  end
+  payCost(cost)
+  upgrades.fuel = lv + 1
+  fuel = math.min(fuelMax(), (fuel or 0) + 10)
+  if PlaySfx then PlaySfx("repair") end
+  toast.text = string.format("油箱升级到 Lv%d — 容量 %dL",
+                             upgrades.fuel, fuelMax())
   toast.t = 2.6
   return true
 end

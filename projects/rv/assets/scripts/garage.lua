@@ -50,7 +50,7 @@ function setPhase(m)
                      .. (stars ~= "" and ("（危险 " .. stars .. "）") or "")
                      .. " — E 搜物资箱"
         if atNode == "gasstop" or atNode == "camp" then
-          fuel = VEH.tank
+          fuel = fuelMax()
           water = waterMax()
           fuelWarned = false
           toast.text = toast.text .. " · ⛽ 油/水已补满"
@@ -274,7 +274,7 @@ function loadLayout()
     end
   end
   if type(data.vehicle) == "table" then
-    fuel = math.min(VEH.tank, tonumber(data.vehicle.fuel) or VEH.tank)
+    fuel = math.min(fuelMax(), tonumber(data.vehicle.fuel) or fuelMax())
     dur = math.min(VEH.durMax, tonumber(data.vehicle.dur) or VEH.durMax)
     if type(data.vehicle.parts) == "table" then
       for k, v in pairs(data.vehicle.parts) do
@@ -1456,6 +1456,7 @@ function on_update(ent, dt)
       if ActionPressed("7") and craftRepairKit ~= nil then craftRepairKit() end
       if ActionPressed("8") and craftTarp ~= nil then craftTarp() end
       if ActionPressed("9") and upgradeWater ~= nil then upgradeWater() end
+      if ActionPressed("0") and upgradeFuel ~= nil then upgradeFuel() end
     end
     updateCamera(dt)
     return

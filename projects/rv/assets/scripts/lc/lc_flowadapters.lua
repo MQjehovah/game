@@ -42,7 +42,7 @@ end)
 LC.flow.register("game/vehicle-sync", function(node, g)
   -- 把车辆/资源状态同步到图变量（branch/math 可读）
   g.vars.fuel = fuel or 0
-  g.vars.fuel_pct = fuel and (fuel / VEH.tank) or 0
+  g.vars.fuel_pct = fuel and (fuel / fuelMax()) or 0
   g.vars.dur = dur or 0
   g.vars.dur_pct = dur and (dur / VEH.durMax) or 0
   g.vars.day = day or 1

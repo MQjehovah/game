@@ -235,7 +235,7 @@ function doTrade(idx)
   for k, v in pairs(t.give or {}) do
     if k == "fuel" then
       local before = fuel or 0
-      fuel = math.min(VEH.tank, before + v)
+      fuel = math.min(fuelMax(), before + v)
       got[#got + 1] = string.format("燃料+%dL", math.floor(fuel - before + 0.5))
     elseif k == "item" then
       local id = t.give.item
@@ -377,7 +377,7 @@ function jobComplete()
   local fuelGot = math.floor((job.fuel or 0) * scale + 0.5)
   if fuelGot > 0 then
     local before = fuel
-    fuel = math.min(VEH.tank, fuel + fuelGot)
+    fuel = math.min(fuelMax(), fuel + fuelGot)
     fuelGot = fuel - before
   end
   local name, crates = job.cargo, job.crates

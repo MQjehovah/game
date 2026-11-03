@@ -30,7 +30,7 @@ LC.flow.register("game/loot", function(node, g)
 end)
 
 LC.flow.register("game/fuel", function(node, g)
-  fuel = math.max(0, math.min(VEH.tank, fuel + (node.amount or 10)))
+  fuel = math.max(0, math.min(fuelMax(), fuel + (node.amount or 10)))
   return "exec"
 end)
 
