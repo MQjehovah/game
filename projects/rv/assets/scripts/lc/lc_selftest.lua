@@ -1404,6 +1404,16 @@ function runSelfTest()
        string.format("30L/1000m=%.2f L/100km short=%s", e1, tostring(e2)))
   end
 
+  -- 胎压不足增加油耗（2.4bar 为基准，不改变原曲线）
+  do
+    local base = tirePressureFuelScale(2.4)
+    local low = tirePressureFuelScale(1.6)
+    local high = tirePressureFuelScale(2.8)
+    ok(r, "tire pressure fuel",
+       math.abs(base - 1.0) < 1e-6 and low > 1.1 and high > 1.0,
+       string.format("2.4=%.2f 1.6=%.2f 2.8=%.2f", base, low, high))
+  end
+
   -- 地图探索迷雾：未去过的程序化地点在地图上只显示“?”
   do
     local gen = nil

@@ -25,18 +25,36 @@ function rvQuat()
 end
 
 -- 燃油消耗速率（L/s）：怠速基线 + 车速 + 载重。导出让自检能验证曲线。
+-- 胎压对油耗的影响：2.4bar 最优，偏低明显费油，偏高略费
+function tirePressureFuelScale(p)
+  local v = p or 2.4
+  if v < 2.4 then
+    return 1.0 + math.min(0.20, (2.4 - v) * 0.25)
+  end
+  return 1.0 + math.min(0.06, (v - 2.4) * 0.10)
+end
+
+function avgTirePressure()
+  local t = (rv and rv.tirePressureCold) or nil
+  if t == nil then return 2.4 end
+  local s = 0
+  for i = 1, 4 do s = s + (t[i] or 2.4) end
+  return s / 4
+end
+
 function fuelBurnRate(speed, loadRatio, throttle)
   local v = math.min(1, math.abs(speed or 0) / DRIVE.maxSpeed)
   local ratio = loadRatio or 1
   local load = 1 + math.max(0, ratio - 1) * 0.60 +
                math.max(0, math.min(ratio, 1) - 0.75) * 0.20
   local idle = VEH.idleBurn or 0.010
+  local eff = tirePressureFuelScale(avgTirePressure())
   if (throttle or 0) > 0 then
-    return idle + VEH.burn * (0.30 + 0.70 * v) * load
+    return (idle + VEH.burn * (0.30 + 0.70 * v) * load) * eff
   elseif (throttle or 0) < 0 then
-    return idle * 0.6
+    return idle * 0.6 * eff
   end
-  return idle
+  return idle * eff
 end
 
 -- 行程百公里油耗（L/100km）；里程太短时返回 0，避免怠速把数字拉爆。
