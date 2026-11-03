@@ -441,14 +441,23 @@ function useItem(id)
   needs.thirst = math.min(100, needs.thirst + (it.thirst or 0))
   needs.energy = math.min(100, needs.energy + (it.energy or 0))
   needs.health = math.max(0, math.min(100, needs.health + (it.health or 0)))
+  local warmMin = nil
   if id == "brew" then
     nightDriveMin = math.max(0, (nightDriveMin or 0) - 60)
+  end
+  -- 热食/热汤：雪天获得一段时间的保暖
+  if id == "fishsoup" or id == "meal" or id == "feast" then
+    warmMin = (id == "feast") and 45 or 30
+    warmthMin = math.max(warmthMin or 0, warmMin)
   end
   if PlaySfx then PlaySfx(it.kind == "drink" and "drink" or "pickup") end
   local parts = {}
   if it.hunger then parts[#parts + 1] = string.format("饥饿 %+.0f", it.hunger) end
   if it.thirst then parts[#parts + 1] = string.format("口渴 %+.0f", it.thirst) end
   if it.energy then parts[#parts + 1] = string.format("体力 %+.0f", it.energy) end
+  if warmMin ~= nil then
+    parts[#parts + 1] = string.format("暖和 %d 分钟", warmMin)
+  end
   toast.text = "吃下 " .. it.name .. (#parts > 0 and ("  " .. table.concat(parts, "  ")) or "")
   toast.t = 2.4
   return true
@@ -627,9 +636,9 @@ function nightSteerWander(minutes, t)
   return math.max(-0.03, math.min(0.03, s))
 end
 
--- 雪天寒冷：没开取暖器时体力消耗更快
-function coldEnergyExtra(weatherValue, heaterOn)
-  if weatherValue == "snow" and not heaterOn then
+-- 雪天寒冷：没开取暖器时体力消耗更快；热食保暖期间免疫
+function coldEnergyExtra(weatherValue, heaterOn, warmth)
+  if weatherValue == "snow" and not heaterOn and (warmth or 0) <= 0 then
     return SURVIVAL.coldExtra or 0.020
   end
   return 0
@@ -679,12 +688,16 @@ function updateSurvival(dt)
   advanceGameMinutes(gm)
   if updateRadioBroadcast ~= nil then updateRadioBroadcast(gm) end
   if updatePondTrap ~= nil then updatePondTrap(gm) end
+  if (warmthMin or 0) > 0 then
+    warmthMin = math.max(0, warmthMin - gm)
+  end
 
   needs.hunger = math.max(0, needs.hunger - SURVIVAL.hungerRate * gm)
   needs.thirst = math.max(0, needs.thirst - SURVIVAL.thirstRate * gm)
   needs.hygiene = math.max(0, needs.hygiene - SURVIVAL.hygieneRate * gm)
   local sprinting = onFoot and not buildMode and ActionDown("w") and ActionDown("shift")
-  local coldExtra = coldEnergyExtra(weather, (stats and stats.heaterOn) or false)
+  local coldExtra = coldEnergyExtra(weather, (stats and stats.heaterOn) or false,
+                                    warmthMin)
   local nightDriving = phase == "driving" and (isNight ~= nil and isNight()) and
                        math.abs(rv.speed or 0) > 1.0
   if nightDriving then

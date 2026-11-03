@@ -161,6 +161,7 @@ engineTemp = 20               -- 引擎水温（°C）
 oilLife = 100                 -- 机油寿命（%，随里程下降）
 rawSpoilWarned = false
 nightDriveMin = 0             -- 连续夜间驾驶累计（游戏分钟）
+warmthMin = 0                 -- 热食保暖剩余（游戏分钟，抵消雪天寒冷）
 ponds = {}
 campfire = nil
 weather, weatherT, weatherNext = "clear", 0, 15

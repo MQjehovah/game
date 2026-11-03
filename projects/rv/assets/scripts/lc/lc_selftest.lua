@@ -3709,6 +3709,21 @@ function runSelfTest()
        string.format("snow=%.3f heater=%.3f clear=%.3f", a, b, c))
   end
 
+  -- 热食保暖：雪天吃热饭/热汤后一段时间免疫寒冷惩罚
+  do
+    local a = coldEnergyExtra("snow", false, 30)
+    local b = coldEnergyExtra("snow", false, 0)
+    local keepWarmth, keepMeal = warmthMin, inv.meal or 0
+    warmthMin = 0
+    inv.meal = 1
+    local okEat = useItem("meal")
+    local woke = (warmthMin or 0) >= 30
+    inv.meal = keepMeal > 0 and keepMeal or nil
+    warmthMin = keepWarmth
+    ok(r, "warm meal", a == 0 and b > 0 and okEat and woke,
+       string.format("warm=%.3f cold=%.3f woke=%s", a, b, tostring(woke)))
+  end
+
   -- 夜间驾驶疲劳：短途无、长途有、上限封顶
   do
     local a = nightFatigueExtra(60)
