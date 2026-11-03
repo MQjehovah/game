@@ -1376,6 +1376,8 @@ function runSelfTest()
     visitedPois["ruin"] = true
     bestFish, fishCaught = 63, 12
     lastJobDay = 11
+    interiorLightsOn, highBeam = false, true
+    if setInteriorLights ~= nil then setInteriorLights(false) end
     weather, weatherT, weatherNext = "rain", 7, 120
     local saved0 = saveLayout()
     tripDistance, tripFuel, jobDelivered = 0, 0, 0
@@ -1383,19 +1385,24 @@ function runSelfTest()
     visitedCount = 0
     bestFish, fishCaught = 0, 0
     lastJobDay = 0
+    interiorLightsOn, highBeam = true, false
     weather, weatherT, weatherNext = "clear", 0, 90
     loadLayout()
+    local lightsOk = interiorLightsOn == false and highBeam == true
+    if setInteriorLights ~= nil then setInteriorLights(true) end
+    highBeam = false
     ok(r, "save progress stats",
        saved0 ~= false and math.abs((tripDistance or 0) - 3210) < 1 and
        math.abs((tripFuel or 0) - 88) < 1 and jobDelivered == 7 and
        visitedPois["ruin"] == true and weather == "rain" and
        math.abs((weatherNext or 0) - 120) < 1 and
        math.abs((bestFish or 0) - 63) < 1 and fishCaught == 12 and
-       lastJobDay == 11,
-       string.format("trip=%.0f jobs=%d ruin=%s weather=%s fish=%.0f/%d day=%d",
+       lastJobDay == 11 and lightsOk,
+       string.format("trip=%.0f jobs=%d ruin=%s weather=%s fish=%.0f/%d day=%d lights=%s",
                      tripDistance or 0, jobDelivered,
                      tostring(visitedPois["ruin"]), tostring(weather),
-                     bestFish or 0, fishCaught or 0, lastJobDay or 0))
+                     bestFish or 0, fishCaught or 0, lastJobDay or 0,
+                     tostring(lightsOk)))
   end
 
   -- 存读档

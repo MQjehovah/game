@@ -127,6 +127,8 @@ function saveLayout()
     inventory = inv, water = water,
     day = day, clock = clock, modules = rows, pois = generatedPois,
     weather = { id = weather, t = weatherT, next = weatherNext },
+    lights = { interior = interiorLightsOn and 1 or 0,
+               high = highBeam and 1 or 0 },
   }
   do
     local visitedList = {}
@@ -270,6 +272,11 @@ function loadLayout()
     needs.thirst = tonumber(data.survival.thirst) or needs.thirst
     needs.energy = tonumber(data.survival.energy) or needs.energy
     needs.hygiene = tonumber(data.survival.hygiene) or needs.hygiene
+  end
+  if type(data.lights) == "table" then
+    interiorLightsOn = (tonumber(data.lights.interior) or 1) ~= 0
+    highBeam = (tonumber(data.lights.high) or 0) ~= 0
+    if setInteriorLights ~= nil then setInteriorLights(interiorLightsOn) end
   end
   if type(data.weather) == "table" then
     weather = tostring(data.weather.id or "clear")
