@@ -274,14 +274,18 @@ function spawnPoiWindows(nd)
   print(string.format("[glass] intact panes at %s = %d (%s)", nd.id, #panes, kind))
 end
 
--- Runtime Voronoi fracture.  Each break scatters 7..12 sites inside the pane,
--- then clips the pane rectangle against the perpendicular bisector of every
--- site pair to obtain that site's convex cell.  A shard mesh is picked from
--- the pre-generated 12-variant pool and scaled to the cell's bounding box, so
--- the crack layout (count, positions, sizes) is genuinely generated per break
--- instead of mirroring one fixed 3x3 table. The server seed drives the LCG, so
--- every peer rebuilds identical cells.
+-- Stress-driven impact fracture.  Each break picks a seeded impact point inside
+-- the pane, then grows 4..6 radial crack trajectories outward in four
+-- concentric bands.  Every band the crack angle wanders a little (seeded) and
+-- some nodes spawn a shorter branch crack, so the pane is split along a
+-- branching radial network.  Cells between adjacent cracks and neighbouring
+-- bands become shards: rings are closer near the impact point, so fragments
+-- are smaller and more numerous where stress is highest.  The 12-variant mesh
+-- pool supplies the prism shape; scale, yaw and velocity come from the cell.
+-- The server seed drives the LCG, so every peer rebuilds the identical network.
 local GLASS_VARIANTS = 12
+local GLASS_BANDS = 4
+local GLASS_RADII = { 0.02, 0.15, 0.33, 0.58, 0.85 }
 
 -- Deterministic LCG (Numerical Recipes constants, modulus 2^31) so the
 -- server's seed maps to the same cells on every peer. Operands stay below
@@ -292,50 +296,104 @@ local function glassRand(seed, k)
   return x / 2147483648
 end
 
--- Sutherland-Hodgman clip: keep the half-plane closer to site (ax, ay).
-local function clipGlassCell(poly, ax, ay, bx, by)
-  local out = {}
-  local n = #poly
-  if n == 0 then return out end
-  local mx, my = (ax + bx) * 0.5, (ay + by) * 0.5
-  local dx, dy = bx - ax, by - ay
-  local px, py = poly[n][1], poly[n][2]
-  local pd = (px - mx) * dx + (py - my) * dy
-  for i = 1, n do
-    local cx, cy = poly[i][1], poly[i][2]
-    local cd = (cx - mx) * dx + (cy - my) * dy
-    if cd <= 0 then
-      if pd > 0 then
+-- Sutherland-Hodgman clip against the pane rectangle [-0.5, 0.5]^2.
+local function clipGlassRect(poly)
+  local out = poly
+  for bi = 1, 4 do
+    local nx, ny, d
+    if bi == 1 then nx, ny, d = 1, 0, 0.5
+    elseif bi == 2 then nx, ny, d = -1, 0, 0.5
+    elseif bi == 3 then nx, ny, d = 0, 1, 0.5
+    else nx, ny, d = 0, -1, 0.5 end
+    local input = out
+    out = {}
+    local n = #input
+    if n == 0 then break end
+    local px, py = input[n][1], input[n][2]
+    local pd = nx * px + ny * py - d
+    for i = 1, n do
+      local cx, cy = input[i][1], input[i][2]
+      local cd = nx * cx + ny * cy - d
+      if cd <= 0 then
+        if pd > 0 then
+          local t = pd / (pd - cd)
+          out[#out + 1] = { px + (cx - px) * t, py + (cy - py) * t }
+        end
+        out[#out + 1] = { cx, cy }
+      elseif pd <= 0 then
         local t = pd / (pd - cd)
         out[#out + 1] = { px + (cx - px) * t, py + (cy - py) * t }
       end
-      out[#out + 1] = { cx, cy }
-    elseif pd <= 0 then
-      local t = pd / (pd - cd)
-      out[#out + 1] = { px + (cx - px) * t, py + (cy - py) * t }
+      px, py, pd = cx, cy, cd
     end
-    px, py, pd = cx, cy, cd
   end
   return out
 end
 
--- 7..12 well-spaced sites in normalised pane space.
-local function voronoiSites(seed, index)
-  local count = 7 + math.floor(glassRand(seed, index * 17 + 1) * 6)
-  local sites = {}
-  local tries = 0
-  while #sites < count and tries < 400 do
-    tries = tries + 1
-    local u = -0.47 + glassRand(seed, index * 131 + tries * 7) * 0.94
-    local v = -0.47 + glassRand(seed, index * 211 + tries * 13) * 0.94
-    local ok = true
-    for j = 1, #sites do
-      local du, dv = sites[j][1] - u, sites[j][2] - v
-      if du * du + dv * dv < 0.026 then ok = false break end
-    end
-    if ok then sites[#sites + 1] = { u, v } end
+-- Radial crack network -> shard cells (normalised pane space).
+local function crackCells(seed)
+  local iu = (glassRand(seed, 11) - 0.5) * 0.42
+  local iv = (glassRand(seed, 23) - 0.5) * 0.34
+  local nMain = 4 + math.floor(glassRand(seed, 3) * 3)   -- 4..6 main cracks
+  local mainA = {}
+  for i = 0, nMain - 1 do
+    mainA[i] = (i / nMain) * math.pi * 2 +
+               (glassRand(seed, 40 + i) - 0.5) * 0.5
   end
-  return sites
+  local cells = {}
+  local cracks = 0
+  local gap = math.pi * 2 / nMain
+  for b = 1, GLASS_BANDS do
+    local r0, r1 = GLASS_RADII[b], GLASS_RADII[b + 1]
+    local bounds = {}
+    for i = 0, nMain - 1 do
+      -- The crack keeps wandering as it grows outward.
+      mainA[i] = mainA[i] + (glassRand(seed, 90 + b * 31 + i) - 0.5) * 0.22
+      bounds[#bounds + 1] = mainA[i]
+      cracks = cracks + 1
+      -- Branch cracks split off in the high-stress inner bands.
+      if b < GLASS_BANDS and glassRand(seed, 500 + b * 19 + i) < 0.55 then
+        bounds[#bounds + 1] = mainA[i] +
+          gap * (0.32 + glassRand(seed, 700 + b * 23 + i) * 0.36)
+        cracks = cracks + 1
+      end
+    end
+    table.sort(bounds)
+    local n = #bounds
+    for i = 1, n do
+      local a0 = bounds[i]
+      local a1 = bounds[i % n + 1]
+      if i == n then a1 = a1 + math.pi * 2 end
+      local steps = 3
+      local poly = {}
+      for s = 0, steps do
+        local a = a0 + (a1 - a0) * (s / steps)
+        poly[#poly + 1] = { iu + math.cos(a) * r0, iv + math.sin(a) * r0 }
+      end
+      for s = steps, 0, -1 do
+        local a = a0 + (a1 - a0) * (s / steps)
+        poly[#poly + 1] = { iu + math.cos(a) * r1, iv + math.sin(a) * r1 }
+      end
+      poly = clipGlassRect(poly)
+      if #poly >= 3 then
+        local minU, maxU, minV, maxV = 1e9, -1e9, 1e9, -1e9
+        local cu, cv = 0.0, 0.0
+        for _, p in ipairs(poly) do
+          minU = math.min(minU, p[1]); maxU = math.max(maxU, p[1])
+          minV = math.min(minV, p[2]); maxV = math.max(maxV, p[2])
+          cu = cu + p[1]; cv = cv + p[2]
+        end
+        local w, h = maxU - minU, maxV - minV
+        if w > 0.045 and h > 0.045 then
+          cells[#cells + 1] = {
+            cu = cu / #poly, cv = cv / #poly,
+            w = w, h = h, angle = (a0 + a1) * 0.5,
+          }
+        end
+      end
+    end
+  end
+  return cells, iu, iv, cracks
 end
 
 -- Fresh seed per break. The engine RNG is fixed-seed per process, so mix in
@@ -349,7 +407,7 @@ local function nextGlassSeed()
   return ((math.random(1, 1000000) + t * 7919) % 1000000) + 1
 end
 
--- One-shot break: remove the intact pane, then build the Voronoi shard set.
+-- One-shot break: remove the intact pane, then build the crack shard set.
 function breakPoiWindows(nd, reason, seed)
   if nd == nil then return false end
   local g = poiGlass[nd.id]
@@ -360,64 +418,51 @@ function breakPoiWindows(nd, reason, seed)
   local panes = g.panes
   g.panes = {}
   local made = 0
+  local totalCracks = 0
   for pi, pane in ipairs(panes) do
     Despawn(pane.ent)
     -- Pane normal (local +Z rotated by yaw) and its in-plane tangent.
     local nx, nz = math.sin(pane.rot), math.cos(pane.rot)
     local tx, tz = math.cos(pane.rot), -math.sin(pane.rot)
     local ps = seed + pi * 977
-    local sites = voronoiSites(ps, pi)
-    local rect = { { -0.5, -0.5 }, { 0.5, -0.5 }, { 0.5, 0.5 }, { -0.5, 0.5 } }
-    for si, site in ipairs(sites) do
-      local poly = rect
-      for sj, other in ipairs(sites) do
-        if sj ~= si then
-          poly = clipGlassCell(poly, site[1], site[2], other[1], other[2])
-          if #poly < 3 then break end
-        end
-      end
-      if #poly >= 3 then
-        local minU, maxU, minV, maxV = 1e9, -1e9, 1e9, -1e9
-        local cu, cv = 0.0, 0.0
-        for _, p in ipairs(poly) do
-          minU = math.min(minU, p[1]); maxU = math.max(maxU, p[1])
-          minV = math.min(minV, p[2]); maxV = math.max(maxV, p[2])
-          cu = cu + p[1]; cv = cv + p[2]
-        end
-        local w, h = maxU - minU, maxV - minV
-        if w > 0.05 and h > 0.05 then
-          cu, cv = cu / #poly, cv / #poly
-          local variant = 1 + math.floor(glassRand(ps, 300 + si) * GLASS_VARIANTS)
-          if variant > GLASS_VARIANTS then variant = GLASS_VARIANTS end
-          local ox, oy = cu * pane.sx, cv * pane.sy
-          local sx = pane.x + tx * ox + nx * 0.05
-          local sy = pane.y + oy
-          local sz = pane.z + tz * ox + nz * 0.05
-          local e = SpawnPrefab("rv_glass_frag" .. variant, { x = sx, y = sy, z = sz })
-          if e ~= nil then
-            SetScale(e, w * pane.sx, 1.0, h * pane.sy)
-            -- Rotate the shard within the pane plane (organic pieces read fine
-            -- at any angle; the cell itself is already positioned exactly).
-            local yaw = pane.rot + (glassRand(ps, 400 + si) - 0.5) * math.pi
-            SetRotationY(e, yaw)
-            local outward = 0.8 + glassRand(ps, 500 + si) * 1.4
-            poiShards[#poiShards + 1] = {
-              ent = e, x = sx, y = sy, z = sz,
-              vx = nx * outward + tx * (cu * 3.2),
-              vy = 1.2 + glassRand(ps, 600 + si) * 1.8 + math.max(0, cv) * pane.sy * 2.0,
-              vz = nz * outward + tz * (cu * 3.2),
-              yaw = yaw,
-              spin = (glassRand(ps, 700 + si) - 0.5) * 2.6,
-              settled = false,
-            }
-            made = made + 1
-          end
-        end
+    local cells, iu, iv, cracks = crackCells(ps)
+    totalCracks = totalCracks + cracks
+    for ci, cell in ipairs(cells) do
+      local du, dv = cell.cu - iu, cell.cv - iv
+      local dist = math.sqrt(du * du + dv * dv)
+      local stress = 1 / (1 + dist * 3.2)
+      local variant = 1 + math.floor(glassRand(ps, 300 + ci) * GLASS_VARIANTS)
+      if variant > GLASS_VARIANTS then variant = GLASS_VARIANTS end
+      local ox, oy = cell.cu * pane.sx, cell.cv * pane.sy
+      local sx = pane.x + tx * ox + nx * 0.05
+      local sy = pane.y + oy
+      local sz = pane.z + tz * ox + nz * 0.05
+      local e = SpawnPrefab("rv_glass_frag" .. variant, { x = sx, y = sy, z = sz })
+      if e ~= nil then
+        SetScale(e, cell.w * pane.sx, 1.0, cell.h * pane.sy)
+        -- Align the shard with the radial crack direction.
+        local yaw = pane.rot + cell.angle +
+                    (glassRand(ps, 400 + ci) - 0.5) * 0.45
+        SetRotationY(e, yaw)
+        -- Stress falloff: pieces near the impact leave faster and spin more.
+        local outward = (0.45 + 2.6 * stress) *
+                        (0.8 + glassRand(ps, 500 + ci) * 0.6)
+        poiShards[#poiShards + 1] = {
+          ent = e, x = sx, y = sy, z = sz,
+          vx = nx * outward + tx * (cell.cu * 2.6),
+          vy = (0.7 + 2.2 * stress) + math.max(0, cell.cv) * pane.sy * 2.0,
+          vz = nz * outward + tz * (cell.cu * 2.6),
+          yaw = yaw,
+          spin = (glassRand(ps, 700 + ci) - 0.5) * (1.4 + stress * 3.2),
+          settled = false,
+        }
+        made = made + 1
       end
     end
   end
-  print(string.format("[glass] broke windows at %s (%s, %d voronoi shards, seed=%d)",
-        nd.id, reason or "enter", made, seed))
+  print(string.format(
+    "[glass] broke windows at %s (%s, %d stress shards, %d cracks, seed=%d)",
+    nd.id, reason or "enter", made, totalCracks, seed))
   return true
 end
 

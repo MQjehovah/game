@@ -824,14 +824,16 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   （半透明 BLEND 面板），`tools/gen_rv_glass_frags.py` 生成 `rv_glass_frag1..12`
   （12 种不规则薄棱柱，形状取自随机点云凸包）；`lc_scenery.spawnPoiWindows()` 按 POI
   类型为商店/加油站/仓库/商场/湖边木屋/诊所生成两扇前窗玻璃，`breakPoiWindowsAt()` 在
-  玩家进入或攻击时做**运行时 Voronoi 分裂**：`voronoiSites()` 按 seed 撒 7–12 个站点，
-  `clipGlassCell()` 用站点两两的垂直平分线（Sutherland-Hodgman 裁剪）把面板矩形切成
-  凸多边形单元，再从 12 种网格池中选网格、按单元包围盒缩放；`updatePoiWindows()` 施加
+  玩家进入或攻击时做**应力驱动的径向裂纹扩展**：`crackCells()` 按 seed 选冲击点，
+  从该点生长 4–6 条逐环游走（每环角度抖动）的径向裂纹，内环按 seed 分裂出分支，
+  面板被切成 4 个同心环带内的楔形碎片；`clipGlassRect()` 做窗口矩形裁剪；
+  `stress = 1 / (1 + 3.2·dist)` 同时决定碎片初速与自旋（近冲击点小而密、飞得快），
+  再从 12 种网格池中选网格、按单元包围盒缩放并沿径向旋转；`updatePoiWindows()` 施加
   向外 + 重力速度、落地弹跳后让碎片永久留在地面；服务器选 seed 并把
   `glass=<id>:<seed>` 写入 `game_state`（变化时立即 `pushState()`），客户端用
-  `applyPoiGlassState()` 按同一 seed 重建相同布局；日志
-  `[glass] broke windows at ruin/... (enter, N voronoi shards, seed=N)` 与
-  `... (server, N voronoi shards, seed=N)`，`coop_glassview.txt` 提供门窗特写镜头。
+  `applyPoiGlassState()` 按同一 seed 重建相同裂纹网络；日志
+  `[glass] broke windows at ruin/... (enter, N stress shards, M cracks, seed=N)` 与
+  `... (server, N stress shards, M cracks, seed=N)`，`coop_glassview.txt` 提供特写镜头。
 - **商品包装图集**（`projects/rv`）：`tools/gen_rv_product_atlas.py` 生成
   `assets/models/rv/rv_products.png`（4×4 包装格），`tools/rv_atlas.py` 提供
   `tile_uvs()` / `product_material()` / `atlas_extras()`；商店/加油站/商场/仓库/
