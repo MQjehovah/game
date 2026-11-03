@@ -368,6 +368,17 @@ function on_start()
   place(CATALOG[17], 0, 8, 0, true)  -- 太阳能板
   place(CATALOG[19], 2, 9, 0, true)  -- 车顶行李架
   curLayer = savedLayer
+  if startMode == "furnall" then
+    -- Test-only: place the authored furniture set along the left wall so a
+    -- single screenshot shows TV/bathroom/medicine cabinet/rack/heater.
+    place(CATALOG[10], 0, 0, 0, true)   -- tv
+    place(CATALOG[14], 0, 1, 0, true)   -- med_cabinet
+    place(CATALOG[12], 0, 2, 0, true)   -- bathroom (2x3)
+    place(CATALOG[15], 0, 5, 0, true)   -- gun_rack
+    place(CATALOG[9],  0, 6, 0, true)   -- heater
+    place(CATALOG[8],  2, 11, 0, true)  -- storage
+    place(CATALOG[4],  2, 12, 0, true)  -- fridge
+  end
   computeReachability()
   recomputeStats()
 
@@ -405,6 +416,11 @@ function on_start()
   if startMode == "furnview" then
     -- Test-only interior view down the furniture wall.
     px, pz = -0.72, 1.30
+    pyaw = math.pi
+  end
+  if startMode == "furnall" then
+    -- Test-only view of the authored furniture showcase along the left wall.
+    px, pz = -0.72, 3.20
     pyaw = math.pi
   end
   if startMode == "poi" then

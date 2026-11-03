@@ -19,7 +19,7 @@
       ]
     },
     "mesh": {
-      "meshKey": "gltf:assets/models/furniture/bathtub.glb",
+      "meshKey": "gltf:assets/models/rv/rv_furn_bathroom.gltf",
       "castShadow": true,
       "receiveShadow": true
     }

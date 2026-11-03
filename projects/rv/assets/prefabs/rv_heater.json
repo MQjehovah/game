@@ -19,7 +19,7 @@
       ]
     },
     "mesh": {
-      "meshKey": "gltf:assets/models/furniture/lampRoundFloor.glb",
+      "meshKey": "gltf:assets/models/rv/rv_furn_heater.gltf",
       "castShadow": true,
       "receiveShadow": true
     }

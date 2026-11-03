@@ -25,7 +25,7 @@ PREFABS = ROOT / "projects/rv/assets/prefabs"
 
 # material slots (0 = hidden importer default)
 (DEFAULT, WOOD, WOOD2, METAL, DARK, WHITE, FABRIC, BLUE, RED, GLASS,
- GREY) = range(11)
+ GREY, GREEN) = range(12)
 
 MATS = [
     ("furn_default", [0.5, 0.5, 0.5], 0.0, 0.9),
@@ -39,6 +39,7 @@ MATS = [
     ("furn_red", [0.55, 0.16, 0.13], 0.02, 0.75),
     ("furn_glass", [0.08, 0.10, 0.12], 0.5, 0.15),
     ("furn_grey", [0.42, 0.44, 0.46], 0.15, 0.6),
+    ("furn_green", [0.18, 0.44, 0.20], 0.02, 0.7),
 ]
 
 
@@ -207,6 +208,107 @@ def storage(m):
     m.box(DARK, 0, 0.30, 0.257, 0.14, 0.02, 0.005)
 
 
+def tv(m):
+    # cabinet + doors + TV set + antenna
+    m.box(WOOD, 0, 0.38, 0, 1.00, 0.76, 0.46)
+    m.box(WOOD2, 0, 0.05, 0, 0.96, 0.10, 0.42)
+    m.box(WOOD2, 0, 0.42, 0.235, 0.46, 0.58, 0.02)
+    m.box(WOOD2, 0, 0.42, 0.235, 0.02, 0.58, 0.02)
+    m.box(METAL, 0.20, 0.46, 0.25, 0.03, 0.14, 0.03)
+    m.box(WOOD, 0, 0.78, 0, 1.02, 0.05, 0.48)
+    # TV body + bezel + screen + stand + antenna
+    m.box(DARK, 0, 0.99, -0.02, 0.66, 0.40, 0.30)
+    m.box(GREY, 0, 0.99, 0.135, 0.60, 0.34, 0.02)
+    m.box(GLASS, 0, 0.99, 0.147, 0.54, 0.28, 0.01)
+    m.box(WOOD2, 0, 0.80, -0.02, 0.30, 0.04, 0.22)
+    m.box(METAL, 0.18, 1.24, -0.02, 0.02, 0.22, 0.02)
+    m.box(METAL, -0.10, 1.33, -0.02, 0.30, 0.02, 0.02)
+    # speaker slats + DVD box
+    for i in range(3):
+        m.box(DARK, -0.36, 0.98 + i * 0.05, 0.137, 0.12, 0.02, 0.01)
+    m.box(BLUE, 0.28, 0.86, 0.10, 0.18, 0.08, 0.14)
+
+
+def bathroom(m):
+    # wet-bath: tray, back/side walls, toilet, sink, mirror, shower head
+    hw, hd = 0.50, 0.70
+    m.box(WHITE, 0, 0.06, 0, hw * 2, 0.12, hd * 2)
+    m.box(WHITE, 0, 1.00, -hd + 0.03, hw * 2, 1.90, 0.06)
+    m.box(WHITE, -hw + 0.03, 1.00, 0, 0.06, 1.90, hd * 2)
+    m.box(GREY, hw - 0.03, 1.00, 0.0, 0.05, 1.90, hd * 2)
+    m.box(DARK, 0, 1.96, 0, hw * 2, 0.06, hd * 2)
+    # toilet (back-left): base, bowl, seat, lid, tank
+    m.box(WHITE, -0.26, 0.28, -0.42, 0.36, 0.34, 0.46)
+    m.box(WHITE, -0.26, 0.47, -0.42, 0.40, 0.06, 0.50)
+    m.box(GREY, -0.26, 0.51, -0.42, 0.38, 0.02, 0.48)
+    m.box(WHITE, -0.26, 0.62, -0.62, 0.40, 0.42, 0.18)
+    m.box(METAL, -0.26, 0.86, -0.54, 0.06, 0.04, 0.04)
+    # sink (front-right): cabinet, basin, faucet
+    m.box(WOOD, 0.28, 0.42, 0.44, 0.40, 0.80, 0.40)
+    m.box(WHITE, 0.28, 0.85, 0.44, 0.44, 0.06, 0.44)
+    m.box(METAL, 0.28, 0.82, 0.44, 0.30, 0.02, 0.28)
+    m.box(METAL, 0.28, 0.93, 0.32, 0.03, 0.14, 0.03)
+    m.box(METAL, 0.28, 1.00, 0.37, 0.03, 0.03, 0.10)
+    # mirror + shower head + curtain rail
+    m.box(GLASS, 0.0, 1.42, -hd + 0.07, 0.52, 0.40, 0.02)
+    m.box(METAL, hw - 0.10, 1.70, -0.28, 0.03, 0.26, 0.03)
+    m.box(METAL, hw - 0.20, 1.82, -0.28, 0.18, 0.03, 0.03)
+    m.box(GREY, hw - 0.30, 1.78, -0.28, 0.10, 0.04, 0.10)
+    m.box(METAL, 0, 1.86, 0.55, hw * 2 - 0.06, 0.02, 0.02)
+
+
+def med_cabinet(m):
+    # white cabinet, glass door, shelves + medicine boxes, red cross
+    m.box(WHITE, 0, 0.38, 0, 0.50, 0.72, 0.30)
+    m.box(GREY, 0, 0.05, 0, 0.46, 0.06, 0.26)
+    for y in (0.24, 0.44):
+        m.box(WHITE, 0, y, 0.02, 0.42, 0.03, 0.24)
+    for i, c in enumerate((RED, BLUE, GREEN, WHITE, GREY)):
+        m.box(c, -0.15 + (i % 3) * 0.15, 0.30 + (i // 3) * 0.20, 0.06,
+              0.11, 0.14, 0.10)
+    m.box(GLASS, 0, 0.38, 0.16, 0.42, 0.62, 0.02)
+    m.box(METAL, 0.18, 0.40, 0.175, 0.03, 0.14, 0.02)
+    m.box(RED, 0, 0.80, 0.05, 0.22, 0.22, 0.03)
+    m.box(WHITE, 0, 0.80, 0.07, 0.06, 0.18, 0.01)
+    m.box(WHITE, 0, 0.80, 0.07, 0.18, 0.06, 0.01)
+
+
+def gun_rack(m):
+    # wooden rack: backboard, posts, shelf, two rifles, ammo boxes
+    m.box(WOOD, 0, 0.62, -0.08, 0.98, 1.20, 0.05)
+    for sx in (-1, 1):
+        m.box(WOOD2, sx * 0.47, 0.62, -0.08, 0.07, 1.24, 0.10)
+    m.box(WOOD2, 0, 0.05, -0.05, 0.94, 0.10, 0.28)
+    m.box(WOOD2, 0, 0.36, -0.02, 0.90, 0.06, 0.20)
+    # rifles: body, barrel, stock, magazine (two upright)
+    for i, sx in enumerate((-0.24, 0.24)):
+        m.box(DARK, sx, 0.72, 0.02, 0.07, 0.72, 0.07)
+        m.box(GREY, sx, 0.50, 0.02, 0.05, 0.28, 0.05)
+        m.box(METAL, sx, 1.10, 0.02, 0.03, 0.30, 0.03)
+        m.box(WOOD2, sx, 0.48, 0.02, 0.12, 0.20, 0.05)
+        m.box(DARK, sx, 0.70, 0.08, 0.05, 0.10, 0.06)
+    # ammo boxes + padlock
+    m.box(GREEN, -0.30, 0.14, 0.06, 0.26, 0.16, 0.18)
+    m.box(GREEN, 0.02, 0.14, 0.06, 0.26, 0.16, 0.18)
+    m.box(METAL, 0.34, 0.18, 0.08, 0.10, 0.06, 0.06)
+
+
+def heater(m):
+    # floor heater: body, front grille, top vents, knob, feet, glow
+    m.box(GREY, 0, 0.30, 0, 0.46, 0.50, 0.30)
+    m.box(DARK, 0, 0.30, 0.152, 0.36, 0.34, 0.02)
+    for i in range(5):
+        m.box(METAL, 0, 0.17 + i * 0.065, 0.163, 0.30, 0.02, 0.01)
+    m.box(DARK, 0, 0.56, 0, 0.40, 0.03, 0.24)
+    for i in range(4):
+        m.box(METAL, -0.15 + i * 0.10, 0.575, 0, 0.03, 0.01, 0.20)
+    m.box(METAL, 0.16, 0.46, 0.152, 0.06, 0.06, 0.03)
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            m.box(DARK, sx * 0.18, 0.03, sz * 0.10, 0.06, 0.06, 0.06)
+    m.box(RED, 0.02, 0.30, 0.166, 0.12, 0.04, 0.01)
+
+
 MODELS = {
     "rv_furn_bed_single": ("RV_Furn_BedSingle", lambda m: bed(m, 0.475, 0.72, BLUE)),
     "rv_furn_bed_double": ("RV_Furn_BedDouble", lambda m: bed(m, 0.72, 0.96, RED)),
@@ -215,6 +317,11 @@ MODELS = {
     "rv_furn_sink": ("RV_Furn_Sink", sink),
     "rv_furn_workbench": ("RV_Furn_Workbench", workbench),
     "rv_furn_storage": ("RV_Furn_Storage", storage),
+    "rv_furn_tv": ("RV_Furn_TV", tv),
+    "rv_furn_bathroom": ("RV_Furn_Bathroom", bathroom),
+    "rv_furn_med_cabinet": ("RV_Furn_MedCabinet", med_cabinet),
+    "rv_furn_gun_rack": ("RV_Furn_GunRack", gun_rack),
+    "rv_furn_heater": ("RV_Furn_Heater", heater),
 }
 
 
