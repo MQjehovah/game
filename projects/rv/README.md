@@ -193,15 +193,18 @@
   同时写出 `assets/data/rv_terrain.json` 和可见网格，两者出自同一
   高度函数：保留原土坡截面，并在营地四周加 16 处草丘/高地
   （西高地、东岭、北草甸、东南丘等）。
-  **地形可见网格按 4×4 分块并带距离 LOD**：每块 72m，生成 4m（近）、
-  8m（90m 外）、12m（140m 外）三套网格与 prefab
-  （`rv_terrain_{ix}{iz}[_lod2|_lod3]`），网格顶点以块中心为局部原点、
-  UV 仍按世界坐标对齐，所以接缝处纹理连续；每块四周有一圈 1.5m 的
-  “裙边”遮住 LOD 边界的 T 型接缝。`lc_terrain.updateTerrainLod()`
-  每 0.2s 按玩家/房车到块中心的距离只显示一档
-  （`[terrain-lod] near=4 mid=8 far=4`），近处保留 4m 细节、
-  远处只花约 1/4 的顶点。四块近景+八块中景+四块远景的可见顶点数
-  约 12.1k，而全细节是 23.7k。
+  **地形可见网格按 4×4 分块，LOD 由屏幕空间误差驱动**：每块 72m，生成 4m / 8m /
+  12m 三套网格与 prefab（`rv_terrain_{ix}{iz}[_lod2|_lod3]`），网格顶点以块中心
+  为局部原点、UV 仍按世界坐标对齐，所以接缝处纹理连续；每块四周有一圈 1.5m 的
+  “裙边”遮住 LOD 边界的 T 型接缝。
+  `terrainLodLevel()` 把各档几何误差按
+  `px = error·(screenH / (2·tan(fov/2))) / distance` 投影成像素：
+  下一档 ≤2px 时降档，当前档 >2.5px 时升档（2–2.5px 是**滞回带**，避免抖动）。
+  实测 51m→4m、114m→8m、152m→12m。
+  `updateTerrainLod()` 每 0.2s 更新一次；距离超过 **210m** 的块整体隐藏
+  （`unload`），回到 **190m** 内再重新加载（`load`，滞回半径），
+  并打印 `[terrain-lod] near=4 mid=8 far=4 loaded=16 unloaded=0 changes=N`。
+  典型视野约 12.1k 顶点，全细节是 23.7k。
   营地、水塘、**worldmap 全部固定公路连接**与所有 POI 占地都压平，
   因此道路和建筑仍然水平；`spawnPonds()` 改为只播种一次，
   POI 自带的水塘不会再把营地/湖边固定水塘挤掉。
@@ -350,7 +353,7 @@
   `farm`（旧农场谷仓）/ `mall`（购物中心店门口）/ `lake`（湖边木屋）/
   `clinic`（路边诊所）。
 
-自检覆盖 61 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、
+自检覆盖 63 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、
 高度场剖面/草丘/扩展高度场/道路压平/地面跟随/坡面倾斜/车内倾斜/四轮接地/分轮行程/车轮实体/前轮转向/物理悬挂绑定/姿态回读/轮胎抓地绑定/轮胎抓地模型/偏航姿态回读/路面材质表/路面摩擦/阿克曼转向/转向助力/自动回正/滑移牵引/滑移率/滑移曲线/胎温/四轮独立胎温磨损/逐顶点风摆/车轮刚体绑定/车轮刚体/圆柱滚动车轮/客户端车轮预测/姿态外推回正/车轮滚动、废宅商店/加油站/物流仓库/旧农场/购物中心/湖边木屋/路边诊所店内物资箱（6/6）、
 POI 墙体碰撞/门洞通行等。
 
@@ -504,7 +507,9 @@ POI 墙体碰撞/门洞通行等。
   `terrain extended grid`（west=2.75 east=2.69 north=2.47 south=2.01
   ne=1.87 out=0.00）、
   `terrain flat corridor`（camp/gas/ruin/clinic/road/edge/mall/town 均 ≤0.01）、
-  `rv terrain lod`（chunks=16 verts=23744 far=5568 worst=0.27 levels=4/8/4）、
+  `rv terrain lod`（chunks=16 verts=23744 far=5568 worst=0.27 levels=4/8/4 loaded=16）、
+  `rv terrain lod sse`（d51=L1 d114=L2 d152=L3 band=1/2 up=L2）、
+  `rv terrain lod stream`（load=190 unload=210）、
   `rv slope tilt`（pitch=-0.05 roll=0.31）、
   `rv tilted interior`（nose=-0.60 right=0.60）、
   `rv four wheel contact`（gy=0.77 h0=0.77 clearance=0.00
@@ -527,7 +532,9 @@ POI 墙体碰撞/门洞通行等。
   `rv tire force curve`（peak=2700 slide=2160 zero=0.0 back=-2700）、
   `rv tire temperature`（cold=0.89 warm=1.00 hot=0.84 worn=0.82）、
   `rv tire per wheel`（front=39C rear=83C fWear=100.0 rWear=99.3）、
-  `rv terrain lod`（chunks=16 verts=23744 far=5568 worst=0.27 levels=4/8/4）、
+  `rv terrain lod`（chunks=16 verts=23744 far=5568 worst=0.27 levels=4/8/4 loaded=16）、
+  `rv terrain lod sse`（d51=L1 d114=L2 d152=L3 band=1/2 up=L2）、
+  `rv terrain lod stream`（load=190 unload=210）、
   `rv wheel body binding`（`PhysicsAddWheelJoint` + `PhysicsAddCylinder` +
   `PhysicsActivate`）、
   `rv wheel bodies`（bodies=4）、
@@ -538,7 +545,7 @@ POI 墙体碰撞/门洞通行等。
   `rv wheel rolling`（wx=2.00）、
   `rv attitude roundtrip`（pitch=0.15 roll=-0.22）与
   `rv yaw attitude roundtrip`（yaw=0.80 pitch=0.15 roll=-0.22），
-  单机自检 **61/61 PASS**。
+  单机自检 **63/63 PASS**。
   **逐顶点风摆验证**（`start_mode=hills`，相隔 1 秒两帧截图）：
   植被区域（880×370 = 325,600 px 裁剪）变化 **2.28%**（7412 px，
   阈值 |ΣRGB|>12），差异图 `rv_wind_diff.png` 正好落在草叶/花茎上；
@@ -567,12 +574,20 @@ POI 墙体碰撞/门洞通行等。
   开始磨胎（98.9/97.4%），而前轮仍接近环境温度。
   截图 `rv_tire4_asphalt.png` / `rv_tire4_grass.png` 的左下角仪表分别显示
   `胎温 35/35/60/60°C` 与 `胎温 32/33/114/132°C`。
-  **地形分块 LOD 验证**：`[terrain-lod] near=4 mid=8 far=4`（出生点，RV 在
-  原点）；开上北草甸后变为 `near=5 mid=3 far=8`；autopilot 行驶过程中
-  随距离变化（如 `near=6 mid=6 far=4`）。可见顶点数从全细节 23,744
-  降到约 12.1k（4 块 4m + 8 块 8m + 4 块 12m），最远档只有
-  5,568 顶点（23%）。截图 `rv_lod_near.png`（营地草甸）与
-  `rv_lod_far.png`（北草甸回望营地）地形连续、无可见接缝。
+  **地形分块 LOD / 流式加载验证**（SSE + 滞回 + 卸载/重载）：
+  出生点 `[terrain-lod] ... levels=4/8/4 loaded=16 unloaded=0`，
+  单块 `rv_terrain_00 -> L3 d=153 px=1.8`、`rv_terrain_10 -> L2 d=114 px=1.4`、
+  `rv_terrain_11 -> L1 d=51 px=1.2`；
+  在北草甸（`farhills`）开始即 `unload rv_terrain_00 d=245` /
+  `d=214` / `d=219`，变为 `loaded=13 unloaded=3`；
+  用 `start_mode=northdrive` 从北草甸开回营地时，
+  跨过 190m 加载半径触发
+  `load rv_terrain_10 -> L3 d=189 px=1.5`、`load rv_terrain_20 -> L3 d=189`，
+  回到 `loaded=14 unloaded=2`，最后近景块升到 L1（d=64）。
+  可见顶点数从全细节 23,744 降到约 12.1k（4 块 4m + 8 块 8m + 4 块 12m），
+  最远档只有 5,568 顶点（23%）。截图 `rv_stream_near.png`（营地草甸）、
+  `rv_stream_far.png`（北草甸回望营地）与 `rv_stream_drive.png`（驶到加油站）
+  地形连续、无可见接缝或空洞。
   摩擦驱动日志：`vf 4.0→8.7, omega 11.3→21.9, slip 0.12→0.01`
   （后轮转速由驱动力矩和轮胎反力矩自然收敛到滚动状态），
   悬挂法向力 `N 3.8k→7.7kN`；合作服务器日志
@@ -677,8 +692,9 @@ POI 墙体碰撞/门洞通行等。
   阿克曼）也作用于车轮刚体，高度/俯仰/侧倾/侧滑/偏航由求解器产生，
   车轮滚动由驱动力矩与接地点轮胎反力矩积分得到（起步打滑、刹车抱死）；
   地形可见网格是 4×4 分块、每块 3 档静态 LOD（无 GPU 细分/几何着色器），
-  没有按块流式加载（所有块的网格常驻显存），LOD 依据玩家/车距而非
-  相机视锥覆盖率；
+  SSE 用的几何误差是每档常数、屏幕高度取实际视口但 FOV 固定 60°，
+  流式加载只按到块中心的距离（190/210m）隐藏整块，网格仍常驻显存、
+  没有异步 IO 或遮挡剔除；
   轮胎仍是刚性圆柱（没有花纹/变形模型），滑移曲线是简化的峰值-平台曲线
   （没有 Pacejka/魔术公式、没有轮胎压力/胎面配方），
   路面材质 6 种但仍是离散分区（没有逐顶点材质贴图），

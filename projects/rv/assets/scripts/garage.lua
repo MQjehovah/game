@@ -365,7 +365,8 @@ function on_start()
         end
         levels[#levels + 1] = chunk
       end
-      terrainChunks[#terrainChunks + 1] = { x = cx, z = cz, levels = levels }
+      terrainChunks[#terrainChunks + 1] = { x = cx, z = cz, stage = stage,
+                                           levels = levels }
     end
   end
   if updateTerrainLod ~= nil then updateTerrainLod(0, true) end
@@ -378,7 +379,8 @@ function on_start()
       startMode = string.lower((sm:gsub("%s+", "")))
     end
     -- Test-only: start in the outside chase camera (autopilot screenshots).
-    if startMode == "chase" or startMode == "tiretest" then
+    if startMode == "chase" or startMode == "tiretest" or
+       startMode == "northdrive" then
       driveView = "chase"
     end
     -- Test-only: print surface/grip/temperature while driving.
@@ -496,6 +498,24 @@ function on_start()
   if startMode == "rvfar" then
     -- Test-only: the RV on the west highland of the extended 288 m terrain.
     rv.x, rv.z, rv.yaw = -95.0, 15.0, 0.7
+    rv.groundY = terrainHeight and terrainHeight(rv.x, rv.z) or 0
+    rv.susp = nil
+    if updateRvSuspension ~= nil then
+      updateRvSuspension(1.0)
+    elseif updateRvTilt ~= nil then
+      updateRvTilt(1.0)
+    end
+    applyRvTransform()
+    if rvBody ~= nil then
+      PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + rv.groundY, z = rv.z })
+      if rvQuat ~= nil then PhysicsSetRotation(rvBody, rvQuat()) end
+    end
+  end
+
+  if startMode == "northdrive" then
+    -- Test-only: start on the north meadow facing south so the far chunks
+    -- first stream out and then reload while autopilot drives back to camp.
+    rv.x, rv.z, rv.yaw = 0.0, 110.0, math.pi
     rv.groundY = terrainHeight and terrainHeight(rv.x, rv.z) or 0
     rv.susp = nil
     if updateRvSuspension ~= nil then
@@ -950,7 +970,8 @@ function on_update(ent, dt)
   -- ======================= 行驶 =======================
   if phase == "driving" then
     -- Test-only: keep the outside chase camera for autopilot screenshots.
-    if startMode == "chase" or startMode == "tiretest" then
+    if startMode == "chase" or startMode == "tiretest" or
+       startMode == "northdrive" then
       driveView = "chase"
     end
     if rv.steerDemo then driveView = "chase" end

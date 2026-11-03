@@ -120,9 +120,14 @@
   东南丘等）；营地、水塘、**worldmap 全部固定公路连接**和所有 POI 占地都被
   压平，超出范围保持平地。`spawnPonds()` 改为只播种一次，避免随机 POI 水塘
   把营地/湖边固定水塘挤掉。
-  `lc_terrain.updateTerrainLod()` 每 0.2s 按玩家/房车到块中心距离只显示一档
-  （≤90m 4m、≤140m 8m、更远 12m），打印
-  `[terrain-lod] near=4 mid=8 far=4`；全细节 23,744 顶点、典型视野约 12.1k。
+  `lc_terrain.terrainLodLevel()` 按**屏幕空间误差**选档
+  （`px = error·(screenH/(2·tan(fov/2)))/distance`，下一档 ≤2px 降档、
+  当前档 >2.5px 升档，2–2.5px 滞回），实测 51m→4m、114m→8m、152m→12m。
+  `updateTerrainLod()` 每 0.2s 更新；超过 210m 的块整体隐藏（unload），
+  回到 190m 内重新加载（load），并打印
+  `[terrain-lod] ... loaded=N unloaded=M changes=K`；
+  全细节 23,744 顶点、典型视野约 12.1k。
+  `start_mode=northdrive` 演示从北草甸驶回营地的 unload→load 过程。
 - `lc_terrain.lua` 对网格做双线性采样，提供
   `terrainHeight(x,z)` / `terrainFollow()` / `terrainSlope(x,z)`；步行时角色眼高、
   模型与枪械、驾驶时 `rv.groundY` + 外壳/内饰/家具/相机全部跟随地形高度。
@@ -450,7 +455,8 @@
    胎温是单轮集总值（不分胎面/胎侧）、没有胎压/爆胎，
    合作客户端用 20Hz 姿态流做位置/朝向外推与对账，但没有完整物理回滚预测；
    高度场只覆盖营地周边 288×288m，范围外仍是平地；可见网格是 4×4 分块、
-   每块 3 档静态 LOD（无流式加载/GPU 细分），LOD 依据车距而非视锥覆盖率；
+   每块 3 档静态 LOD（无 GPU 细分），SSE 的几何误差是常数、FOV 固定 60°，
+   流式加载只按块中心距离隐藏/显示整块（网格常驻显存，无异步 IO/遮挡剔除）；
    商店/加油站/仓库/商场/湖边木屋/诊所前窗已支持透明玻璃，破碎时从 seed 冲击点
    生长径向 + 分支裂纹，按应力衰减决定碎片大小/数量/速度（每扇约 20–30 块），
    落地后保留为永久碎屑（状态与 seed 由服务器权威广播），但仍是“径向裂环 +

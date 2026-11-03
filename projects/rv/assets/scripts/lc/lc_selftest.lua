@@ -248,11 +248,12 @@ function runSelfTest()
           chunks = chunks + 1
         end
       end
-      local nearN, midN, farN, haveAll = 0, 0, 0, 0
+      local nearN, midN, farN, haveAll, loadedN = 0, 0, 0, 0, 0
       for _, c in ipairs(terrainChunks or {}) do
         if c.level == 1 then nearN = nearN + 1
         elseif c.level == 2 then midN = midN + 1
         elseif c.level == 3 then farN = farN + 1 end
+        if c.loaded ~= false then loadedN = loadedN + 1 end
         local n = 0
         for i = 1, 3 do
           if c.levels[i] ~= nil then n = n + 1 end
@@ -262,9 +263,30 @@ function runSelfTest()
       ok(r, "rv terrain lod",
          okLod and chunks == 16 and farSum > 0 and farSum < fineSum * 0.3 and
          haveAll == 16 and nearN + midN + farN == 16 and
-         nearN >= 1 and farN >= 1,
-         string.format("chunks=%d verts=%d far=%d worst=%.2f levels=%d/%d/%d",
-                       chunks, fineSum, farSum, worst, nearN, midN, farN))
+         nearN >= 1 and farN >= 1 and
+         loadedN == 16,
+         string.format("chunks=%d verts=%d far=%d worst=%.2f levels=%d/%d/%d loaded=%d",
+                       chunks, fineSum, farSum, worst, nearN, midN, farN, loadedN))
+      -- Screen-space error: the ring distances must land on 4 m / 8 m / 12 m,
+      -- and the hysteresis band must keep a chunk from flapping.
+      local k = terrainLodK(720, 60)
+      local l0 = terrainLodLevel(51, 1, k)
+      local l1 = terrainLodLevel(114, 1, k)
+      local l2 = terrainLodLevel(152.7, 1, k)
+      local band1 = terrainLodLevel(70, 1, k)
+      local band2 = terrainLodLevel(70, 2, k)
+      local up = terrainLodLevel(110, 3, k)
+      ok(r, "rv terrain lod sse",
+         l0 == 1 and l1 == 2 and l2 == 3 and
+         band1 == 1 and band2 == 2 and up == 2,
+         string.format("d51=L%d d114=L%d d152=L%d band=1/%d up=L%d",
+                       l0, l1, l2, band2, up))
+      -- Streaming hysteresis: loaded chunks survive to the unload radius,
+      -- unloaded ones only come back inside the (smaller) load radius.
+      ok(r, "rv terrain lod stream",
+         terrainChunkStreamed(200, true) and not terrainChunkStreamed(215, true) and
+         terrainChunkStreamed(185, false) and not terrainChunkStreamed(200, false),
+         "load=190 unload=210")
     end
     if updateRvTilt ~= nil then
       local kx, kz, ky = rv.x, rv.z, rv.yaw

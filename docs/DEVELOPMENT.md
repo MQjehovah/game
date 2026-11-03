@@ -814,9 +814,14 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   **worldmap 全部固定公路连接**与 POI 占地压平，范围外为平地。
   `spawnPonds()` 改为只播种一次，随机 POI 水塘不再挤掉固定水塘。
   `garage.lua` 为每块生成三个实体放入 `terrainChunks`，
-  `lc_terrain.updateTerrainLod()` 每 0.2s 按玩家/房车距离只显示一档
-  （≤90m 4m、≤140m 8m、更远 12m），并打印
-  `[terrain-lod] near=4 mid=8 far=4`；全细节 23,744 顶点，典型视野约 12.1k。
+  `lc_terrain.terrainLodLevel()` 用**屏幕空间误差**选档：
+  `px = error·(screenH/(2·tan(fov/2)))/distance`，下一档 ≤2px 降档、
+  当前档 >2.5px 升档（2–2.5px 滞回带），实测 51m→4m、114m→8m、152m→12m。
+  `updateTerrainLod()` 每 0.2s 更新，超过 210m 的块整体隐藏（unload），
+  回到 190m 内重新加载（load），打印
+  `[terrain-lod] ... loaded=16 unloaded=0 changes=N`；
+  全细节 23,744 顶点，典型视野约 12.1k。
+  `start_mode=northdrive` 用于演示从北草甸驶回营地时的 unload→load 过程。
   `lc_terrain.lua` 仍对 JSON 双线性采样，提供 `terrainHeight` / `terrainFollow` /
   `terrainSlope`；步行（`player.groundY`、眼高、模型与枪械）、驾驶
   （`rv.groundY`、`applyRvTransform`、追逐/驾驶席/俯视相机）、植被摆放
@@ -893,6 +898,7 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   避免平底建筑悬空。自检新增 `terrain height profile` /
   `terrain ground follow` / `terrain heightfield` / `terrain knoll` /
   `terrain extended grid` / `terrain flat corridor` / `rv terrain lod` /
+  `rv terrain lod sse` / `rv terrain lod stream` /
   `rv slope tilt` /
   `rv tilted interior` /
   `rv four wheel contact` / `rv wheel articulation` / `rv wheel entities` /
@@ -907,7 +913,7 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `rv pose prediction` / `rv vegetation wind` / `rv wheel rolling` /
   `rv attitude roundtrip` /
   `rv yaw attitude roundtrip`，
-  总计 **61/61 PASS**。
+  总计 **63/63 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

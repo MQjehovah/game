@@ -558,14 +558,50 @@ function updateSteeringCommand(input, dt)
   return rv.steerCmd
 end
 
--- Distance-based visible terrain-chunk LOD. garage.lua registers every 72 m
--- chunk with three entities (4 m, 8 m, 12 m meshes); exactly one level is
--- visible per chunk, chosen from the player/RV distance. Near terrain keeps
--- full detail while the horizon costs ~1/6 of the vertices.
-local TERRAIN_LOD_NEAR = 90.0
-local TERRAIN_LOD_MID = 140.0
+-- Screen-space-error terrain LOD with hysteresis + chunk streaming.
+-- Each level's geometric error (metres) is projected to pixels:
+--   px = error * (screenH / (2*tan(fov/2))) / distance
+-- A chunk degrades to the next coarser mesh once that mesh projects at or
+-- below TARGET pixels, and only upgrades again once its current mesh projects
+-- above HYST pixels -- the gap is the hysteresis band that stops flicker.
+-- Chunks farther than the streaming radius hide entirely (and reload when the
+-- RV comes back), which also keeps the far ring out of the vertex path.
+local TERRAIN_LOD_ERR = { 0.10, 0.257, 0.449 }  -- L0 / L1 / L2 geometric error (m)
+local TERRAIN_LOD_TARGET = 2.0                  -- px: switch coarser at <= this
+local TERRAIN_LOD_HYST = 2.5                    -- px: switch finer above this
+local TERRAIN_VIEW_LOAD = 190.0                 -- reload radius (m)
+local TERRAIN_VIEW_UNLOAD = 210.0               -- unload radius (m, hysteresis)
+local TERRAIN_FOV_DEG = 60.0
 local terrainLodT = 0.0
 local terrainLodLogged = false
+
+function terrainLodK(screenH, fovDeg)
+  local h = screenH or 720
+  local half = math.rad(fovDeg or TERRAIN_FOV_DEG) * 0.5
+  local t = math.tan(half)
+  if t < 0.01 then t = 0.01 end
+  return h / (2 * t)
+end
+
+function terrainLodLevel(dist, current, k)
+  local d = math.max(dist or 0, 1.0)
+  local kk = k or terrainLodK(720, TERRAIN_FOV_DEG)
+  local level = math.max(1, math.min(3, current or 1))
+  while level < 3 and
+        TERRAIN_LOD_ERR[level + 1] * kk / d <= TERRAIN_LOD_TARGET do
+    level = level + 1
+  end
+  while level > 1 and
+        TERRAIN_LOD_ERR[level] * kk / d > TERRAIN_LOD_HYST do
+    level = level - 1
+  end
+  return level
+end
+
+function terrainChunkStreamed(dist, loaded)
+  if loaded then return dist <= TERRAIN_VIEW_UNLOAD end
+  return dist <= TERRAIN_VIEW_LOAD
+end
 
 function updateTerrainLod(dt, force)
   if terrainChunks == nil or #terrainChunks == 0 then return end
@@ -576,30 +612,51 @@ function updateTerrainLod(dt, force)
   if player ~= nil and player.active and player.x ~= nil then
     cx, cz = player.x, player.z
   end
+  local vp = GetViewportSize and GetViewportSize() or nil
+  local k = terrainLodK(vp and vp.h or 720, TERRAIN_FOV_DEG)
   local counts = { 0, 0, 0 }
-  local changed = false
+  local loadedN, unloadedN, changes = 0, 0, 0
   for _, c in ipairs(terrainChunks) do
     local dx, dz = c.x - cx, c.z - cz
     local d = math.sqrt(dx * dx + dz * dz)
-    local want = 1
-    if d > TERRAIN_LOD_MID then
-      want = 3
-    elseif d > TERRAIN_LOD_NEAR then
-      want = 2
-    end
-    if c.level ~= want then
-      c.level = want
-      changed = true
-      for i = 1, 3 do
-        if c.levels[i] ~= nil then SetVisible(c.levels[i], i == want) end
+    local loaded = c.loaded ~= false
+    if not terrainChunkStreamed(d, loaded) then
+      if loaded then
+        for i = 1, 3 do
+          if c.levels[i] ~= nil then SetVisible(c.levels[i], false) end
+        end
+        c.loaded = false
+        c.level = nil
+        changes = changes + 1
+        if changes <= 6 then
+          print(string.format("[terrain-lod] unload %s d=%.0f", tostring(c.stage), d))
+        end
       end
+      unloadedN = unloadedN + 1
+    else
+      local want = terrainLodLevel(d, c.level, k)
+      if (not loaded) or c.level ~= want then
+        for i = 1, 3 do
+          if c.levels[i] ~= nil then SetVisible(c.levels[i], i == want) end
+        end
+        c.level = want
+        c.loaded = true
+        changes = changes + 1
+        if changes <= 6 then
+          print(string.format("[terrain-lod] %s%s -> L%d d=%.0f px=%.1f",
+                loaded and "" or "load ", tostring(c.stage), want, d,
+                TERRAIN_LOD_ERR[want] * k / math.max(d, 1)))
+        end
+      end
+      counts[want] = counts[want] + 1
+      loadedN = loadedN + 1
     end
-    counts[want] = counts[want] + 1
   end
-  if changed or not terrainLodLogged then
+  if changes > 0 or not terrainLodLogged then
     terrainLodLogged = true
-    print(string.format("[terrain-lod] near=%d mid=%d far=%d",
-                        counts[1], counts[2], counts[3]))
+    print(string.format(
+      "[terrain-lod] near=%d mid=%d far=%d loaded=%d unloaded=%d changes=%d",
+      counts[1], counts[2], counts[3], loadedN, unloadedN, changes))
   end
 end
 
