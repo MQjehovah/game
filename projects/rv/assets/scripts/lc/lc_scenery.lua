@@ -2116,12 +2116,21 @@ function setCampfireLit(on)
   if campfireLight ~= nil then SetVisible(campfireLight, campfireOn) end
 end
 
+-- 雨雪天篝火消耗更快（雨水降温/雪天更冷）
+function campfireFuelScale(weatherValue)
+  if weatherValue == "rain" then return 1.4 end
+  if weatherValue == "snow" then return 1.6 end
+  return 1.0
+end
+
 -- 营火燃料：燃烧时按游戏分钟消耗；烧尽后火苗/暖光熄灭
 function updateCampfireFuel(gm)
   if campfire == nil or not campfireOn then return end
   -- 联机客机的燃料由服务器权威推进，本地不消耗
   if coopRole == "client" then return end
-  campfireFuelMin = math.max(0, (campfireFuelMin or 0) - (gm or 0))
+  local scale = campfireFuelScale(weather)
+  campfireFuelMin = math.max(0, (campfireFuelMin or 0) -
+                                (gm or 0) * scale)
   if campfireFuelMin <= 0 then
     campfireFuelMin = 0
     setCampfireLit(false)

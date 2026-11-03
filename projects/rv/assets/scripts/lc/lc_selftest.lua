@@ -1831,6 +1831,22 @@ function runSelfTest()
                      materials.wood or 0, tostring(noWood)))
   end
 
+  -- 雨雪天篝火消耗更快
+  do
+    local clear = campfireFuelScale("clear")
+    local rain = campfireFuelScale("rain")
+    local snow = campfireFuelScale("snow")
+    local keepOn, keepFuel, sw = campfireOn, campfireFuelMin, weather
+    campfireOn, campfireFuelMin, weather = true, 100, "rain"
+    updateCampfireFuel(10)
+    local burned = math.abs((campfireFuelMin or 0) - 86) < 1e-6
+    campfireOn, campfireFuelMin, weather = keepOn, keepFuel, sw
+    ok(r, "campfire weather",
+       clear == 1.0 and rain > clear and snow > rain and burned,
+       string.format("clear=%.1f rain=%.1f snow=%.1f burned=%.0f",
+                     clear, rain, snow, 86))
+  end
+
   -- 篝火燃料 HUD 提示：熄灭/将尽时给文案，充足/远离时不给
   do
     local keepOn, keepFuel = campfireOn, campfireFuelMin
