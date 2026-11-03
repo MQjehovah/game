@@ -1441,6 +1441,27 @@ function runSelfTest()
                      gen and gen.id or "?", tostring(hidden), tostring(revealed)))
   end
 
+  -- 信号中继：修塔后到小镇触发一次总结与奖励
+  do
+    local keepFixed, keepDone = radioMastFixed, relayDone
+    local sm = materials.metal or 0
+    local se = materials.electronics or 0
+    local sf, sa, sp = fuel or 0, atNode, phase
+    radioMastFixed, relayDone, relayCard = true, false, nil
+    atNode, phase = "town", "parked"
+    local okRelay = updateRelay()
+    local rewarded = (materials.metal or 0) == sm + 10 and
+                     (materials.electronics or 0) == se + 5
+    local card = relayCard ~= nil and (relayCard.t or 0) > 0
+    local again = updateRelay()
+    radioMastFixed, relayDone, relayCard = keepFixed, keepDone, nil
+    materials.metal, materials.electronics, fuel = sm, se, sf
+    atNode, phase = sa, sp
+    ok(r, "signal relay", okRelay and rewarded and card and again == false,
+       string.format("ok=%s reward=%s card=%s again=%s", tostring(okRelay),
+                     tostring(rewarded), tostring(card), tostring(again)))
+  end
+
   -- 公路电线：相邻电线杆之间两条
   do
     local n = #roadWires

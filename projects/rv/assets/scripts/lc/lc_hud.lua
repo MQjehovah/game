@@ -607,6 +607,33 @@ function drawMorningReport()
            0.68, 0.70, 0.64, a)
 end
 
+-- 信号中继恢复：旅程总结卡
+function drawRelayCard()
+  if relayCard == nil then return end
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local pw, ph = 480, 236
+  local px = math.floor((vw - pw) * 0.5)
+  local py = math.floor(vh * 0.22)
+  local a = math.min(1, (relayCard.t or 0) * 1.4)
+  DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.95 * a)
+  DrawRectOutline(px, py, pw, ph, 0.72, 0.62, 0.32, a)
+  drawTextCentered("信号中继已恢复", vw * 0.5, py + 14, 22, 0.98, 0.90, 0.66, a)
+  DrawText(string.format("第 %d 天 · 累计货运 %d 单 · 里程 %.1fkm",
+           relayCard.day or 1, relayCard.jobs or 0, relayCard.km or 0),
+           px + 26, py + 52, 13, 0.86, 0.86, 0.78, a)
+  DrawText(string.format("钓鱼 %d 条 · 探索 %d / %d",
+           relayCard.fish or 0, relayCard.explored or 0, relayCard.total or 0),
+           px + 26, py + 74, 13, 0.86, 0.86, 0.78, a)
+  DrawText(string.format("奖励：金属 +10 · 电子件 +5 · 燃料 +%.0fL",
+           relayCard.fuelGain or 0), px + 26, py + 104, 13, 0.80, 0.90, 0.70, a)
+  DrawText("你联系上了外界——这片荒野不再只有你一个人。",
+           px + 26, py + 142, 13, 0.92, 0.82, 0.58, a)
+  DrawText("可以继续跑单、探索，或回营地休整。", px + 26, py + 168, 12,
+           0.72, 0.74, 0.68, a)
+end
+
 function drawDriveHud()
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
@@ -713,6 +740,9 @@ function drawDriveHud()
   end
   if nearNode then
     top = top .. "   ▶ 临近 " .. nearNode.name .. "（空格停靠）"
+  end
+  if radioMastFixed and not relayDone then
+    top = top .. "   ▶ 信号中继：废弃小镇"
   end
   drawBanner(top, 14, 16)
 

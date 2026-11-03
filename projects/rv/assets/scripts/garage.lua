@@ -1114,6 +1114,16 @@ function on_start()
     setWeather("snow")
     clock = 10 * 60
     setPhase("parked")
+  elseif startMode == "relay" then
+    radioMastFixed = true
+    relayDone = false
+    local nd = nodeById("town")
+    if nd ~= nil then
+      rv.x, rv.z, rv.yaw = nd.x, nd.z, 0
+      if applyRvTransform ~= nil then applyRvTransform() end
+    end
+    atNode, phase = "town", "parked"
+    if updateRelay ~= nil then updateRelay() end
   elseif startMode == "raincab" then
     setWeather("rain")
     setPhase("driving")
@@ -1386,6 +1396,11 @@ function on_update(ent, dt)
     morningReport.t = morningReport.t - dt
     if morningReport.t <= 0 then morningReport = nil end
   end
+  if relayCard ~= nil then
+    relayCard.t = relayCard.t - dt
+    if relayCard.t <= 0 then relayCard = nil end
+  end
+  if updateRelay ~= nil then updateRelay() end
   if coopRole ~= nil then
     coopUpdate(dt)
     if updatePoiWindows then updatePoiWindows(dt) end
@@ -1640,6 +1655,7 @@ function on_render()
   if jobUI then drawJobPanel() end
   if jobResult then drawJobResult() end
   if morningReport then drawMorningReport() end
+  if relayCard then drawRelayCard() end
   if mapOpen then drawMapHud() end
   if journalOpen then drawJournal() end
   if fishBookOpen then drawFishBook() end

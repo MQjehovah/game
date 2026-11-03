@@ -566,6 +566,42 @@ function coldEnergyExtra(weatherValue, heaterOn)
   return 0
 end
 
+-- 长线收尾：修好无线电塔后，去废弃小镇恢复信号中继
+RELAY_REWARD = { metal = 10, electronics = 5, fuel = 30 }
+
+function completeSignalRelay()
+  if relayDone then return false end
+  relayDone = true
+  local beforeFuel = fuel or 0
+  for k, v in pairs(RELAY_REWARD) do
+    if k == "fuel" then
+      fuel = math.min(fuelMax(), (fuel or 0) + v)
+    else
+      materials[k] = (materials[k] or 0) + v
+    end
+  end
+  relayCard = {
+    day = day or 1, jobs = jobDelivered or 0,
+    km = (tripDistance or 0) / 1000, fish = fishCaught or 0,
+    explored = visitedCount or 0, total = #NODES,
+    fuelGain = (fuel or 0) - beforeFuel,
+    t = 8.0,
+  }
+  toast.text = "信号中继已恢复——你联系上了外界！"
+  toast.t = 6.0
+  if addJournal then addJournal("在废弃小镇恢复了信号中继", "goal") end
+  if autoSave then autoSave() end
+  return true
+end
+
+function updateRelay()
+  if relayDone or not radioMastFixed then return false end
+  if phase == "parked" and atNode == "town" then
+    return completeSignalRelay()
+  end
+  return false
+end
+
 -- 时间/需求主循环
 function updateSurvival(dt)
   if hurtT > 0 then hurtT = math.max(0, hurtT - dt) end

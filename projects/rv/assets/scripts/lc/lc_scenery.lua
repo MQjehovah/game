@@ -1132,8 +1132,8 @@ function repairRadioMast()
   if addJournal ~= nil then
     addJournal("修好了仓库无线电塔（地图全解锁 + 燃油罐 + 修理包）", "goal")
   end
-  toast.text = "无线电塔修好了——信标常亮、地图地点全解锁，收到应急补给（燃油罐+修理包）"
-  toast.t = 5.0
+  toast.text = "无线电塔修好了——信标常亮、地图地点全解锁，收到应急补给；去废弃小镇恢复信号中继"
+  toast.t = 6.0
   if autoSave ~= nil then autoSave() end
   return true
 end
