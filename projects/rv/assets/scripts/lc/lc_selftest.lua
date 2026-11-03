@@ -1949,6 +1949,25 @@ function runSelfTest()
        string.format("a0=%.2f a1=%.2f wrap=%.2f", a0, a1, a2))
   end
 
+  -- 雨刷在雨/雪天驾驶席显示，晴天/追逐视角不显示
+  do
+    local sw, sp, sd = weather, phase, driveView
+    weather, phase, driveView = "rain", "driving", "cab"
+    local rainCab = wipersActive()
+    weather, phase, driveView = "snow", "driving", "cab"
+    local snowCab = wipersActive()
+    weather, phase, driveView = "clear", "driving", "cab"
+    local clearCab = wipersActive()
+    weather, phase, driveView = "rain", "driving", "chase"
+    local chase = wipersActive()
+    weather, phase, driveView = sw, sp, sd
+    ok(r, "wipers active",
+       rainCab and snowCab and not clearCab and not chase,
+       string.format("rain=%s snow=%s clear=%s chase=%s",
+                     tostring(rainCab), tostring(snowCab),
+                     tostring(clearCab), tostring(chase)))
+  end
+
   -- 载重影响刹车：越重越刹不住
   do
     local empty = brakeRate(1.0)

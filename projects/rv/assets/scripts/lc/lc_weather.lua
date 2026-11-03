@@ -76,6 +76,26 @@ function wiperAngle(t)
   return -0.20 + sweep * 0.62
 end
 
+function wipersActive()
+  return (weather == "rain" or weather == "snow") and
+         phase == "driving" and driveView == "cab"
+end
+
+function drawWipers(vw, vh)
+  if not wipersActive() then return end
+  local t = weatherT or 0
+  for k = 0, 1 do
+    local ang = wiperAngle(t + k * 0.22) * 1.4
+    local cx = vw * (0.34 + k * 0.32)
+    local cy = vh * 0.99
+    local len = vh * 0.20
+    local wx = cx + math.sin(ang) * len
+    local wy = cy - math.cos(ang) * len
+    DrawLine(cx, cy, wx, wy, 4, 0.06, 0.07, 0.08, 0.55)
+    DrawLine(cx, cy, wx, wy, 2, 0.20, 0.21, 0.22, 0.45)
+  end
+end
+
 -- 路面抓地折减：雨天湿滑、雪天更滑；带防滑链时雨雪抓地提高
 function weatherGripScale()
   local base = 1.0
@@ -265,19 +285,7 @@ function drawWeatherOverlay()
       DrawLine(x, y, x + 1, y + 5 + (i % 4), 1, 0.72, 0.80, 0.90, 0.12)
     end
     -- 驾驶席视角：雨刷来回摆动（只在挡风玻璃下沿，避免遮挡视线）
-    if phase == "driving" and driveView == "cab" then
-      local t = weatherT or 0
-      for k = 0, 1 do
-        local ang = wiperAngle(t + k * 0.22) * 1.4
-        local cx = vw * (0.34 + k * 0.32)
-        local cy = vh * 0.99
-        local len = vh * 0.20
-        local wx = cx + math.sin(ang) * len
-        local wy = cy - math.cos(ang) * len
-        DrawLine(cx, cy, wx, wy, 4, 0.06, 0.07, 0.08, 0.55)
-        DrawLine(cx, cy, wx, wy, 2, 0.20, 0.21, 0.22, 0.45)
-      end
-    end
+    if wipersActive ~= nil then drawWipers(vw, vh) end
   elseif weather == "snow" then
     DrawRect(0, 0, vw, vh, 0.55, 0.60, 0.68, 0.12)
     -- 雪花：白色小点缓慢飘落，带轻微横向摆动
@@ -288,6 +296,8 @@ function drawWeatherOverlay()
       local r = 1 + (i % 3) * 0.5
       DrawCircle(x, y, r, 1, 0.92, 0.95, 1.0, 0.55, true)
     end
+    -- 雪天驾驶席也摆雨刷
+    if wipersActive ~= nil then drawWipers(vw, vh) end
   elseif weather == "fog" then
     DrawRect(0, 0, vw, vh, 0.72, 0.75, 0.79, 0.24)
     DrawRect(0, 0, vw, vh, 0.85, 0.87, 0.89, 0.08)
