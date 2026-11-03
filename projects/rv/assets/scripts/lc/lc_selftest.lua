@@ -3142,6 +3142,18 @@ function runSelfTest()
        string.format("60=%.3f 120=%.3f 180=%.3f max=%.3f", a, b, c, d))
   end
 
+  -- 疲劳视觉强度：120 分钟内为 0，之后递增并封顶 1.0
+  do
+    local a = fatigueAlpha(60)
+    local b = fatigueAlpha(150)
+    local c = fatigueAlpha(300)
+    local d = fatigueAlpha(900)
+    ok(r, "fatigue vignette",
+       a == 0 and b > 0 and b < c and math.abs(c - 1.0) < 1e-6 and
+       math.abs(d - 1.0) < 1e-6,
+       string.format("60=%.2f 150=%.2f 300=%.2f max=%.2f", a, b, c, d))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

@@ -1127,6 +1127,11 @@ function on_start()
     end
     atNode, phase = "town", "parked"
     if updateRelay ~= nil then updateRelay() end
+  elseif startMode == "tired" then
+    clock = 23 * 60
+    nightDriveMin = 300
+    setPhase("driving")
+    driveView = "cab"
   elseif startMode == "raincab" then
     setWeather("rain")
     setPhase("driving")
@@ -1641,6 +1646,7 @@ function on_render()
       if drawRainbow ~= nil then drawRainbow() end
       drawWeatherOverlay()
       drawNightOverlay()
+      if drawFatigueVignette ~= nil then drawFatigueVignette() end
       coopDrawHud()
     end
     return
@@ -1649,6 +1655,7 @@ function on_render()
   if drawRainbow ~= nil then drawRainbow() end
   drawWeatherOverlay()
   drawNightOverlay()
+  if drawFatigueVignette ~= nil then drawFatigueVignette() end
   if phase == "driving" then
     drawDriveHud()
   elseif buildMode then

@@ -1193,6 +1193,28 @@ function drawRainbow()
   end
 end
 
+-- 夜间疲劳：屏幕四周逐渐变暗并随呼吸节奏轻微脉动
+function drawFatigueVignette()
+  if fatigueAlpha == nil then return end
+  local a = fatigueAlpha(nightDriveMin or 0)
+  if a <= 0.01 then return end
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local pulse = 0.82 + 0.18 * math.sin((weatherT or 0) * 1.6)
+  local alpha = 0.38 * a * pulse
+  local band = 70
+  DrawRect(0, 0, vw, band, 0.02, 0.03, 0.06, alpha)
+  DrawRect(0, vh - band, vw, band, 0.02, 0.03, 0.06, alpha)
+  DrawRect(0, 0, band, vh, 0.02, 0.03, 0.06, alpha)
+  DrawRect(vw - band, 0, band, vh, 0.02, 0.03, 0.06, alpha)
+  if a > 0.55 then
+    drawTextCentered("眼皮有点沉……停车睡一觉或喝杯热咖啡",
+                     math.floor(vw * 0.5), vh - 46, 12,
+                     0.86, 0.88, 0.96, 0.75 * a)
+  end
+end
+
 function drawNightOverlay()
   local a = nightAmount()
   if a <= 0.01 then return end

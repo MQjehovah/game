@@ -574,6 +574,13 @@ function nightFatigueExtra(minutes)
   return math.min(0.020, (m - 120) * 0.0002)
 end
 
+-- 疲劳视觉强度（0–1）：连续夜驾越久越明显，用于屏幕边缘暗角
+function fatigueAlpha(minutes)
+  local m = minutes or 0
+  if m <= 120 then return 0 end
+  return math.min(1.0, (m - 120) / 180)
+end
+
 -- 雪天寒冷：没开取暖器时体力消耗更快
 function coldEnergyExtra(weatherValue, heaterOn)
   if weatherValue == "snow" and not heaterOn then
