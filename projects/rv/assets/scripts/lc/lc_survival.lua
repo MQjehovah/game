@@ -161,6 +161,34 @@ function addDailyProgress(kind, amount)
   end
 end
 
+-- 长期里程碑：探索地点数 / 完成货运单数达到阈值时一次性发奖
+function checkMilestones(kind, value)
+  local list = MILESTONES and MILESTONES[kind]
+  if list == nil then return end
+  for _, m in ipairs(list) do
+    local key = kind .. ":" .. m.n
+    if (value or 0) >= m.n and not milestones[key] then
+      milestones[key] = true
+      local got = {}
+      for k, v in pairs(m.reward or {}) do
+        if k == "fuel" then
+          local before = fuel
+          fuel = math.min(VEH.tank, fuel + v)
+          got[#got + 1] = string.format("燃料+%dL", math.floor(fuel - before + 0.5))
+        else
+          materials[k] = (materials[k] or 0) + v
+          got[#got + 1] = (MAT_NAMES[k] or k) .. "+" .. v
+        end
+      end
+      toast.text = string.format("里程碑：%s %d · %s", 
+                                 kind == "explore" and "探索" or "货运",
+                                 m.n, table.concat(got, " "))
+      toast.t = 5.0
+      if PlaySfx then PlaySfx("pickup") end
+    end
+  end
+end
+
 -- 生食材腐败速度：通电冰箱显著延缓
 function rawFoodAging(gm, fridgePowered)
   local mul = fridgePowered and (1 / (SURVIVAL.fridgeSpoilMul or 3)) or 1

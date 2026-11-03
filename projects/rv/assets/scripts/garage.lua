@@ -145,6 +145,7 @@ function saveLayout()
       lastJobDay = lastJobDay or 0,
       battery = batteryCharge or 0,
       rawAge = rawFoodAge or 0,
+      milestones = milestones,
       daily = dailyGoal and {
         id = dailyGoal.id, name = dailyGoal.name, target = dailyGoal.target,
         progress = dailyGoal.progress, done = dailyGoal.done,
@@ -303,6 +304,12 @@ function loadLayout()
     rawFoodAge = tonumber(data.progress.rawAge) or rawFoodAge
     if rawFoodAge ~= nil then
       rawSpoilWarned = rawFoodAge > (SURVIVAL.rawSpoilMinutes or 2880) * 0.75
+    end
+    if type(data.progress.milestones) == "table" then
+      milestones = {}
+      for k, v in pairs(data.progress.milestones) do
+        if type(k) == "string" and v == true then milestones[k] = true end
+      end
     end
     if type(data.progress.daily) == "table" then
       local d = data.progress.daily

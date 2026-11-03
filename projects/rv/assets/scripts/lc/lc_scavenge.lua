@@ -163,6 +163,7 @@ function firstVisitBonus(nd)
   if visitedPois[nd.id] then return nil end
   visitedPois[nd.id] = true
   visitedCount = (visitedCount or 0) + 1
+  if checkMilestones ~= nil then checkMilestones("explore", visitedCount) end
   local danger = nd.danger or 0
   local metal = 1 + danger
   local cloth = 1

@@ -920,6 +920,8 @@ function runSelfTest()
   -- ======================= 顺路货运合同 =======================
   local dailyKeep = dailyGoal
   dailyGoal = nil  -- 货运测试期间关闭每日目标奖励，避免污染收益断言
+  local milestonesKeep = milestones
+  milestones = {}  -- 同时关闭长期里程碑奖励
   -- 货运板：营地生成一块可交互的牌子
   jobBoard = nil
   spawnJobBoard()
@@ -1399,6 +1401,12 @@ function runSelfTest()
   -- 每日首单：同一天第一单 +25%，第二单恢复
   do
     local sd, sLast = day, lastJobDay
+    local mk = milestones
+    milestones = {}
+    local dk = dailyGoal
+    dailyGoal = nil
+    local jd = jobDelivered
+    jobDelivered = 0
     day, lastJobDay = 9, 0
     jobRefreshOffers("depot")
     jobAccept(1)
@@ -1415,6 +1423,9 @@ function runSelfTest()
     jobComplete()
     local secondGain = (materials.metal or 0) - m1
     day, lastJobDay = sd, sLast
+    jobDelivered = jd
+    milestones = mk
+    dailyGoal = dk
     ok(r, "daily first job bonus", firstGain == 6 and secondGain == 5,
        string.format("first=%d second=%d", firstGain, secondGain))
   end
@@ -1606,6 +1617,7 @@ function runSelfTest()
   -- 每日目标：进度与完成奖励
   do
     dailyGoal = dailyKeep
+    milestones = milestonesKeep
     local keep = dailyGoal
     dailyGoal = { id = "jobs", name = "测试目标", target = 2, progress = 0,
                   done = false, reward = { metal = 2, fuel = 5 } }
@@ -1734,6 +1746,21 @@ function runSelfTest()
        string.format("cloth->metal=%s elec->can=%s metal=%d cans=%d",
                      tostring(metalUp), tostring(canUp),
                      materials.metal or 0, inv.fuelcan or 0))
+  end
+
+  -- 长期里程碑：探索 3 个地点一次性发奖，且不会重复发
+  do
+    local keep = milestones
+    milestones = {}
+    local m0 = materials.metal or 0
+    checkMilestones("explore", 3)
+    local first = (materials.metal or 0) > m0
+    local m1 = materials.metal or 0
+    checkMilestones("explore", 3)
+    local repeat_ok = (materials.metal or 0) == m1
+    milestones = keep
+    ok(r, "exploration milestone", first and repeat_ok,
+       string.format("metal %d->%d repeat=%s", m0, m1, tostring(repeat_ok)))
   end
 
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量

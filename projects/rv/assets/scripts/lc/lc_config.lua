@@ -139,6 +139,21 @@ STOP = {
   crates = 6, threatMax = 3, evacTime = 15, searchThreat = 1,
   keepRatio = 1.0, pickRadius = 30,
 }
+-- 长期里程碑：探索/货运达到阈值时一次性奖励，给长线目标
+MILESTONES = {
+  explore = {
+    { n = 3,  reward = { metal = 3, fuel = 10 } },
+    { n = 5,  reward = { electronics = 2, fuel = 15 } },
+    { n = 8,  reward = { cloth = 3, fuel = 20 } },
+    { n = 12, reward = { metal = 5, electronics = 3, fuel = 25 } },
+  },
+  jobs = {
+    { n = 5,  reward = { metal = 4, fuel = 15 } },
+    { n = 10, reward = { electronics = 2, fuel = 20 } },
+    { n = 20, reward = { metal = 8, electronics = 4, fuel = 30 } },
+  },
+}
+
 -- 营地板以物易物：把多余的搜刮物资换成燃油/金属，给后期材料一个出口
 TRADES = {
   { id = "cloth_metal", name = "布料 x3 → 金属 x2",
