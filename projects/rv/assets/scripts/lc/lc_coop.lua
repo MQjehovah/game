@@ -39,7 +39,7 @@ local coop = {
   lookYaw = 0, lookPitch = -0.05,
   state = nil, seq = 0, lastLogSeq = -1,
   sendT = 0, stateT = 0, worldT = 0,
-  rv = { x = 0, z = 0, yaw = 0, speed = 0 },
+  rv = { x = 0, z = 0, yaw = 0, speed = 0, groundY = 0, pitch = 0, roll = 0 },
   fuel = 60, water = 80, day = 1, clock = 8 * 60,
   weather = "clear", lights = true,
   needs = { health = 100, hunger = 85, thirst = 90, energy = 90, hygiene = 80 },
@@ -128,7 +128,8 @@ local function setToast(text)
 end
 
 local function copyGlobals()
-  coop.rv = { x = rv.x, z = rv.z, yaw = rv.yaw, speed = 0 }
+  coop.rv = { x = rv.x, z = rv.z, yaw = rv.yaw, speed = 0,
+              groundY = 0, pitch = 0, roll = 0 }
   coop.fuel = fuel
   coop.water = water
   coop.day = day
@@ -147,6 +148,8 @@ local function applySharedGlobals()
   rv.x, rv.z, rv.yaw = coop.rv.x, coop.rv.z, coop.rv.yaw
   rv.speed = coop.rv.speed or 0
   rv.groundY = coop.rv.groundY or 0
+  rv.pitch = coop.rv.pitch or 0
+  rv.roll = coop.rv.roll or 0
   fuel, water, day, clock = coop.fuel, coop.water, coop.day, coop.clock
   needs = coop.needs
   materials = coop.materials
@@ -458,7 +461,8 @@ local function pushState()
   end
   local rvOut = { x = q3(coop.rv.x), z = q3(coop.rv.z),
                   yaw = q3(coop.rv.yaw), speed = q3(coop.rv.speed),
-                  gy = q3(coop.rv.groundY or 0) }
+                  gy = q3(coop.rv.groundY or 0),
+                  p = q3(coop.rv.pitch or 0), r = q3(coop.rv.roll or 0) }
   Rpc("game_state", {
     seq = coop.seq, rv = rvOut, players = players, needs = needsOut,
     fuel = math.floor((fuel or 0) * 10 + 0.5) / 10,
@@ -493,8 +497,9 @@ local function serverDebugLog()
     end
   end
   print(string.format(
-    "[coop-main-server] seq=%d rv=(%.2f,%.2f,yaw=%.2f speed=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) joined=%d/%d fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%d barndoor=%d glass=%s",
+    "[coop-main-server] seq=%d rv=(%.2f,%.2f,yaw=%.2f speed=%.2f p=%.2f r=%.2f gy=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) joined=%d/%d fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%d barndoor=%d glass=%s",
     coop.seq, rv.x, rv.z, rv.yaw, rv.speed,
+    rv.pitch or 0, rv.roll or 0, rv.groundY or 0,
     coop.slots[1].x, coop.slots[1].z, coop.slots[2].x, coop.slots[2].z,
     coop.slots[3].x, coop.slots[3].z, coop.slots[4].x, coop.slots[4].z,
     (coop.slots[1].joined and 1 or 0) + (coop.slots[2].joined and 1 or 0) +
@@ -879,7 +884,7 @@ local function serverUpdate(dt)
     drv.driving = true
     drv.inside = true
     drv.seat = "driver"
-    drv.f, drv.s = 0, 0
+    drv.f, drv.s = 1, 0
     local sx, sz = seatWorld("driver")
     drv.x, drv.z = sx, sz
     setToast("P1 坐上了驾驶席")
@@ -910,30 +915,43 @@ local function serverUpdate(dt)
   end
 
   if driver ~= nil then
+    if coop.autoDrive then driver.f = 1 end
     local target = driver.f * RV_SPEED
     rv.speed = rv.speed + (target - rv.speed) * math.min(1, dt * 2.5)
-    -- Positive strafe = D; decreasing yaw turns screen-right, matching lc_drive.
-    rv.yaw = rv.yaw - driver.s * dt * 1.1
-    rv.x = rv.x + math.sin(rv.yaw) * rv.speed * dt
-    rv.z = rv.z + math.cos(rv.yaw) * rv.speed * dt
+    -- D (driver.s = +1) steers right, so the front-wheel angle is negative.
+    rv.steerCmd = -driver.s * 0.50
+    local physical = false
+    if rvBody ~= nil and updateRvPhysics ~= nil and
+       rv.wheelBodies ~= nil and PhysicsApplyImpulse ~= nil then
+      physical = updateRvPhysics(dt)
+    end
+    if not physical then
+      -- Kinematic fallback for old binaries / missing wheel bodies.
+      rv.steerCmd = nil
+      rv.yaw = rv.yaw - driver.s * dt * 1.1
+      rv.x = rv.x + math.sin(rv.yaw) * rv.speed * dt
+      rv.z = rv.z + math.cos(rv.yaw) * rv.speed * dt
+      if terrainHeight ~= nil then
+        if updateRvSuspension ~= nil then
+          updateRvSuspension(dt)
+        else
+          rv.groundY = terrainFollow(rv.groundY or 0, rv.x, rv.z, dt, 10)
+          if updateRvTilt ~= nil then updateRvTilt(dt) end
+        end
+      end
+      if rvBody ~= nil then
+        PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + (rv.groundY or 0), z = rv.z })
+        PhysicsSetVelocity(rvBody, { x = 0, y = 0, z = 0 })
+      end
+    end
     rv.x = clamp(rv.x, -WORLD_LIMIT, WORLD_LIMIT)
     rv.z = clamp(rv.z, -WORLD_LIMIT, WORLD_LIMIT)
     coop.rv.x, coop.rv.z, coop.rv.yaw, coop.rv.speed = rv.x, rv.z, rv.yaw, rv.speed
+    coop.rv.groundY = rv.groundY or 0
+    coop.rv.pitch = rv.pitch or 0
+    coop.rv.roll = rv.roll or 0
     fuel = math.max(0, fuel - math.abs(rv.speed) * dt * 0.03)
-    if terrainHeight ~= nil then
-      if updateRvSuspension ~= nil then
-        updateRvSuspension(dt)
-      else
-        rv.groundY = terrainFollow(rv.groundY or 0, rv.x, rv.z, dt, 10)
-        if updateRvTilt ~= nil then updateRvTilt(dt) end
-      end
-      coop.rv.groundY = rv.groundY
-    end
     applyRvTransform()
-    if rvBody ~= nil then
-      PhysicsSetPosition(rvBody, { x = rv.x, y = 0.9 + (rv.groundY or 0), z = rv.z })
-      PhysicsSetVelocity(rvBody, { x = 0, y = 0, z = 0 })
-    end
     -- Only players who actually boarded ride with the RV; outside players are
     -- left where they stood (they can walk after the RV stops).
     for i = 1, MAX_SLOTS do
@@ -947,7 +965,10 @@ local function serverUpdate(dt)
     end
   else
     rv.speed = 0
+    rv.steerCmd = nil
     coop.rv.speed = 0
+    coop.rv.pitch = rv.pitch or 0
+    coop.rv.roll = rv.roll or 0
     for i = 1, MAX_SLOTS do
       local s = coop.slots[i]
       if s.joined and not s.inside then
@@ -1137,6 +1158,8 @@ local function applyState(s)
     coop.rv.yaw = tonumber(s.rv.yaw) or coop.rv.yaw
     coop.rv.speed = tonumber(s.rv.speed) or 0
     coop.rv.groundY = tonumber(s.rv.gy) or coop.rv.groundY or 0
+    coop.rv.pitch = tonumber(s.rv.p) or coop.rv.pitch or 0
+    coop.rv.roll = tonumber(s.rv.r) or coop.rv.roll or 0
   end
   coop.fuel = tonumber(s.fuel) or coop.fuel
   coop.water = tonumber(s.water) or coop.water
@@ -1358,6 +1381,9 @@ local function clientUpdate(dt)
   coop.sendT = coop.sendT + dt
   if coop.sendT >= 0.1 and GetVar("netConnected") == 1 then
     coop.sendT = 0
+    -- Test hook: the coop_drive demo holds the throttle from the client so the
+    -- server's physical wheel-body path is exercised.
+    if coop.autoDrive then f = 1 end
     Rpc("game_cmd", { type = "input", f = f, s = s, yaw = coop.lookYaw })
   end
 
@@ -1438,10 +1464,15 @@ local function clientUpdate(dt)
   rv.yaw = coop.rv.yaw
   rv.speed = coop.rv.speed or 0
   rv.groundY = coop.rv.groundY or 0
+  rv.pitch = coop.rv.pitch or 0
+  rv.roll = coop.rv.roll or 0
   if updateRvSuspension ~= nil then
     updateRvSuspension(dt)
-    -- Server height stays authoritative; suspension only shapes the attitude.
+    -- The server's physical attitude is authoritative; the local suspension
+    -- pass only supplies per-wheel plane/travel for the visual wheel meshes.
     rv.groundY = coop.rv.groundY or rv.groundY
+    rv.pitch = coop.rv.pitch or rv.pitch
+    rv.roll = coop.rv.roll or rv.roll
   elseif updateRvTilt ~= nil then
     updateRvTilt(dt)
   end
@@ -1797,7 +1828,8 @@ function coopInitWorld(role)
         local cx, cz = poiCenter(nd)
         atNode, curNode = nd.id, nd.id
         rv.x, rv.z, rv.yaw = nd.x, nd.z, 0
-        coop.rv = { x = nd.x, z = nd.z, yaw = 0, speed = 0 }
+        coop.rv = { x = nd.x, z = nd.z, yaw = 0, speed = 0,
+                    groundY = 0, pitch = 0, roll = 0 }
         spawnCrates() -- re-roll loot inside the shop
         for i = 1, MAX_SLOTS do
           local s = coop.slots[i]

@@ -824,7 +824,9 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `PhysicsGetAngularVelocity` / `PhysicsAddAngularImpulse` /
   `PhysicsAddSliderJoint` / `PhysicsActivate`
   （`physics.hpp`/`physics.cpp`/`jolt_world.*`/`bindings.cpp`）。
-  没有物理后端或合作服务器时回退到 `updateRvSuspension()` 的四点平面拟合与
+  合作服务器运行同一套四轮刚体物理，把车体 `gy/pitch/roll/yaw` 写入
+  `game_state`；客户端不建车轮刚体，只复制姿态。
+  没有物理后端时回退到 `updateRvSuspension()` 的四点平面拟合与
   脚本偏航（±0.35rad 限幅、10Hz 平滑）。
   **四个车轮是独立实体**（`rv_wheel.gltf`，`tools/gen_rv_wheel.py`；
   `rv_body.gltf` 不再烘焙车轮）：视觉车轮直接读取各自刚体位置，

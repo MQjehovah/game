@@ -460,8 +460,10 @@ function on_start()
 
   if coopRole ~= nil then
     coopInitWorld(coopRole)
-  else
-    -- Four dynamic wheel bodies held by soft slider joints (single-player).
+  end
+  -- Server and single-player simulate the RV on four wheel bodies; clients
+  -- receive the authoritative pose (gy/pitch/roll) instead.
+  if coopRole ~= "client" then
     spawnRvWheelBodies()
   end
 

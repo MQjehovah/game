@@ -129,13 +129,15 @@
   引擎新增 `PhysicsApplyImpulse` / `PhysicsGetPointVelocity` /
   `PhysicsGetAngularVelocity` / `PhysicsAddAngularImpulse` /
   `PhysicsAddSliderJoint` / `PhysicsActivate`。
-  合作服务器/无物理后端时回退到 `updateRvSuspension()` 的四点平面拟合与脚本偏航。
+  合作服务器运行同一套四轮刚体物理；客户端不本地建车轮刚体，
+  只复制 `game_state` 里的房车 `gy/pitch/roll/yaw` 姿态。
+  无物理后端时回退到 `updateRvSuspension()` 的四点平面拟合与脚本偏航。
   视觉车轮直接读取各自车轮刚体的位置，滚动角按每轮接触速度累积
   （`rv.wheelSpinI`），前轮按 Ackermann 左右夹角偏转。
   `applyRvTransform()` 用三维旋转摆放每个部件并通过引擎新增的
   `SetRotationEuler(entity,pitch,roll,yaw)` 设置朝向，物理刚体也用同一四元数；
   车内第一人称的站立高度由 `rvFloorOffset()` 取倾斜地板高度。
-  合作 `game_state` 广播每位玩家的 `gy` 与房车 `rv.gy`，两端各自计算相同的倾斜。
+  合作 `game_state` 广播每位玩家的 `gy` 与房车 `rv.gy/pitch/roll`；客户端复制姿态。
 
 ## 验证
 
@@ -398,7 +400,7 @@
    高度/俯仰/侧倾/侧滑/偏航来自求解器，前轮有阿克曼夹角，
    路面摩擦区分沥青/土坡/草地，纵向使用滑移率曲线；
    但车轮刚体是方形代理（无轮胎碰撞形状/独立滚动约束），
-   没有轮胎温度/磨损模型，合作服务器仍走脚本偏航回退；
+   没有轮胎温度/磨损模型，合作客户端只复制服务器姿态（不本地模拟刚体）；
    高度场只覆盖营地周边 144×144m，范围外仍是平地；
    商店/加油站/仓库/商场/湖边木屋/诊所前窗已支持透明玻璃，破碎时从 seed 冲击点
    生长径向 + 分支裂纹，按应力衰减决定碎片大小/数量/速度（每扇约 20–30 块），
