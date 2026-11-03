@@ -1044,13 +1044,29 @@ function craftRepairKit()
 end
 
 -- 钓鱼：按权重抽鱼种，并在该鱼种的尺寸区间内取一个尺寸
+-- 鱼种偏好：雨天/夜间鲶鱼、黑鱼更活跃；晴天鲫鱼、鳊鱼略多
+function fishWeight(sp, weatherValue, night)
+  local w = sp.w or 1
+  local name = sp.name
+  if name == "鲶鱼" or name == "黑鱼" then
+    if weatherValue == "rain" then w = w * 1.6 end
+    if night then w = w * 1.4 end
+  elseif name == "鲫鱼" or name == "鳊鱼" then
+    if weatherValue == "clear" then w = w * 1.15 end
+  end
+  return w
+end
+
 function rollFish()
+  local night = (isNight ~= nil and isNight())
   local total = 0
-  for _, s in ipairs(FISH_SPECIES) do total = total + s.w end
+  for _, s in ipairs(FISH_SPECIES) do
+    total = total + fishWeight(s, weather, night)
+  end
   local r = math.random() * total
   local pick = FISH_SPECIES[1]
   for _, s in ipairs(FISH_SPECIES) do
-    r = r - s.w
+    r = r - fishWeight(s, weather, night)
     if r <= 0 then pick = s break end
   end
   local size = pick.min + math.random() * (pick.max - pick.min)

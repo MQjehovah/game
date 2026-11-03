@@ -4312,6 +4312,26 @@ function runSelfTest()
                      rc, rs, nc, ns, dc, ds))
   end
 
+  -- 鱼种偏好：雨天/夜间鲶鱼黑鱼权重更高，晴天鲫鱼鳊鱼略高
+  do
+    local cat = nil
+    local ji = nil
+    for _, sp in ipairs(FISH_SPECIES) do
+      if sp.name == "鲶鱼" then cat = sp end
+      if sp.name == "鲫鱼" then ji = sp end
+    end
+    local catRain = fishWeight(cat, "rain", false)
+    local catClear = fishWeight(cat, "clear", false)
+    local catNight = fishWeight(cat, "clear", true)
+    local jiClear = fishWeight(ji, "clear", false)
+    local jiRain = fishWeight(ji, "rain", false)
+    ok(r, "fish weather preferences",
+       cat ~= nil and ji ~= nil and catRain > catClear and
+       catNight > catClear and jiClear > jiRain,
+       string.format("cat rain=%.1f clear=%.1f night=%.1f ji clear=%.1f rain=%.1f",
+                     catRain, catClear, catNight, jiClear, jiRain))
+  end
+
   -- 旅行日志：记录、封顶与内容
   do
     local keep = journal
