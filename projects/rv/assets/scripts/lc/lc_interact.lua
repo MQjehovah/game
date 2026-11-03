@@ -170,6 +170,21 @@ function updateInteraction()
     end
   end
 
+  -- 路边抛锚车
+  if strandedCar ~= nil and not strandedCar.looted then
+    local dx, dz = strandedCar.x - player.x, strandedCar.z - player.z
+    local d = math.sqrt(dx * dx + dz * dz)
+    if d < 3.4 then
+      local dot = forwardDot(dx, dz, d)
+      if dot > 0.05 then
+        nearAction = { kind = "stranded", verb = "搜刮抛锚车",
+                       detail = "E 搜刮（金属/燃油/修理包）",
+                       x = strandedCar.x, z = strandedCar.z }
+        return
+      end
+    end
+  end
+
   -- 未读的路牌笔记
   for i, n in ipairs(loreNotes or {}) do
     if not notesFound[n.id] then
@@ -298,6 +313,10 @@ function doInteract()
     return true
   elseif nearAction.kind == "cache" then
     lootRoadCache(nearAction.index)
+    updateInteraction()
+    return true
+  elseif nearAction.kind == "stranded" then
+    lootStrandedCar()
     updateInteraction()
     return true
   elseif nearAction.kind == "note" then

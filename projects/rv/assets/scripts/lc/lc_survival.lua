@@ -1328,6 +1328,36 @@ function lootRoadCache(index)
   return true
 end
 
+-- 搜刮路边抛锚车：金属 + 可能燃油罐/燃料/修理包，一次性事件
+function lootStrandedCar()
+  if strandedCar == nil or strandedCar.looted then return false end
+  strandedCar.looted = true
+  local got = {}
+  local metal = 3 + math.random(0, 2)
+  materials.metal = (materials.metal or 0) + metal
+  got[#got + 1] = "金属+" .. metal
+  if math.random() < 0.5 then
+    addItem("fuelcan", 1)
+    got[#got + 1] = "燃油罐+1"
+  else
+    local before = fuel or 0
+    fuel = math.min(fuelMax(), before + 8)
+    if (fuel or 0) > before then
+      got[#got + 1] = string.format("燃料+%.0fL", fuel - before)
+    end
+  end
+  if math.random() < 0.4 then
+    addItem("repairkit", 1)
+    got[#got + 1] = "修理包+1"
+  end
+  if PlaySfx then PlaySfx("pickup") end
+  toast.text = "抛锚车搜刮：" .. table.concat(got, " ")
+  toast.t = 3.2
+  if addJournal ~= nil then addJournal("搜刮路边抛锚车", "explore") end
+  if despawnStrandedCar ~= nil then despawnStrandedCar() end
+  return true
+end
+
 function cookAtCampfire()
   if campfireOn == false then
     toast.text = "篝火熄灭了——按 G 添柴后再做饭"

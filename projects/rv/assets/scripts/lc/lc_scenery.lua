@@ -2086,6 +2086,31 @@ function nearestReadyCache(x, z, maxDist)
   return best
 end
 
+-- 路边抛锚车：偶发的可搜刮事件
+function spawnStrandedCar()
+  if strandedCar ~= nil then return false end
+  local side = (math.random() < 0.5) and -1 or 1
+  local wx, wz = rotOf(side * 7.5, 26)
+  local gy = (terrainHeight and terrainHeight(wx, wz)) or 0
+  local body = SpawnPrefab("rv_panel_dark", { x = wx, y = gy + 0.7, z = wz })
+  if body == nil then return false end
+  SetScale(body, 2.0, 0.8, 3.6)
+  SetRotationY(body, (rv.yaw or 0) + side * 0.4)
+  local lamp = SpawnPrefab("rv_flame", { x = wx, y = gy + 0.95, z = wz })
+  if lamp ~= nil then SetScale(lamp, 0.18, 0.18, 0.18) end
+  strandedCar = { x = wx, z = wz, body = body, lamp = lamp, looted = false }
+  toast.text = "路边有辆抛锚车——停车看看（E 搜刮）"
+  toast.t = 3.4
+  return true
+end
+
+function despawnStrandedCar()
+  if strandedCar == nil then return end
+  if strandedCar.body ~= nil then Despawn(strandedCar.body) end
+  if strandedCar.lamp ~= nil then Despawn(strandedCar.lamp) end
+  strandedCar = nil
+end
+
 -- 路牌笔记：在各地 POI 附近放一张可阅读的纸片（已读的隐藏）
 function spawnLoreNotes()
   for _, n in ipairs(loreNotes or {}) do Despawn(n.ent) end

@@ -718,6 +718,23 @@ function updateDrive(dt)
     maxSp = math.min(maxSp, 2.2)
     acc = acc * 0.45
   end
+  -- 路边抛锚车：单机、非雪天白天偶发；开远后自动清理
+  if coopRole == nil and strandedCar ~= nil then
+    local sdx, sdz = strandedCar.x - rv.x, strandedCar.z - rv.z
+    if sdx * sdx + sdz * sdz > 90 * 90 then
+      if despawnStrandedCar ~= nil then despawnStrandedCar() end
+    end
+  end
+  if coopRole == nil and strandedCar == nil and weather ~= "snow" and
+     not (isNight ~= nil and isNight()) then
+    rv.strandedT = (rv.strandedT or 0) + dt
+    if rv.strandedT > 150 then
+      rv.strandedT = 0
+      if math.random() < 0.35 and spawnStrandedCar ~= nil then
+        spawnStrandedCar()
+      end
+    end
+  end
   if fuel <= fuelMax() * 0.2 and not fuelWarned then
     fuelWarned = true
     toast.text = "油量低！加油站加满 / 路边捡燃油桶"

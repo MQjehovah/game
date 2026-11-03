@@ -3078,6 +3078,26 @@ function runSelfTest()
                      tostring(okAll)))
   end
 
+  -- 路边抛锚车：生成后可搜刮一次，搜完消失
+  do
+    if despawnStrandedCar ~= nil then despawnStrandedCar() end
+    local sm = materials.metal or 0
+    local kt, kv = toast.text, toast.t
+    local spawned = spawnStrandedCar()
+    local visible = strandedCar ~= nil and strandedCar.body ~= nil
+    local got = lootStrandedCar()
+    local metalUp = (materials.metal or 0) > sm
+    local cleared = strandedCar == nil
+    local again = lootStrandedCar()
+    if despawnStrandedCar ~= nil then despawnStrandedCar() end
+    toast.text, toast.t = kt, kv
+    ok(r, "stranded car",
+       spawned and visible and got and metalUp and cleared and again == false,
+       string.format("spawn=%s got=%s metal=%d cleared=%s", tostring(spawned),
+                     tostring(got), (materials.metal or 0) - sm,
+                     tostring(cleared)))
+  end
+
   -- 按位置找最近可取补给箱（联机服务器用）
   do
     local c = roadCaches and roadCaches[1] or nil
