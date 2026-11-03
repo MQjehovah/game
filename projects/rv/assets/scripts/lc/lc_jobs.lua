@@ -166,6 +166,12 @@ function jobRefreshOffers(preferId)
         fuelPay = fuelPay + 4
       end
     end
+    -- 约 20% 的合同额外给一件实用物品（自检期间不随机，避免污染测试状态）
+    local bonusItem = nil
+    if not selftestActive and math.random() < 0.20 then
+      local poolItems = { "repairkit", "bait", "fuelcan", "chains" }
+      bonusItem = poolItems[math.random(1, #poolItems)]
+    end
     return {
       destId = nd.id,
       destName = nd.name,
@@ -180,6 +186,7 @@ function jobRefreshOffers(preferId)
       urgent = urgent,
       fragile = fragile,
       perishable = perishable,
+      bonusItem = bonusItem,
       stops = stops,
       stopIndex = 1,
       deadlineAbs = urgent and (jobNowAbs() + 300 + dist * 0.8) or nil,
@@ -322,6 +329,7 @@ function jobAccept(idx)
     pay = offer.pay, fuel = offer.fuel, stage = "carry", condition = 1.0,
     urgent = offer.urgent, deadlineAbs = offer.deadlineAbs,
     fragile = offer.fragile, perishable = offer.perishable,
+    bonusItem = offer.bonusItem,
     stops = offer.stops, stopIndex = offer.stopIndex or 1,
   }
   jobUI = false
@@ -397,6 +405,12 @@ function jobComplete()
     fuel = math.min(fuelMax(), fuel + fuelGot)
     fuelGot = fuel - before
   end
+  local bonusItem = job.bonusItem
+  if bonusItem ~= nil and addItem ~= nil then
+    addItem(bonusItem, 1)
+  else
+    bonusItem = nil
+  end
   local name, crates = job.cargo, job.crates
   local destName = job.destName or ""
   jobUnloadFx(crates)
@@ -414,7 +428,8 @@ function jobComplete()
   jobResult = {
     ok = true, cargo = name, crates = crates, cond = cond,
     got = table.concat(got, " "), fuel = fuelGot, jobs = jobDelivered,
-    bonus = firstOfDay, night = nightBonus, rain = rainBonus, streak = jobStreak, t = 3.6,
+    bonus = firstOfDay, night = nightBonus, rain = rainBonus, streak = jobStreak,
+    item = bonusItem, t = 3.6,
   }
   SpawnFloatText(rv.x, 1.8, rv.z,
                  "送达 " .. name .. " x" .. crates, false, 1.6, 1.0, 0.86, 0.4)

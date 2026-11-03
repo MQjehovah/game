@@ -9,6 +9,7 @@ end
 
 function runSelfTest()
   local r = {}
+  selftestActive = true
   local stove = hasModule("stove")
   local sink = hasModule("sink")
   local bed = hasModule("bed_double") or hasModule("bed_single")
@@ -1088,6 +1089,24 @@ function runSelfTest()
     ok(r, "job fuel estimate", a > 0 and b > a and
        math.abs(a - 1.6) < 1e-6 and math.abs(b - 6.4) < 1e-6,
        string.format("50m=%.1fL 200m=%.1fL", a, b))
+  end
+
+  -- 部分合同额外奖励物品：结算时进背包并写入结算卡
+  do
+    local k0 = inv.repairkit or 0
+    jobRefreshOffers("gasstop")
+    jobAccept(1)
+    job.stops, job.stopIndex = nil, 1
+    job.bonusItem = "repairkit"
+    job.condition = 1.0
+    job.pay = { metal = 1 }
+    jobComplete()
+    local gained = (inv.repairkit or 0) == k0 + 1
+    local shown = jobResult ~= nil and jobResult.item == "repairkit"
+    inv.repairkit = k0 > 0 and k0 or nil
+    ok(r, "job bonus item", gained and shown,
+       string.format("repairkit %d->%d shown=%s", k0,
+                     k0 + (gained and 1 or 0), tostring(shown)))
   end
   ok(r, "job history",
      jobHistory ~= nil and #jobHistory >= 1 and
@@ -3417,6 +3436,7 @@ function runSelfTest()
   ok(r, "save layout", saved ~= false, "saves/layout.json")
 
   local text = table.concat(r, "\n")
+  selftestActive = false
   WriteText("selftest_result.txt", text)
   print(text)
 end
