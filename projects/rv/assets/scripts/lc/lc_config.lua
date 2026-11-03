@@ -30,8 +30,8 @@ CATALOG = {
   { id="solar",      name="太阳能板", layer="roof",  w=2, h=3, mh=0.15, color="#3E6FB0", weight=25,  powerGen=1.8, modelScale=1.0, desc="发电 1.8kW（车顶限定）" , cost={metal=2,electronics=4}},
   { id="roof_vent",  name="通风扇",   layer="roof",  w=1, h=1, mh=0.25, color="#8891A0", weight=8,   comfort=4, powerDraw=0.1, modelScale=1.0, desc="耗电 0.1kW 舒适 +4" , cost={metal=1,electronics=1}},
   { id="roof_rack",  name="车顶行李架", layer="roof", w=2, h=4, mh=0.35, color="#5C6670", weight=30, storage=150, modelScale=1.0, desc="车载储物 150L" , cost={metal=3}},
-  { id="coffee",     name="咖啡机",   layer="floor", w=1, h=1, mh=0.42, color="#3A332E", weight=8,  powerDraw=0.4, use="coffee", desc="咖啡豆+水+电 = 热咖啡" , cost={metal=2,electronics=2}},
-  { id="plant",      name="种植箱",   layer="floor", w=1, h=2, mh=0.38, color="#54703F", weight=20, comfort=4, use="plant", desc="种下种子，成熟后收获" , cost={wood=2,cloth=1}},
+  { id="coffee",     name="咖啡机",   layer="floor", w=1, h=1, mh=0.42, color="#3A332E", weight=8,  powerDraw=0.4, use="coffee", modelScale=1.0, desc="咖啡豆+水+电 = 热咖啡" , cost={metal=2,electronics=2}},
+  { id="plant",      name="种植箱",   layer="floor", w=1, h=2, mh=0.38, color="#54703F", weight=20, comfort=4, use="plant", modelScale=1.0, desc="种下种子，成熟后收获" , cost={wood=2,cloth=1}},
 }
 HOTKEYS = { "1","2","3","4","5","6","7","8","9","0" }
 

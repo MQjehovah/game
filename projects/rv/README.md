@@ -136,13 +136,18 @@
   前后轮拱 + 轮拱内衬、前后保险杠、侧防擦条、车顶行李架/空调/爬梯/遮阳篷盒、
   后视镜、灯组、格栅、排气管；车内新增多段式仪表台、方向盘、驾驶席（座垫/靠背/
   侧翼/头枕/滑轨）与两侧吊柜（柜门 + 把手）+ 驾驶室顶架。门洞/座椅/碰撞保持不变。
-- 可摆放家具全部主要品类改由 `tools/gen_rv_furniture.py` 生成多部件 glTF：
+- 可摆放家具**全部 20 类**改由 `tools/gen_rv_furniture.py` 生成多部件 glTF：
   单人/双人床（木框/床垫/被子/枕头）、灶台（烤箱门/玻璃窗/旋钮/双灶头）、
   冰箱（双门/把手/散热格栅）、水槽（柜体/台面/内嵌水盆/龙头）、工作台
   （桌面/腿/抽屉/挂板工具/台钳/工具箱）、储物箱（板条/包角/箱盖/提手/标签）、
   电视柜（柜门/电视/屏幕/天线/音箱）、卫浴间（底盆/围板/马桶/洗手盆/镜子/花洒）、
   药柜（玻璃门/层板/彩色药盒/红十字）、武器架（背板/立柱/两支步枪/弹药箱）、
-  暖器（机身/格栅/顶部散热片/旋钮/指示灯）；预制体名与 `use` 交互钩子保持不变。
+  暖器（机身/格栅/顶部散热片/旋钮/指示灯）、净水箱（阶梯箱体/加注口/绑带/液位窗/
+  阀门/标签）、电池组（双壳体/极柱/压条/线缆/标签）、发电机（框架/机身/红色油箱/
+  控制面板/排气管/散热格栅/提手）、炮塔（底板/立柱/炮塔壳/双枪管/护盾/弹药箱）、
+  太阳能板（边框/蓝色电池片/栅线/支架/接线盒）、通风扇（法兰/扇框/防护网/顶盖/
+  摇柄）、咖啡机（机身/水箱/冲煮头/滴水盘/杯子/蒸汽棒/按键）、种植箱（木箱/土壤/
+  幼苗/果实/支架）；预制体名与 `use` 交互钩子保持不变。
 - 车内保留独立内饰板/仪表台/暖光点光源；驾驶席视角隐藏外壳，追逐视角显示完整车体。
 - 公路改为 20 段 10m 深灰立方体 + 独立黄色虚线几何体：抬高路面并加 polygon offset，
   避免远距离 z-fighting 导致的整条路发白；不再依赖贴图/深度投影。
@@ -199,7 +204,10 @@
 - `coop_poiext.txt`：店外全景固定镜头（商店 + 雨棚/油泵/装卸月台/谷仓等）。
 - `start_mode.txt`：`inside` / `inside_night` / `night` / `place` / `place_night` /
   `drive` / `map` / `look_back` / `look_left` / `look_right` / `look_down` / `look_up` /
-  `furnview`（车内家具墙）/ `rvfront`（房车正面）/ `side`（房车侧面）/
+  `furnview`（车内家具墙）/ `furnall`（电视/卫浴/药柜/武器架/暖器）/
+  `utilall`（水箱/电池/发电机/炮塔/种植箱/咖啡机）/ `utilclose`（电池/发电机/炮塔特写）/
+  `utilroof`（车顶太阳能板/通风扇，驾驶追逐视角）/
+  `rvfront`（房车正面）/ `side`（房车侧面）/
   `poi`（废宅商店门口）/ `gas`（加油站门口）/ `warehouse`（仓库月台）/
   `farm`（旧农场谷仓）/ `mall`（购物中心店门口）/ `lake`（湖边木屋）/
   `clinic`（路边诊所）。
@@ -301,13 +309,18 @@ POI 墙体碰撞/门洞通行等。
   `rv_hi_front2.png`（前视：挡风玻璃/格栅/大灯/前保险杠）、
   `rv_hi_interior2.png`（车内：吊柜/柜门把手/驾驶室顶架/仪表台/方向盘/驾驶席）、
   `rv_hi_board.png`（车门打开、乘客坐在门口）。
-- **家具替换验证**：`tools/gen_rv_furniture.py` 生成 12 个多部件模型
+- **家具替换验证**：`tools/gen_rv_furniture.py` 生成 20 个多部件模型
   （`rv_furn_bed_single/bed_double/stove/fridge/sink/workbench/storage/tv/bathroom/
-  med_cabinet/gun_rack/heater`），`rv_bed_*`/`rv_tv`/`rv_bathroom`/`rv_med_cabinet`/
-  `rv_gun_rack`/`rv_heater` 等预制体改为引用它们（尺寸/层/`use` 不变）。
+  med_cabinet/gun_rack/heater/water_tank/battery/generator/turret/solar/roof_vent/
+  coffee/plant`），`rv_bed_*`/`rv_tv`/`rv_water_tank`/`rv_solar`/`rv_coffee` 等预制体
+  改为引用它们（尺寸/层/`use` 不变）。
   单机 `start_mode=furnview` 截图 `rv_furn_view.png` 可见床（木框/蓝被/枕头）、
   水槽（台面/水盆/龙头）、灶台（烤箱门/玻璃/旋钮/灶头）；`start_mode=furnall`
-  截图 `rv_furn_all2.png` 可见电视柜、卫浴间、玻璃门药柜、双步枪武器架、暖器。
+  截图 `rv_furn_all2.png` 可见电视柜、卫浴间、玻璃门药柜、双步枪武器架、暖器；
+  `start_mode=utilall` 截图 `rv_util_all5.png` 可见蓝阶梯水箱、电池组、红色油箱
+  发电机、炮塔、种植箱与咖啡机；`start_mode=utilclose` 截图 `rv_util_close2.png`
+  为电池/发电机/炮塔特写；`start_mode=utilroof`（驾驶追逐视角）截图
+  `rv_util_roof.png` 可见车顶太阳能板与通风扇。
   `coop_cook.txt` 双客户端跑 `[coop-cook] stove meal 0->1 ok=true`；
   自检的 `cook at stove` / `drink at sink` / `repair at workbench` 仍通过。
 - **可破碎橱窗验证**：`rv_window_glass.gltf` 使用 BLEND 材质，商店/加油站/仓库/商场/
@@ -383,9 +396,8 @@ POI 墙体碰撞/门洞通行等。
   物流仓库卷帘门与谷仓滑动门均可开合，且关闭时会阻挡玩家通行（服务器权威 + 客户端预测一致）；
   商店/加油站/商场/仓库/农场/诊所/湖边木屋的主要商品与补给箱已使用包装图集。
 - 房车车体已由 `tools/gen_rv_body.py` 升级为倒角车身、内凹车窗、轮拱、保险杠/
-  防擦条、车顶设备与多段式内饰；12 类可摆放家具全部改由
-  `tools/gen_rv_furniture.py` 生成多部件 glTF（木纹/金属/玻璃/织物材质）；
-  但整体仍是脚本化低模，缺少真实曲面/贴图细节；水箱/电池/发电机/炮塔/太阳能板/
-  通风扇/咖啡机/种植箱等仍未使用专门模型（部分为缩放立方体/球体）。
+  防擦条、车顶设备与多段式内饰；20 类可摆放家具全部改由
+  `tools/gen_rv_furniture.py` 生成多部件 glTF（木纹/金属/玻璃/织物/蓝色电池片材质）；
+  但整体仍是脚本化低模，缺少真实曲面/贴图细节（家具仍是盒体/棱柱组合）。
 - 车辆零件是整体状态，不是可拆装的独立部件。
 - 音效是程序合成的占位音，缺少更丰富的环境声/音乐。

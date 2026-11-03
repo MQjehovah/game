@@ -309,6 +309,139 @@ def heater(m):
     m.box(RED, 0.02, 0.30, 0.166, 0.12, 0.04, 0.01)
 
 
+def water_tank(m):
+    # skid, stepped blue tank, cap, straps, level window, pipes/valve, label
+    m.box(DARK, 0, 0.04, 0, 0.96, 0.08, 0.96)
+    m.box(BLUE, 0, 0.42, 0, 0.90, 0.68, 0.88)
+    m.box(BLUE, 0, 0.80, 0, 0.80, 0.08, 0.78)
+    m.box(BLUE, 0, 0.86, 0, 0.56, 0.06, 0.54)
+    m.box(GREY, 0, 0.93, 0, 0.18, 0.08, 0.18)
+    m.box(METAL, 0, 0.98, 0, 0.10, 0.04, 0.10)
+    for sz in (-0.33, 0.33):
+        m.box(GREY, 0, 0.44, sz, 0.94, 0.06, 0.04)
+    m.box(GLASS, 0.45, 0.46, 0.10, 0.02, 0.34, 0.14)
+    m.box(METAL, 0.30, 0.16, 0.50, 0.10, 0.10, 0.10)
+    m.box(METAL, 0.30, 0.10, 0.56, 0.08, 0.08, 0.06)
+    m.box(RED, 0.30, 0.20, 0.58, 0.14, 0.04, 0.03)
+    m.box(WHITE, -0.22, 0.46, 0.451, 0.26, 0.14, 0.01)
+    m.box(DARK, -0.22, 0.46, 0.457, 0.16, 0.02, 0.005)
+
+
+def battery(m):
+    # two cases, caps, terminals, hold-down bar, cables, label
+    for sx in (-1, 1):
+        x = sx * 0.24
+        m.box(DARK, x, 0.22, 0, 0.42, 0.36, 0.44)
+        m.box(GREY, x, 0.42, 0, 0.38, 0.04, 0.40)
+        for i in range(3):
+            m.box(GREY, x - 0.10 + i * 0.10, 0.45, 0.02, 0.06, 0.03, 0.06)
+        m.box(RED, x - 0.12, 0.46, 0.16, 0.06, 0.05, 0.06)
+        m.box(DARK, x + 0.12, 0.46, 0.16, 0.06, 0.05, 0.06)
+        m.box(WHITE, x, 0.24, 0.222, 0.22, 0.12, 0.01)
+        m.box(RED, x, 0.27, 0.228, 0.10, 0.02, 0.005)
+    m.box(METAL, 0, 0.47, 0.02, 0.92, 0.03, 0.05)
+    m.box(DARK, 0, 0.50, 0.02, 0.46, 0.03, 0.03)
+    m.box(DARK, 0, 0.02, 0, 0.94, 0.04, 0.46)
+
+
+def generator(m):
+    # frame, body, red fuel tank, panel, exhaust, vents, feet, handle
+    m.box(DARK, 0, 0.04, 0, 0.96, 0.08, 0.92)
+    m.box(METAL, 0, 0.32, 0, 0.86, 0.48, 0.78)
+    m.box(RED, 0, 0.62, 0, 0.72, 0.14, 0.68)
+    m.box(DARK, 0.28, 0.72, 0, 0.10, 0.06, 0.10)
+    m.box(DARK, 0, 0.30, 0.395, 0.50, 0.26, 0.02)
+    m.box(WHITE, -0.14, 0.34, 0.407, 0.12, 0.12, 0.01)
+    m.box(WHITE, 0.06, 0.34, 0.407, 0.12, 0.12, 0.01)
+    m.box(RED, 0.24, 0.30, 0.405, 0.04, 0.06, 0.02)
+    m.box(GREY, 0.24, 0.40, 0.405, 0.10, 0.05, 0.02)
+    m.box(METAL, -0.34, 0.48, -0.30, 0.07, 0.42, 0.07)
+    m.box(DARK, -0.34, 0.70, -0.30, 0.10, 0.05, 0.10)
+    for i in range(4):
+        m.box(DARK, 0.10, 0.18 + i * 0.06, 0.395, 0.30, 0.02, 0.01)
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            m.box(DARK, sx * 0.40, 0.03, sz * 0.38, 0.10, 0.06, 0.10)
+    m.box(METAL, 0, 0.50, -0.40, 0.30, 0.04, 0.04)
+
+
+def turret(m):
+    # base plate + bolts, pedestal, housing, twin barrels, shield, ammo box
+    m.box(METAL, 0, 0.05, 0, 0.90, 0.10, 0.90)
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            m.box(DARK, sx * 0.36, 0.11, sz * 0.36, 0.07, 0.04, 0.07)
+    m.box(DARK, 0, 0.24, 0, 0.32, 0.30, 0.32)
+    m.box(GREY, 0, 0.44, 0, 0.46, 0.20, 0.40)
+    m.box(DARK, 0, 0.58, -0.02, 0.36, 0.12, 0.30)
+    for sx in (-1, 1):
+        m.box(METAL, sx * 0.10, 0.56, 0.34, 0.06, 0.06, 0.58)
+        m.box(DARK, sx * 0.10, 0.56, 0.64, 0.08, 0.08, 0.06)
+    m.box(GREY, 0, 0.62, 0.10, 0.34, 0.16, 0.06)
+    m.box(GREEN, 0.28, 0.50, -0.10, 0.20, 0.18, 0.24)
+    m.box(RED, 0.28, 0.60, -0.10, 0.16, 0.02, 0.02)
+    m.box(METAL, 0, 0.46, 0.22, 0.30, 0.06, 0.10)
+
+
+def solar(m):
+    # frame, cell slab, grid lines, rails, junction box
+    m.box(METAL, 0, 0.05, 0, 1.00, 0.05, 1.46)
+    m.box(BLUE, 0, 0.09, 0, 0.92, 0.03, 1.38)
+    for i in range(5):
+        m.box(GREY, 0, 0.105, -0.55 + i * 0.28, 0.90, 0.01, 0.02)
+    for i in range(6):
+        m.box(GREY, -0.38 + i * 0.152, 0.105, 0, 0.02, 0.01, 1.36)
+    for sz in (-0.60, 0.60):
+        m.box(METAL, 0, 0.02, sz, 0.96, 0.05, 0.08)
+    m.box(DARK, 0.38, 0.09, 0.62, 0.18, 0.08, 0.12)
+    m.box(WHITE, 0.38, 0.13, 0.62, 0.10, 0.01, 0.06)
+
+
+def roof_vent(m):
+    # flange, housing, screen, lid, hinge, crank
+    m.box(GREY, 0, 0.03, 0, 0.48, 0.06, 0.48)
+    m.box(DARK, 0, 0.09, 0, 0.36, 0.08, 0.36)
+    for i in range(4):
+        m.box(METAL, -0.12 + i * 0.08, 0.13, 0, 0.02, 0.02, 0.30)
+    m.box(GREY, 0, 0.19, 0.16, 0.42, 0.06, 0.16)
+    m.box(GREY, 0, 0.23, 0.02, 0.40, 0.04, 0.30)
+    m.box(METAL, 0, 0.18, -0.16, 0.36, 0.03, 0.04)
+    m.box(METAL, 0.24, 0.16, 0.10, 0.03, 0.10, 0.03)
+    m.box(RED, 0.24, 0.22, 0.10, 0.05, 0.03, 0.03)
+
+
+def coffee(m):
+    # espresso machine: body, tank, group head, drip tray, cup, wand, buttons
+    m.box(DARK, 0, 0.20, 0, 0.34, 0.30, 0.34)
+    m.box(BLUE, 0, 0.38, -0.03, 0.26, 0.06, 0.24)
+    m.box(GREY, 0, 0.34, 0.15, 0.24, 0.03, 0.10)
+    m.box(METAL, 0, 0.26, 0.19, 0.14, 0.10, 0.08)
+    m.box(DARK, 0, 0.20, 0.21, 0.10, 0.03, 0.04)
+    m.box(METAL, 0, 0.10, 0.19, 0.30, 0.02, 0.14)
+    m.box(WHITE, 0, 0.13, 0.17, 0.08, 0.06, 0.08)
+    m.box(METAL, 0.16, 0.22, 0.10, 0.03, 0.16, 0.03)
+    for i, c in enumerate((RED, GREEN, WHITE)):
+        m.box(c, -0.09 + i * 0.09, 0.34, 0.176, 0.05, 0.03, 0.02)
+    m.box(METAL, -0.10, 0.26, 0.24, 0.12, 0.02, 0.02)
+
+
+def plant(m):
+    # planter box, soil, seedlings, fruits, trellis
+    m.box(WOOD, 0, 0.16, 0, 0.46, 0.28, 0.92)
+    m.box(WOOD2, 0, 0.02, 0, 0.40, 0.06, 0.86)
+    m.box(DARK, 0, 0.30, 0, 0.40, 0.06, 0.86)
+    for i in range(5):
+        z = -0.34 + i * 0.17
+        h = 0.14 + (i % 3) * 0.06
+        m.box(GREEN, 0, 0.34 + h * 0.5, z, 0.22, h, 0.12)
+        m.box(GREEN, 0.08, 0.34 + h + 0.03, z + 0.04, 0.10, 0.08, 0.10)
+        if i % 2 == 0:
+            m.box(RED, -0.08, 0.36 + h * 0.6, z + 0.06, 0.05, 0.05, 0.05)
+    for sx in (-1, 1):
+        m.box(WOOD2, sx * 0.18, 0.40, -0.42, 0.03, 0.50, 0.03)
+    m.box(WOOD2, 0, 0.64, -0.42, 0.38, 0.03, 0.03)
+
+
 MODELS = {
     "rv_furn_bed_single": ("RV_Furn_BedSingle", lambda m: bed(m, 0.475, 0.72, BLUE)),
     "rv_furn_bed_double": ("RV_Furn_BedDouble", lambda m: bed(m, 0.72, 0.96, RED)),
@@ -322,6 +455,14 @@ MODELS = {
     "rv_furn_med_cabinet": ("RV_Furn_MedCabinet", med_cabinet),
     "rv_furn_gun_rack": ("RV_Furn_GunRack", gun_rack),
     "rv_furn_heater": ("RV_Furn_Heater", heater),
+    "rv_furn_water_tank": ("RV_Furn_WaterTank", water_tank),
+    "rv_furn_battery": ("RV_Furn_Battery", battery),
+    "rv_furn_generator": ("RV_Furn_Generator", generator),
+    "rv_furn_turret": ("RV_Furn_Turret", turret),
+    "rv_furn_solar": ("RV_Furn_Solar", solar),
+    "rv_furn_roof_vent": ("RV_Furn_RoofVent", roof_vent),
+    "rv_furn_coffee": ("RV_Furn_Coffee", coffee),
+    "rv_furn_plant": ("RV_Furn_Plant", plant),
 }
 
 

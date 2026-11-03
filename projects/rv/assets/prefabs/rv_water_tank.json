@@ -19,7 +19,7 @@
       ]
     },
     "mesh": {
-      "meshKey": "cube",
+      "meshKey": "gltf:assets/models/rv/rv_furn_water_tank.gltf",
       "castShadow": true,
       "receiveShadow": true,
       "material": {

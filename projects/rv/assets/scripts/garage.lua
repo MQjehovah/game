@@ -379,6 +379,26 @@ function on_start()
     place(CATALOG[8],  2, 11, 0, true)  -- storage
     place(CATALOG[4],  2, 12, 0, true)  -- fridge
   end
+  if startMode == "utilall" then
+    -- Test-only: place the utility furniture along the left wall.
+    place(CATALOG[5],  0, 0, 0, true)   -- water_tank (2x2)
+    place(CATALOG[6],  0, 2, 0, true)   -- battery (2x1)
+    place(CATALOG[13], 0, 3, 0, true)   -- generator (2x2)
+    place(CATALOG[16], 0, 5, 1, true)   -- turret (2x2, barrels sideways)
+    place(CATALOG[21], 0, 7, 0, true)   -- plant (1x2)
+    place(CATALOG[20], 1, 7, 0, true)   -- coffee (1x1)
+  end
+  if startMode == "utilclose" then
+    place(CATALOG[6],  0, 1, 0, true)   -- battery (2x1)
+    place(CATALOG[13], 0, 3, 0, true)   -- generator (2x2)
+    place(CATALOG[16], 0, 5, 1, true)   -- turret (2x2, barrels sideways)
+  end
+  if startMode == "utilroof" then
+    -- Test-only: add a roof vent next to the default solar array.
+    curLayer = "roof"
+    place(CATALOG[18], 0, 3, 0, true)   -- roof_vent
+    curLayer = savedLayer
+  end
   computeReachability()
   recomputeStats()
 
@@ -421,6 +441,16 @@ function on_start()
   if startMode == "furnall" then
     -- Test-only view of the authored furniture showcase along the left wall.
     px, pz = -0.72, 3.20
+    pyaw = math.pi
+  end
+  if startMode == "utilall" then
+    -- Test-only view down the left wall from the middle of the aisle.
+    px, pz = -0.28, 2.60
+    pyaw = math.pi
+  end
+  if startMode == "utilclose" then
+    -- Test-only close-up of the battery/generator/turret cluster.
+    px, pz = -0.28, 1.90
     pyaw = math.pi
   end
   if startMode == "poi" then
@@ -493,6 +523,7 @@ function on_start()
   elseif startMode == "look_right" then player.yaw = player.yaw - math.pi * 0.5
   elseif startMode == "look_down" then player.pitch = -0.9
   elseif startMode == "look_up" then player.pitch = 0.7
+  elseif startMode == "utilclose" then player.pitch = -0.34
   end
   SetVar("cameraMouseLock", 1)
   updateInteraction()
@@ -514,6 +545,10 @@ function on_start()
     mapOpen = true
   elseif startMode == "drive" or startMode == "night_drive" or autoPilot then
     setPhase("driving")
+  elseif startMode == "utilroof" then
+    -- Roof furniture is invisible from the ground; drive in chase view.
+    setPhase("driving")
+    driveView = "chase"
   else
     toast.text = string.format("第 %d 天 %s — E 交互 / B 改装 / T 驾驶 / M 地图",
                                day, timeString())

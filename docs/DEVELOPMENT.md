@@ -756,14 +756,20 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   车顶行李架/空调/爬梯/遮阳篷盒、后视镜/灯组/格栅/排气管，以及多段式仪表台、
   方向盘、驾驶席（座垫/靠背/侧翼/头枕/滑轨）和两侧吊柜 + 驾驶室顶架；
   门洞（`z=-3.54..-2.76, y=0.24..1.86`）、座椅坐标与物理碰撞盒保持不变。
-  `tools/gen_rv_furniture.py` 生成可摆放家具 `rv_furn_bed_single/bed_double/stove/
-  fridge/sink/workbench/storage/tv/bathroom/med_cabinet/gun_rack/heater`（多部件：
+  `tools/gen_rv_furniture.py` 生成全部 20 类可摆放家具 `rv_furn_bed_single/bed_double/
+  stove/fridge/sink/workbench/storage/tv/bathroom/med_cabinet/gun_rack/heater/
+  water_tank/battery/generator/turret/solar/roof_vent/coffee/plant`（多部件：
   木框床架/床垫/被子/枕头、烤箱门/玻璃/旋钮/双灶头、冰箱双门/把手/散热格栅、
   水槽柜/台盆/龙头、工作台/挂板工具/台钳/工具箱、木箱板条/金属包角/提手/标签、
   电视柜/电视/屏幕/天线、卫浴底盆/马桶/洗手盆/镜子/花洒、玻璃门药柜/药盒/红十字、
-  双步枪武器架/弹药箱、暖器格栅/散热片/旋钮），预制体 `rv_bed_*`/`rv_tv`/`rv_heater`
+  双步枪武器架/弹药箱、暖器格栅/散热片/旋钮、阶梯水箱/加注口/绑带/液位窗/阀门、
+  电池双壳体/极柱/压条/线缆、发电机框架/红色油箱/控制面板/排气管/格栅、
+  炮塔底板/立柱/双枪管/护盾/弹药箱、太阳能边框/蓝色电池片/栅线/支架、
+  通风扇法兰/防护网/顶盖/摇柄、咖啡机水箱/冲煮头/滴水盘/杯子/蒸汽棒、
+  种植箱土壤/幼苗/果实/支架），预制体 `rv_bed_*`/`rv_tv`/`rv_water_tank`/`rv_solar`
   等改为引用这些模型，网格槽位/层/`use` 交互钩子不变；`start_mode=furnview` /
-  `furnall` 提供车内特写，`coop_cook.txt` 自动跑一次 `cookRecipe("meal")` 验证灶台交互。
+  `furnall` / `utilall` / `utilclose` / `utilroof` 提供车内与车顶检查机位，
+  `coop_cook.txt` 自动跑一次 `cookRecipe("meal")` 验证灶台交互。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），
