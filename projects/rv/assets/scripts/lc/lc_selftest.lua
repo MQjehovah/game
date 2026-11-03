@@ -3214,6 +3214,16 @@ function runSelfTest()
        string.format("poor=%s rich=%s", poor, rich))
   end
 
+  -- 低油量警告音：油量 0.5%–5% 时每 8 秒响一次，其它区间不响
+  do
+    local low = lowFuelBeepInterval(0.03)
+    local high = lowFuelBeepInterval(0.20)
+    local empty = lowFuelBeepInterval(0)
+    ok(r, "low fuel beep",
+       low == 8 and high == 0 and empty == 0,
+       string.format("low=%.0f high=%.0f empty=%.0f", low, high, empty))
+  end
+
   -- 营地板以物易物：布料→金属、电子件→燃油罐、金属→燃料
   do
     local sMetal = materials.metal or 0

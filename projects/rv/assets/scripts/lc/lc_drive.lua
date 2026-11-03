@@ -509,6 +509,13 @@ function windSteerAmount(weatherValue, speed, t)
   return base * gust
 end
 
+-- 低油量警告音间隔（秒）：油量 0.5%–5% 时每 8 秒响一次
+function lowFuelBeepInterval(fuelRatio)
+  local f = fuelRatio or 1
+  if f > 0.005 and f <= 0.05 then return 8.0 end
+  return 0
+end
+
 -- 定速巡航油门：低于目标给油，接近/超过目标松油
 function cruiseThrottle(speed, target)
   if target == nil or target <= 0 then return 0 end
@@ -822,6 +829,19 @@ function updateDrive(dt)
       rv.squealPlays = (rv.squealPlays or 0) + 1
       if PlaySfx then PlaySfx("squeal") end
     end
+  end
+
+  -- 低油量警告音：油量 <5% 时周期性响一声
+  local beepIv = lowFuelBeepInterval((fuel or 0) / fuelMax())
+  if beepIv > 0 then
+    rv.fuelBeepT = (rv.fuelBeepT or beepIv) - (dt or 0)
+    if rv.fuelBeepT <= 0 then
+      rv.fuelBeepT = beepIv
+      rv.fuelBeepPlays = (rv.fuelBeepPlays or 0) + 1
+      if PlaySfx then PlaySfx("beep") end
+    end
+  else
+    rv.fuelBeepT = 0
   end
 
   -- 引擎音量随车速：每 0.2s 更新一次总线增益，避免每帧设置
