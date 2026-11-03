@@ -530,6 +530,22 @@ function upgradeRod()
   return true
 end
 
+-- 工作台制作修理包：金属 2 + 布料 1
+function craftRepairKit()
+  local cost = { metal = 2, cloth = 1 }
+  if not canAfford(cost) then
+    toast.text = "材料不足：" .. costText(cost)
+    toast.t = 2.2
+    return false
+  end
+  payCost(cost)
+  addItem("repairkit", 1)
+  if PlaySfx then PlaySfx("repair") end
+  toast.text = "制作修理包 x1（金属 -2 布料 -1）"
+  toast.t = 2.6
+  return true
+end
+
 -- 钓鱼：按权重抽鱼种，并在该鱼种的尺寸区间内取一个尺寸
 function rollFish()
   local total = 0

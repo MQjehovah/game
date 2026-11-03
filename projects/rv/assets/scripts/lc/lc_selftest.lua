@@ -124,6 +124,24 @@ function runSelfTest()
        string.format("lv %d->%d bonus=%.2f size=%dcm", lv0, newLv, bonus, size))
   end
 
+  -- 工作台制作修理包：金属 2 + 布料 1
+  do
+    local m0, c0, k0 = materials.metal or 0, materials.cloth or 0,
+                       itemCount("repairkit")
+    materials.metal, materials.cloth = 5, 3
+    local crafted = craftRepairKit()
+    local gotMetal = materials.metal or 0
+    local gotCloth = materials.cloth or 0
+    local gotKits = itemCount("repairkit")
+    local okCraft = crafted and gotMetal == 3 and gotCloth == 2 and
+                    gotKits == k0 + 1
+    materials.metal, materials.cloth = m0, c0
+    inv.repairkit = k0 > 0 and k0 or nil
+    ok(r, "craft repair kit", okCraft,
+       string.format("metal 5->%d cloth 3->%d kits %d->%d",
+                     gotMetal, gotCloth, k0, gotKits))
+  end
+
   -- 低强度威胁
   local h0 = #horde
   spawnAmbientZombie()
