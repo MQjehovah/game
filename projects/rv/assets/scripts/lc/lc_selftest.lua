@@ -2820,6 +2820,17 @@ function runSelfTest()
                      tostring(noGen), tostring(stored)))
   end
 
+  -- 行驶时发电机充电：开车且油量 > 0 才充
+  do
+    local driving = alternatorPower("driving", 10)
+    local parked = alternatorPower("parked", 10)
+    local empty = alternatorPower("driving", 0)
+    ok(r, "alternator charging",
+       driving > 0 and parked == 0 and empty == 0,
+       string.format("driving=%.2f parked=%.2f empty=%.2f",
+                     driving, parked, empty))
+  end
+
   -- 鸟群：白天活跃、夜间隐藏
   do
     local sc = clock

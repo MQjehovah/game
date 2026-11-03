@@ -289,10 +289,19 @@ function auxPowerDraw(interiorOn, headlightsOn)
   return (interiorOn and 0.04 or 0) + (headlightsOn and 0.12 or 0)
 end
 
+-- 行驶时发动机带动发电机给电瓶充电（kW）；停车/没油不充
+function alternatorPower(phaseValue, fuelValue)
+  if phaseValue == "driving" and (fuelValue or 0) > 0 then
+    return VEH.alternatorKw or 0.6
+  end
+  return 0
+end
+
 -- 每帧推进电池（游戏时间：1 现实秒 = timeScale 游戏分钟）
 function updatePower(dt)
   local aux = auxPowerDraw(interiorLightsOn, (#rvHeadlights or 0) > 0)
-  local net = (stats.powerGen or 0) - (stats.powerDraw or 0) - aux
+  local alt = alternatorPower(phase, fuel)
+  local net = (stats.powerGen or 0) - (stats.powerDraw or 0) - aux + alt
   local hours = (dt or 0) * SURVIVAL.timeScale / 60
   batteryCharge = batteryStep(batteryCharge or 0, net, hours, batteryCapacity())
 end
