@@ -3859,6 +3859,17 @@ function runSelfTest()
                      inv.dirtywater or 0))
   end
 
+  -- 生水不能直接喝：不消耗，提示去篝火煮沸
+  do
+    local keep = inv.dirtywater or 0
+    inv.dirtywater = 1
+    local used = useItem("dirtywater")
+    local kept = (inv.dirtywater or 0) == 1
+    inv.dirtywater = keep > 0 and keep or nil
+    ok(r, "raw water blocked", used == false and kept,
+       string.format("used=%s kept=%s", tostring(used), tostring(kept)))
+  end
+
   -- 卫生：干净睡得好、脏了恢复差
   do
     local f100 = hygieneEnergyFactor(100)

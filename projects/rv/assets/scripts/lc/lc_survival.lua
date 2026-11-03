@@ -529,6 +529,11 @@ function useItem(id)
     toast.t = 2.2
     return false
   end
+  if it.kind == "dirty" then
+    toast.text = "生水不能直接喝——到营地篝火按 E 煮沸"
+    toast.t = 2.6
+    return false
+  end
   if not takeItem(id, 1) then return false end
   needs.hunger = math.min(100, needs.hunger + (it.hunger or 0))
   needs.thirst = math.min(100, needs.thirst + (it.thirst or 0))
