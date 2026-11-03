@@ -126,6 +126,7 @@ function saveLayout()
                  energy = needs.energy, hygiene = needs.hygiene },
     inventory = inv, water = water,
     day = day, clock = clock, modules = rows, pois = generatedPois,
+    weather = { id = weather, t = weatherT, next = weatherNext },
   }
   do
     local visitedList = {}
@@ -266,6 +267,13 @@ function loadLayout()
     needs.thirst = tonumber(data.survival.thirst) or needs.thirst
     needs.energy = tonumber(data.survival.energy) or needs.energy
     needs.hygiene = tonumber(data.survival.hygiene) or needs.hygiene
+  end
+  if type(data.weather) == "table" then
+    weather = tostring(data.weather.id or "clear")
+    weatherT = tonumber(data.weather.t) or 0
+    weatherNext = tonumber(data.weather.next) or
+                  (weatherDuration and weatherDuration() or 120)
+    if recomputeStats then recomputeStats() end
   end
   if type(data.progress) == "table" then
     tripDistance = tonumber(data.progress.tripDistance) or tripDistance

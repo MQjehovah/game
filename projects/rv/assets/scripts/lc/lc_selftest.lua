@@ -1275,22 +1275,26 @@ function runSelfTest()
        string.format("night=%d day=%d rain=%d", night, day, rain))
   end
 
-  -- 存读档：行程/探索/货运单数
+  -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
     visitedPois["ruin"] = true
+    weather, weatherT, weatherNext = "rain", 7, 120
     local saved0 = saveLayout()
     tripDistance, tripFuel, jobDelivered = 0, 0, 0
     visitedPois = {}
     visitedCount = 0
+    weather, weatherT, weatherNext = "clear", 0, 90
     loadLayout()
     ok(r, "save progress stats",
        saved0 ~= false and math.abs((tripDistance or 0) - 3210) < 1 and
        math.abs((tripFuel or 0) - 88) < 1 and jobDelivered == 7 and
-       visitedPois["ruin"] == true,
-       string.format("trip=%.0f fuel=%.0f jobs=%d ruin=%s",
+       visitedPois["ruin"] == true and weather == "rain" and
+       math.abs((weatherNext or 0) - 120) < 1,
+       string.format("trip=%.0f fuel=%.0f jobs=%d ruin=%s weather=%s next=%.0f",
                      tripDistance or 0, tripFuel or 0, jobDelivered,
-                     tostring(visitedPois["ruin"])))
+                     tostring(visitedPois["ruin"]), tostring(weather),
+                     weatherNext or 0))
   end
 
   -- 存读档
