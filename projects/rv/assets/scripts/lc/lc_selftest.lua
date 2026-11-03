@@ -2256,6 +2256,21 @@ function runSelfTest()
                      tostring(night), tostring(dayOff)))
   end
 
+  -- 天气/时段影响钓鱼：雨天更好、深夜更难
+  do
+    local sw, sc = weather, clock
+    weather, clock = "rain", 12 * 60
+    local rc, rs = fishingConditionBonus()
+    weather, clock = "clear", 22 * 60
+    local nc, ns = fishingConditionBonus()
+    weather, clock = "clear", 12 * 60
+    local dc, ds = fishingConditionBonus()
+    weather, clock = sw, sc
+    ok(r, "fishing conditions", rc > dc and rs > ds and nc < dc and ns <= ds,
+       string.format("rain=%.2f/%d night=%.2f/%d day=%.2f/%d",
+                     rc, rs, nc, ns, dc, ds))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

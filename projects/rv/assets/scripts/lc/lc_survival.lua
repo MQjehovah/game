@@ -593,19 +593,41 @@ function startFishing()
   toast.t = 2.2
 end
 
+-- 天气/时段对钓鱼的影响：雨天、晨昏更好钓，深夜更难
+function fishingConditionBonus()
+  local chance, size = 0, 0
+  local h = (clock or 0) / 60
+  if weather == "rain" then
+    chance = chance + 0.08
+    size = size + 3
+  end
+  if (h >= 5 and h < 7) or (h >= 17 and h < 19) then
+    chance = chance + 0.06
+    size = size + 2
+  elseif h >= 21 or h < 5 then
+    chance = chance - 0.10
+  end
+  return chance, size
+end
+
 function finishFishing(force)
   local usedBait = fishingBait == true
   local onDock = fishingDock == true
   fishingBait = false
   fishingDock = false
+  local wChance, wSize = 0, 0
+  if fishingConditionBonus ~= nil then
+    wChance, wSize = fishingConditionBonus()
+  end
   local chance = 0.78 + (rodCatchBonus and rodCatchBonus() or 0) +
-                 (onDock and 0.10 or 0)
+                 (onDock and 0.10 or 0) + wChance
+  if chance < 0.10 then chance = 0.10 end
   local success = force or usedBait or math.random() < chance
   fishingT = 0
   if success then
     local name, size, sp = rollFish()
     local bonus = (rodSizeBonus and rodSizeBonus() or 0) +
-                  (usedBait and 10 or 0) + (onDock and 4 or 0)
+                  (usedBait and 10 or 0) + (onDock and 4 or 0) + wSize
     if bonus > 0 then size = math.min(sp.max, size + bonus) end
     local n = 1 + ((math.random() < 0.30) and 1 or 0)
     if size >= 55 then n = n + 1 end
