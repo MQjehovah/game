@@ -1812,6 +1812,33 @@ function updateCampfireAudio(dt)
   end
 end
 
+-- 营火炊烟：持续上升的灰白烟柱，远处也能看见营地
+function campfireSmokeRate()
+  return (campfire ~= nil) and 4 or 0
+end
+
+function updateCampfireSmoke(dt)
+  local rate = campfireSmokeRate()
+  if rate <= 0 then campfireSmokeT = 0 return end
+  campfireSmokeT = (campfireSmokeT or 0) + (dt or 0) * rate
+  while campfireSmokeT >= 1 do
+    campfireSmokeT = campfireSmokeT - 1
+    campfireSmokeCount = (campfireSmokeCount or 0) + 1
+    local wx = campfire.x + (math.random() * 2 - 1) * 0.25
+    local wz = campfire.z + (math.random() * 2 - 1) * 0.25
+    EmitParticles({
+      pos = { x = wx, y = (campfire.y or 0) + 0.9, z = wz },
+      count = 1, speedMin = 0.15, speedMax = 0.35,
+      vel = { x = 0.12, y = 0.55, z = 0.05 },
+      lifeMin = 3.0, lifeMax = 5.0,
+      sizeStart = 0.18, sizeEnd = 1.1,
+      color = { r = 0.55, g = 0.57, b = 0.58, a = 0.22 },
+      colorEnd = { r = 0.55, g = 0.57, b = 0.58, a = 0.0 },
+      additive = false, gravity = -0.02,
+    })
+  end
+end
+
 -- 营火暖光的轻微跳动：没有灯光强度 API，用位置抖动 + 高度起伏模拟火光
 function updateCampfireLight(dt)
   if campfireLight == nil or campfire == nil then return end

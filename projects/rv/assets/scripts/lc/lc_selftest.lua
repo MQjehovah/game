@@ -1557,6 +1557,19 @@ function runSelfTest()
                      tostring(near), tostring(far), iv, tostring(played)))
   end
 
+  -- 营火炊烟：有火堆时按 4/s 发射
+  do
+    local keepT, keepC = campfireSmokeT, campfireSmokeCount
+    campfireSmokeT, campfireSmokeCount = 0, 0
+    local rate = campfireSmokeRate()
+    updateCampfireSmoke(0.6)
+    local emitted = (campfireSmokeCount or 0) >= 2
+    local got = campfireSmokeCount or 0
+    campfireSmokeT, campfireSmokeCount = keepT, keepC
+    ok(r, "campfire smoke", rate > 0 and emitted,
+       string.format("rate=%.0f/s emitted=%d", rate, got))
+  end
+
   -- 主路土肩：沥青边缘与草地的过渡
   do
     local n = #roadShoulders
