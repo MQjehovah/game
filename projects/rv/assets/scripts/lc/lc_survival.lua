@@ -764,6 +764,26 @@ function recordFish(name, size, n)
   return speciesRecord, overall
 end
 
+-- 钓鱼水花：在玩家前方水面溅起一簇水珠
+function fishingSplash(strength)
+  fishingSplashCount = (fishingSplashCount or 0) + 1
+  if EmitParticles == nil or player == nil then return end
+  local fx, fz = math.sin(player.yaw or 0), math.cos(player.yaw or 0)
+  local x, z = player.x + fx * 2.4, player.z + fz * 2.4
+  local y = (terrainHeight and terrainHeight(x, z)) or 0
+  local s = strength or 0.5
+  EmitParticles({
+    pos = { x = x, y = y + 0.08, z = z },
+    count = math.floor(8 + 10 * s), speedMin = 0.3, speedMax = 1.0 + s,
+    vel = { x = 0, y = 1.0, z = 0 },
+    lifeMin = 0.25, lifeMax = 0.6,
+    sizeStart = 0.05, sizeEnd = 0.22,
+    color = { r = 0.72, g = 0.86, b = 0.94, a = 0.65 },
+    colorEnd = { r = 0.72, g = 0.86, b = 0.94, a = 0.0 },
+    additive = true, gravity = 0.8,
+  })
+end
+
 function finishFishing(force)
   local usedBait = fishingBait == true
   local onDock = fishingDock == true
@@ -779,6 +799,7 @@ function finishFishing(force)
   local success = force or usedBait or math.random() < chance
   fishingT = 0
   if success then
+    if fishingSplash ~= nil then fishingSplash(1.0) end
     local name, size, sp = rollFish()
     local bonus = (rodSizeBonus and rodSizeBonus() or 0) +
                   (usedBait and 10 or 0) + (onDock and 4 or 0) + wSize
@@ -800,6 +821,7 @@ function finishFishing(force)
                                onDock and "（栈桥）" or "",
                                record and "  新纪录!" or "")
   else
+    if fishingSplash ~= nil then fishingSplash(0.4) end
     toast.text = "鱼跑了……再试一次"
   end
   toast.t = 3.2
@@ -855,6 +877,10 @@ function updateFishing(dt)
   if fishingT <= 0 then
     fishingBite = true
     fishingBiteT = 1.2
+    if fishingSplash ~= nil then fishingSplash(0.5) end
+    local fx, fz = math.sin(player.yaw or 0), math.cos(player.yaw or 0)
+    SpawnFloatText(player.x + fx * 2.4, 0.9, player.z + fz * 2.4,
+                   "咬钩!", false, 1.0, 0.92, 0.96, 1.0)
     toast.text = "咬钩了！按 E 收线"
     toast.t = 1.6
   end

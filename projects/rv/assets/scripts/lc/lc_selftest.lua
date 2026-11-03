@@ -1587,13 +1587,16 @@ function runSelfTest()
   do
     local keepT, keepB, keepBT = fishingT, fishingBite, fishingBiteT
     fishingT, fishingBite, fishingBiteT = 0.01, false, 0
+    local splash0 = fishingSplashCount or 0
     updateFishing(0.05)
     local opened = fishingBite == true and
                    math.abs((fishingBiteT or 0) - 1.2) < 1e-6
+    local splashed = (fishingSplashCount or 0) == splash0 + 1
     local biteNow, biteTNow = fishingBite, fishingBiteT
     fishingT, fishingBite, fishingBiteT = keepT, keepB, keepBT
-    ok(r, "fishing bite window", opened,
-       string.format("bite=%s t=%.2f", tostring(biteNow), biteTNow or 0))
+    ok(r, "fishing bite window", opened and splashed,
+       string.format("bite=%s t=%.2f splash=%s", tostring(biteNow),
+                     biteTNow or 0, tostring(splashed)))
   end
 
   -- 各鱼种最大尺寸/条数记录
