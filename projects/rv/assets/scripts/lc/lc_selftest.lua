@@ -4064,6 +4064,17 @@ function runSelfTest()
        string.format("ok=%s quiet=%s", tostring(okSave), tostring(quiet)))
   end
 
+  -- 自动存档提示：保存后闪烁计时被点亮
+  do
+    local keep = autoSaveFlashT
+    autoSaveFlashT = 0
+    local okSave = autoSave()
+    local flashed = (autoSaveFlashT or 0) > 0
+    autoSaveFlashT = keep
+    ok(r, "auto save flash", okSave == true and flashed,
+       string.format("ok=%s flash=%.1f", tostring(okSave), keep or 0))
+  end
+
   -- 雨停后彩虹：白天触发，夜晚不触发
   do
     local sw, st, sn, sf = weather, weatherT, weatherNext, weatherNextId

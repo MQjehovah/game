@@ -145,6 +145,7 @@ fishCounts = {}               -- 各鱼种累计条数
 fishCollectionDone = false    -- 是否已集齐全部鱼种并领奖
 exploreAllDone = false        -- 是否已跑遍所有固定地点并领奖
 newGameHintT = 0              -- 首次进入的操作提示剩余时间（秒）
+autoSaveFlashT = 0            -- 自动存档提示剩余时间（秒）
 
 -- 搜刮 / 低强度威胁
 stopBag, stopThreat, evacT = {}, 0, -1

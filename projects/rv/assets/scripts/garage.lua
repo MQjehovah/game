@@ -218,9 +218,11 @@ function saveLayout(silent)
   return ok
 end
 
--- 关键事件后静默自动存档（不覆盖当前提示）
+-- 关键事件后静默自动存档（不覆盖当前提示，只在角落闪一下“已保存”）
 function autoSave()
-  return saveLayout(true)
+  local ok = saveLayout(true)
+  if ok then autoSaveFlashT = 2.0 end
+  return ok
 end
 
 function clearAll()
@@ -1182,6 +1184,10 @@ function on_start()
     newGameHintT = 12
     clock = 8 * 60
     setPhase("parked")
+  elseif startMode == "saveflash" then
+    autoSaveFlashT = 3
+    clock = 9 * 60
+    setPhase("parked")
   elseif startMode == "trapmap" then
     local p = ponds and ponds[1] or nil
     local lc = nodeById("lakecamp")
@@ -1497,6 +1503,9 @@ function on_update(ent, dt)
   if (newGameHintT or 0) > 0 then
     newGameHintT = math.max(0, newGameHintT - dt)
   end
+  if (autoSaveFlashT or 0) > 0 then
+    autoSaveFlashT = math.max(0, autoSaveFlashT - dt)
+  end
   ensureHelpers()
   if ActionPressed("m") then mapOpen = not mapOpen end
   if ActionPressed("i") then invOpen = not invOpen end
@@ -1759,6 +1768,7 @@ function on_render()
       drawNightOverlay()
       if drawFatigueVignette ~= nil then drawFatigueVignette() end
       coopDrawHud()
+      if drawAutoSaveHint ~= nil then drawAutoSaveHint() end
     end
     return
   end
@@ -1784,4 +1794,5 @@ function on_render()
   if journalOpen then drawJournal() end
   if fishBookOpen then drawFishBook() end
   if helpOpen then drawHelp() end
+  if drawAutoSaveHint ~= nil then drawAutoSaveHint() end
 end

@@ -234,6 +234,16 @@ function drawNewGameHint(vw, vh)
                    0.86, 0.90, 0.74, 0.9 * a)
 end
 
+-- 自动存档：右上角短暂闪一下“已自动保存”，不打断当前提示
+function drawAutoSaveHint()
+  local t = autoSaveFlashT or 0
+  if t <= 0 then return end
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local a = math.min(1, t)
+  drawTextRight("已自动保存", vw - 14, 212, 11, 0.62, 0.80, 0.66, 0.85 * a)
+end
+
 -- 步行时房车方位角差（用于屏幕边缘箭头）
 function rvBearingDelta(px, pz, viewYaw)
   local b = dirYaw(rv.x - (px or 0), rv.z - (pz or 0))
