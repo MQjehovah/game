@@ -138,22 +138,29 @@ def arch_well(m, sign, cz, seg=ARCH_LIP_SEGMENTS):
 
 
 WALL_CURVE = 0.05
+WALL_T = 0.08
 
 
 def wall_x(sign, y):
-    """Lofted skin: the side panel bows out near mid-height and tucks in at the
+    """Outer skin: the side panel bows out near mid-height and tucks in at the
     sill/roof (a single curved surface instead of a stacked box wall)."""
     t = (y - Y0) / max(1e-6, (Y1 - Y0))
     return sign * (X - WALL_CURVE * (t - 0.55) ** 2)
 
 
-def side_wall(m, sign, openings, windows):
-    """One lofted wall grid with real polygonal openings.
+def wall_xi(sign, y):
+    """Inner skin, offset inward by WALL_T so the wall has real thickness."""
+    return wall_x(sign, y) - sign * WALL_T
 
-    The z/y cut lines are placed exactly on every window/door edge and on 8
-    samples of each wheel-arch circle; cells whose centre falls inside a hole
-    are culled, so the panel has actual cut-outs rather than a stack of boxes.
-    Both windings are emitted so the wall is visible from inside and outside.
+
+def side_wall(m, sign, openings, windows):
+    """Lofted wall with thickness, polygonal openings and jamb reveals.
+
+    Outer and inner skins share the same grid; z/y cut lines sit exactly on
+    every opening edge and on 8 arc samples of each wheel well. Cells whose
+    centre is inside a hole are culled, then every rectangular hole gets four
+    jamb strips (top/bottom/left/right) and each arch gets a curved reveal
+    ring, so the openings read as cut-through walls rather than a pasted pane.
     """
     holes = list(openings) + list(windows)
     zcuts = {ZB, ZF}
@@ -171,6 +178,7 @@ def side_wall(m, sign, openings, windows):
     zs = sorted(zcuts)
     ys = sorted(ycuts)
     quads = 0
+    inner = 0
     for i in range(len(ys) - 1):
         y0, y1 = ys[i], ys[i + 1]
         if y1 - y0 < 1e-4:
@@ -194,14 +202,56 @@ def side_wall(m, sign, openings, windows):
                         break
             if skip:
                 continue
-            x0, x1 = wall_x(sign, y0), wall_x(sign, y1)
-            p0 = (x0, y0, z0)
-            p1 = (x0, y0, z1)
-            p2 = (x1, y1, z1)
-            p3 = (x1, y1, z0)
-            m.poly(BODY, [p0, p1, p2, p3], (sign, 0.0, 0.0))
-            m.poly(BODY, [p3, p2, p1, p0], (-sign, 0.0, 0.0))
+            xo0, xo1 = wall_x(sign, y0), wall_x(sign, y1)
+            xi0, xi1 = wall_xi(sign, y0), wall_xi(sign, y1)
+            m.poly(BODY, [(xo0, y0, z0), (xo0, y0, z1),
+                          (xo1, y1, z1), (xo1, y1, z0)], (sign, 0.0, 0.0))
+            m.poly(BODY, [(xi0, y0, z0), (xi1, y1, z0),
+                          (xi1, y1, z1), (xi0, y0, z1)], (-sign, 0.0, 0.0))
             quads = quads + 1
+            inner = inner + 1
+
+    # Jambs: four reveal strips per rectangular opening.
+    jambs = 0
+    for (z0, z1, y0, y1) in holes:
+        y0c = max(y0, Y0)
+        y1c = min(y1, Y1)
+        if y1c <= y0c:
+            continue
+        xo0, xo1 = wall_x(sign, y0c), wall_x(sign, y1c)
+        xi0, xi1 = wall_xi(sign, y0c), wall_xi(sign, y1c)
+        # bottom / top (normal into the opening)
+        m.poly(TRIM, [(xo0, y0c, z0), (xo0, y0c, z1),
+                      (xi0, y0c, z1), (xi0, y0c, z0)], (0.0, 1.0, 0.0))
+        m.poly(TRIM, [(xo1, y1c, z0), (xi1, y1c, z0),
+                      (xi1, y1c, z1), (xo1, y1c, z1)], (0.0, -1.0, 0.0))
+        # left / right (normal along z)
+        m.poly(TRIM, [(xo0, y0c, z0), (xi0, y0c, z0),
+                      (xi1, y1c, z0), (xo1, y1c, z0)], (0.0, 0.0, 1.0))
+        m.poly(TRIM, [(xo0, y0c, z1), (xo1, y1c, z1),
+                      (xi1, y1c, z1), (xi0, y0c, z1)], (0.0, 0.0, -1.0))
+        jambs = jambs + 4
+
+    # Wheel-arch reveals: connect the outer and inner skins along the arc.
+    reveals = 0
+    for cz in WHEEL_Z:
+        for k in range(8):
+            a0 = math.pi * k / 8
+            a1 = math.pi * (k + 1) / 8
+            z0 = cz + math.cos(a0) * ARCH_R
+            z1 = cz + math.cos(a1) * ARCH_R
+            y0 = 0.38 + math.sin(a0) * ARCH_R
+            y1 = 0.38 + math.sin(a1) * ARCH_R
+            if y0 < Y0 or y1 < Y0:
+                continue
+            xo0, xo1 = wall_x(sign, y0), wall_x(sign, y1)
+            xi0, xi1 = wall_xi(sign, y0), wall_xi(sign, y1)
+            nx0, ny0 = 0.0, (0.38 - y0) / ARCH_R
+            nx1, ny1 = 0.0, (0.38 - y1) / ARCH_R
+            m.poly(TRIM, [(xo0, y0, z0), (xi0, y0, z0),
+                          (xi1, y1, z1), (xo1, y1, z1)],
+                   (0.0, (ny0 + ny1) * 0.5, ((cz - z0) + (cz - z1)) * 0.5 / ARCH_R))
+            reveals = reveals + 1
 
     # Windows: recessed tinted glass + protruding frame ring.
     for (z0, z1, y0, y1) in windows:
@@ -214,7 +264,7 @@ def side_wall(m, sign, openings, windows):
         m.box(TRIM, fx, (y0 + y1) * 0.5, z1, 0.05, y1 - y0 + 0.10, 0.06)
         m.box(TRIM, fx, (y0 + y1) * 0.5, (z0 + z1) * 0.5,
               0.04, 0.035, z1 - z0)  # centre mullion
-    return quads
+    return { "quads": quads, "inner": inner, "jambs": jambs, "reveals": reveals }
 
 
 def wheel(m, sign, cz):
@@ -308,11 +358,15 @@ def main():
     # ---- Side walls: door opening preserved on +X ----
     win = [(-2.25, -0.35, 0.98, 1.72), (0.25, 2.15, 0.98, 1.72),
            (3.75, 4.70, 1.05, 1.80)]
-    wall_quads = 0
-    wall_quads += side_wall(m, 1, [(-3.54, -2.76, 0.24, 1.86)], win)
-    wall_quads += side_wall(m, -1, [],
-                            [(-2.25, -0.35, 0.98, 1.72), (0.25, 2.15, 0.98, 1.72),
-                             (-3.55, -2.60, 0.98, 1.72), (3.75, 4.70, 1.05, 1.80)])
+    wall = {"quads": 0, "inner": 0, "jambs": 0, "reveals": 0}
+    for part in (
+            side_wall(m, 1, [(-3.54, -2.76, 0.24, 1.86)], win),
+            side_wall(m, -1, [],
+                      [(-2.25, -0.35, 0.98, 1.72), (0.25, 2.15, 0.98, 1.72),
+                       (-3.55, -2.60, 0.98, 1.72), (3.75, 4.70, 1.05, 1.80)])):
+        for k in wall:
+            wall[k] += part[k]
+    wall_quads = wall["quads"]
     for sign in (-1, 1):
         for cz in WHEEL_Z:
             arch_lip(m, sign, cz)
@@ -517,6 +571,10 @@ def main():
     STATS.parent.mkdir(parents=True, exist_ok=True)
     STATS.write_text(json.dumps({
         "wallQuads": wall_quads,
+        "wallInnerQuads": wall["inner"],
+        "wallThickness": WALL_T,
+        "wallJambs": wall["jambs"],
+        "wallArchReveals": wall["reveals"],
         "wallHoles": 12,
         "wallCurve": WALL_CURVE,
         "archLipSegments": ARCH_LIP_SEGMENTS,
@@ -532,7 +590,8 @@ def main():
           "verts", verts, "tris", tris,
           "archSegments", ARCH_LIP_SEGMENTS,
           "roofStrips", len(ROOF_SHOULDER) - 1,
-          "wallQuads", wall_quads)
+          "wallQuads", wall_quads,
+          "jambs", wall["jambs"], "reveals", wall["reveals"])
 
 
 if __name__ == "__main__":
