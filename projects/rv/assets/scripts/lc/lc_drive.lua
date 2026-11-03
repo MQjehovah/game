@@ -395,10 +395,17 @@ function honk()
     end
   end
   rv.honkScaredWildlife = scaredWild
-  if scared > 0 or scaredWild > 0 then
+  -- 鸣笛也会惊走附近的鸟和野兔
+  local scaredSmall = 0
+  if scareSmallGameNear ~= nil then
+    scaredSmall = scareSmallGameNear(rv.x, rv.z, 24)
+  end
+  rv.honkScaredSmall = scaredSmall
+  if scared > 0 or scaredWild > 0 or scaredSmall > 0 then
     local parts = {}
     if scared > 0 then parts[#parts + 1] = scared .. " 只感染者" end
     if scaredWild > 0 then parts[#parts + 1] = scaredWild .. " 只野生动物" end
+    if scaredSmall > 0 then parts[#parts + 1] = scaredSmall .. " 只小动物" end
     toast.text = "喇叭吓跑了 " .. table.concat(parts, " / ")
     toast.t = 2.4
   end

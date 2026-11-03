@@ -1740,6 +1740,37 @@ function updateAmbientDeer(dt)
   end
 end
 
+-- 鸣笛惊走附近的鸟和野兔（返回惊走的数量，供喇叭使用）
+function scareSmallGameNear(x, z, radius)
+  local r2 = (radius or 24) * (radius or 24)
+  local ax = (wildlifeAnchor and wildlifeAnchor.x) or (rv and rv.x) or 0
+  local az = (wildlifeAnchor and wildlifeAnchor.z) or (rv and rv.z) or 0
+  local n = 0
+  for i = #rabbits, 1, -1 do
+    local r = rabbits[i]
+    local wx = ax + math.cos(r.angle) * r.radius
+    local wz = az + math.sin(r.angle) * r.radius
+    local dx, dz = wx - (x or 0), wz - (z or 0)
+    if dx * dx + dz * dz <= r2 then
+      if r.ent ~= nil then Despawn(r.ent) end
+      table.remove(rabbits, i)
+      n = n + 1
+    end
+  end
+  for i = #birds, 1, -1 do
+    local b = birds[i]
+    local wx = ax + math.cos(b.angle) * b.radius
+    local wz = az + math.sin(b.angle) * b.radius
+    local dx, dz = wx - (x or 0), wz - (z or 0)
+    if dx * dx + dz * dz <= r2 then
+      if b.ent ~= nil then Despawn(b.ent) end
+      table.remove(birds, i)
+      n = n + 1
+    end
+  end
+  return n
+end
+
 -- 白天蝴蝶：在草甸/花丛附近成对翅膀飞舞，夜间或雨天隐藏
 function butterfliesActive()
   if weather == "rain" or weather == "snow" then return false end

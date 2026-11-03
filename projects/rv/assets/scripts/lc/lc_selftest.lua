@@ -3134,6 +3134,18 @@ function runSelfTest()
                      rv.honkScaredWildlife or 0))
   end
 
+  -- 鸣笛惊走附近的鸟和野兔
+  do
+    spawnRabbits()
+    local n0 = #rabbits
+    local scared = scareSmallGameNear(rv.x, rv.z, 60)
+    local after = #rabbits
+    local gone = after < n0
+    spawnRabbits()
+    ok(r, "horn scares small game", n0 >= 4 and scared > 0 and gone,
+       string.format("rabbits %d->%d scared=%d", n0, after, scared))
+  end
+
   -- 引擎水温：全油门升温、怠速降温、过热限速
   do
     local keepTemp = engineTemp
