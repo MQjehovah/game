@@ -479,6 +479,15 @@ local function goalToken()
                        dailyGoal.done and 1 or 0)
 end
 
+-- 已读笔记位串（按 LORE_NOTES 顺序），用于同步给客机
+function notesMask()
+  local s = ""
+  for _, d in ipairs(LORE_NOTES or {}) do
+    s = s .. (notesFound[d.id] and "1" or "0")
+  end
+  return s
+end
+
 local function pushState()
   coop.seq = coop.seq + 1
   local players = {}
@@ -553,6 +562,7 @@ local function pushState()
     oil = math.floor(oilLife or 100),
     warm = math.floor(warmthMin or 0),
     rest = math.floor(restedMin or 0),
+    notes = notesMask(),
   })
 end
 
@@ -791,6 +801,19 @@ local function serverHandleCommand(clientId, a)
                         windmillWaterMin or 0))
     if okWater then setToast("风车水泵接了一些水") end
     pushState()
+  elseif t == "read_note" then
+    local idx = tonumber(a.index) or 0
+    local n = loreNotes and loreNotes[idx] or nil
+    local okNote = false
+    if n ~= nil then
+      local d = math.sqrt((n.x - (s.x or rv.x)) ^ 2 + (n.z - (s.z or rv.z)) ^ 2)
+      if d <= 2.6 and not notesFound[n.id] then
+        okNote = readLoreNote(idx)
+      end
+    end
+    print(string.format("[coop-note] ok=%s idx=%d mask=%s", tostring(okNote),
+                        idx, notesMask()))
+    if okNote then pushState() end
   elseif t == "repair" then
     local before = (parts and parts.engine) or 100
     local okRep = false
@@ -1286,6 +1309,22 @@ local function serverUpdate(dt)
     if collectWindmillWater ~= nil then okWater = collectWindmillWater() end
     print(string.format("[coop-water] demo ok=%s water=%.1f cd=%.0f",
                         tostring(okWater), water or 0, windmillWaterMin or 0))
+    pushState()
+  end
+
+  -- Test-only co-op lore note: stand by the first note and read it.
+  if coop.noteDemo and not coop.noteDemoDone and coop.autoT >= 3.0 then
+    coop.noteDemoDone = true
+    local n = loreNotes and loreNotes[1] or nil
+    if n ~= nil then
+      rv.x, rv.z = n.x, n.z
+      notesFound = {}
+      loreRewardDone = false
+    end
+    local okNote = false
+    if n ~= nil and readLoreNote ~= nil then okNote = readLoreNote(1) end
+    print(string.format("[coop-note] demo ok=%s mask=%s",
+                        tostring(okNote), notesMask()))
     pushState()
   end
 
@@ -1830,6 +1869,12 @@ local function applyState(s)
   if s.rest ~= nil and setRested ~= nil then
     setRested(s.rest)
   end
+  if type(s.notes) == "string" then
+    for i, d in ipairs(LORE_NOTES or {}) do
+      notesFound[d.id] = (s.notes:sub(i, i) == "1")
+    end
+    if refreshLoreNotes ~= nil then refreshLoreNotes() end
+  end
   if s.high ~= nil then
     local hb = (s.high == 1 or s.high == true)
     if hb ~= highBeam then
@@ -2152,8 +2197,14 @@ local function clientUpdate(dt)
           end
           local nearWindmill = windmill ~= nil and
             math.sqrt((windmill.x - px) ^ 2 + (windmill.z - pz) ^ 2) <= 3.8
+          local noteIdx = nil
+          if nearestLoreNote ~= nil then
+            noteIdx = nearestLoreNote(px, pz, 2.4)
+          end
           if best ~= nil and bestD <= 5.5 then
             Rpc("game_cmd", { type = "search", index = best })
+          elseif noteIdx ~= nil then
+            Rpc("game_cmd", { type = "read_note", index = noteIdx })
           elseif nearWindmill then
             Rpc("game_cmd", { type = "windmill_water" })
           elseif nearestReadyCache ~= nil and
@@ -2591,6 +2642,7 @@ function coopInitWorld(role)
     coop.pondDemo = readFlag("coop_pond.txt")
     coop.cacheDemo = readFlag("coop_cache.txt")
     coop.waterDemo = readFlag("coop_water.txt")
+    coop.noteDemo = readFlag("coop_note.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2713,6 +2765,7 @@ function coopInitWorld(role)
     coop.pondDemo = readFlag("coop_pond.txt")
     coop.cacheDemo = readFlag("coop_cache.txt")
     coop.waterDemo = readFlag("coop_water.txt")
+    coop.noteDemo = readFlag("coop_note.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")

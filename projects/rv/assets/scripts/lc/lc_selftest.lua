@@ -4170,6 +4170,23 @@ function runSelfTest()
                      tostring(hiddenRead), tostring(hiddenUnvisited)))
   end
 
+  -- 笔记位串：用于联机同步已读状态
+  do
+    local keep = notesFound
+    notesFound = {}
+    local none = notesMask()
+    local total = #(LORE_NOTES or {})
+    local first = LORE_NOTES and LORE_NOTES[1] or nil
+    if first ~= nil then notesFound[first.id] = true end
+    local one = notesMask()
+    notesFound = keep
+    local allZero = #none == total and not none:find("1", 1, true)
+    local firstOne = first ~= nil and one:sub(1, 1) == "1"
+    ok(r, "notes mask",
+       total >= 6 and allZero and firstOne,
+       string.format("total=%d none=%s one=%s", total, none, one))
+  end
+
   -- 地点特色掉落：数据完整，且物品都在 ITEMS 里
   do
     local function has(id, item)
