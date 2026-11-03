@@ -1189,6 +1189,11 @@ function on_start()
     if lc ~= nil then rv.x, rv.z = lc.x, lc.z end
     mapOpen = true
     setPhase("parked")
+  elseif startMode == "cachemap" then
+    local c = roadCaches and roadCaches[1] or nil
+    if c ~= nil then rv.x, rv.z = c.x, c.z end
+    mapOpen = true
+    setPhase("parked")
   elseif startMode == "raincab" then
     setWeather("rain")
     setPhase("driving")

@@ -638,6 +638,23 @@ function drawMinimap(vw, vh)
                  ready and 0.82 or 0.62, 1, ready)
     end
   end
+  -- 路边补给箱：未搜刮时标出位置
+  for _, c in ipairs(roadCaches or {}) do
+    if c.ready then
+      local dx, dz = c.x - rv.x, c.z - rv.z
+      local d = math.sqrt(dx * dx + dz * dz)
+      local px2, py2
+      if d <= range then
+        px2, py2 = cx + dx * scale, cy - dz * scale
+      elseif d > 0.01 then
+        px2 = cx + dx / d * (size * 0.5 - 10)
+        py2 = cy - dz / d * (size * 0.5 - 10)
+      end
+      if px2 ~= nil then
+        DrawCircle(px2, py2, 3, 1.5, 0.92, 0.72, 0.36, 0.95, false)
+      end
+    end
+  end
   DrawLine(cx, cy, cx + math.sin(rv.yaw) * 10,
            cy - math.cos(rv.yaw) * 10, 2, 1.0, 0.85, 0.35, 1)
   DrawCircle(cx, cy, 3, 2, 1.0, 0.85, 0.35, 1, true)
@@ -1543,6 +1560,14 @@ function drawMapHud()
                      tx, ty + 13, 11,
                      ready and 0.55 or 0.66, ready and 0.92 or 0.66,
                      ready and 0.78 or 0.66, 1)
+  end
+  -- 路边补给箱：未搜刮时标出位置
+  for _, c in ipairs(roadCaches or {}) do
+    if c.ready then
+      local cx2, cy2 = mapXY(c.x, c.z)
+      DrawCircle(cx2, cy2, 5, 1.5, 0.92, 0.72, 0.36, 0.95, false)
+      drawTextCentered("补给箱", cx2, cy2 + 12, 10, 0.86, 0.72, 0.46, 1)
+    end
   end
   DrawText("● 房车    ● 地点（越红越危险）  ? 未探索    — 公路    ◎ 货运目标",
            px + 16, py + ph - 24, 12, 0.7, 0.7, 0.65, 1)
