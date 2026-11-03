@@ -203,6 +203,69 @@ function runSelfTest()
                        terrainHeight(12, -20), terrainHeight(72, 0),
                        terrainHeight(106, -66), terrainHeight(137, -2)))
     end
+    if ReadText ~= nil and Json ~= nil then
+      -- Visible terrain is 16 chunk groups, each with three prefabs (4 m,
+      -- 8 m, 12 m) and exactly one visible level chosen by distance.
+      local function gltfVerts(txt)
+        if txt == nil or txt == "" then return 0 end
+        local g = Json.Parse(txt)
+        if type(g) ~= "table" or type(g.meshes) ~= "table" or
+           type(g.accessors) ~= "table" then return 0 end
+        local total = 0
+        for _, mesh in ipairs(g.meshes) do
+          for _, prim in ipairs(mesh.primitives or {}) do
+            local pi = prim.attributes and prim.attributes.POSITION
+            if pi ~= nil and g.accessors[pi + 1] ~= nil then
+              total = total + (g.accessors[pi + 1].count or 0)
+            end
+          end
+        end
+        return total
+      end
+      local chunks, okLod, fineSum, farSum = 0, true, 0, 0
+      local worst = 0.0
+      for iz = 0, 3 do
+        for ix = 0, 3 do
+          local stage = string.format("%d%d", ix, iz)
+          local base = "assets/models/rv/rv_terrain_" .. stage
+          for _, suffix in ipairs({ "", "_lod2", "_lod3" }) do
+            local pf = ReadText("assets/prefabs/rv_terrain_" .. stage .. suffix .. ".json")
+            if pf == nil or #pf < 20 then okLod = false end
+          end
+          local v0 = gltfVerts(ReadText(base .. ".gltf"))
+          local v2 = gltfVerts(ReadText(base .. "_lod2.gltf"))
+          local v3 = gltfVerts(ReadText(base .. "_lod3.gltf"))
+          if v0 <= 0 or v2 <= 0 or v3 <= 0 or
+             v2 >= v0 * 0.5 or v3 >= v0 * 0.3 then
+            okLod = false
+          end
+          if v0 > 0 and v3 > 0 then
+            local ratio = v3 / v0
+            if ratio > worst then worst = ratio end
+          end
+          fineSum = fineSum + v0
+          farSum = farSum + v3
+          chunks = chunks + 1
+        end
+      end
+      local nearN, midN, farN, haveAll = 0, 0, 0, 0
+      for _, c in ipairs(terrainChunks or {}) do
+        if c.level == 1 then nearN = nearN + 1
+        elseif c.level == 2 then midN = midN + 1
+        elseif c.level == 3 then farN = farN + 1 end
+        local n = 0
+        for i = 1, 3 do
+          if c.levels[i] ~= nil then n = n + 1 end
+        end
+        if n == 3 then haveAll = haveAll + 1 end
+      end
+      ok(r, "rv terrain lod",
+         okLod and chunks == 16 and farSum > 0 and farSum < fineSum * 0.3 and
+         haveAll == 16 and nearN + midN + farN == 16 and
+         nearN >= 1 and farN >= 1,
+         string.format("chunks=%d verts=%d far=%d worst=%.2f levels=%d/%d/%d",
+                       chunks, fineSum, farSum, worst, nearN, midN, farN))
+    end
     if updateRvTilt ~= nil then
       local kx, kz, ky = rv.x, rv.z, rv.yaw
       local kp, kr = rv.pitch, rv.roll

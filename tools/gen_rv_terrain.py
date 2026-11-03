@@ -161,8 +161,11 @@ def height(x, z):
 
 
 class Mesh:
-    def __init__(self):
+    def __init__(self, uv_origin=(0.0, 0.0)):
         self.groups = {}
+        # UVs are world-anchored so neighbouring terrain chunks tile seamlessly
+        # even though their vertex positions are chunk-local.
+        self.uv_origin = uv_origin
 
     def _group(self, mat):
         return self.groups.setdefault(mat, ([], [], [], []))
@@ -183,7 +186,8 @@ class Mesh:
         for p in (a, b, c, d):
             pos.append(p)
             nrm.append(n)
-            uvs.append((p[0] * 0.30, p[2] * 0.30))
+            uvs.append(((p[0] + self.uv_origin[0]) * 0.30,
+                        (p[2] + self.uv_origin[1]) * 0.30))
         idx.extend([base, base + 1, base + 2, base, base + 2, base + 3])
 
     def box(self, mat, cx, cy, cz, sx, sy, sz):
@@ -205,6 +209,97 @@ class Mesh:
 
 
 DEFAULT, DIRT, GRASS = 0, 1, 2
+
+
+PREFABS = PREFAB.parent
+# 4x4 chunks of 72 m; each chunk carries 4 m detail plus 8 m / 12 m LOD
+# meshes that the engine switches to at 90 m / 160 m from the camera.
+CHUNKS = 4
+CHUNK_SPAN = (X1 - X0) / CHUNKS
+LODS = [(2, 90.0), (3, 160.0)]
+CHUNK_INDEX = "{ix}{iz}"
+
+
+def add_skirt(mesh, x0, z0, span, step, lx, lz):
+    """Drop a 1.5 m vertical skirt around a chunk so the T-junctions between
+    neighbouring LOD levels cannot show sky/gaps (both windings, cheap)."""
+    n = int(round(span / step))
+    drop = 1.5
+
+    def top(ax, az):
+        return (ax - lx, height(ax, az), az - lz)
+
+    edges = []
+    for i in range(n):
+        xa, xb = x0 + i * step, x0 + (i + 1) * step
+        edges.append(((xa, z0), (xb, z0)))
+        edges.append(((xa, z0 + span), (xb, z0 + span)))
+    for j in range(n):
+        za, zb = z0 + j * step, z0 + (j + 1) * step
+        edges.append(((x0, za), (x0, zb)))
+        edges.append(((x0 + span, za), (x0 + span, zb)))
+    for (ax, az), (bx, bz) in edges:
+        a = top(ax, az)
+        b = top(bx, bz)
+        ad = (a[0], a[1] - drop, a[2])
+        bd = (b[0], b[1] - drop, b[2])
+        mesh.quad(GRASS, a, b, bd, ad)
+        mesh.quad(GRASS, ad, bd, b, a)
+
+
+def write_gltf(stem, node_name, mesh, materials):
+    buffer = b""
+    views = []
+    accessors = []
+    prims = []
+    for mat_index, (positions, normals, indices, uvs) in sorted(mesh.groups.items()):
+        for raw in (
+                b"".join(struct.pack("<3f", *p) for p in positions),
+                b"".join(struct.pack("<3f", *n) for n in normals),
+                b"".join(struct.pack("<I", i) for i in indices),
+                b"".join(struct.pack("<2f", *t) for t in uvs)):
+            pad = (4 - len(raw) % 4) % 4
+            blob = raw + b"\0" * pad
+            views.append({"buffer": 0, "byteOffset": len(buffer),
+                          "byteLength": len(blob)})
+            buffer += blob
+        vb = len(views) - 4
+        mn = [min(p[i] for p in positions) for i in range(3)]
+        mx = [max(p[i] for p in positions) for i in range(3)]
+        accessors.extend([
+            {"bufferView": vb, "componentType": 5126, "count": len(positions),
+             "type": "VEC3", "min": mn, "max": mx},
+            {"bufferView": vb + 1, "componentType": 5126, "count": len(normals),
+             "type": "VEC3"},
+            {"bufferView": vb + 2, "componentType": 5125, "count": len(indices),
+             "type": "SCALAR"},
+            {"bufferView": vb + 3, "componentType": 5126, "count": len(uvs),
+             "type": "VEC2"},
+        ])
+        ai = len(accessors) - 4
+        prims.append({"attributes": {"POSITION": ai, "NORMAL": ai + 1,
+                                     "TEXCOORD_0": ai + 3},
+                      "indices": ai + 2, "material": mat_index})
+
+    gltf = {
+        "asset": {"version": "2.0", "generator": "neon rv terrain generator"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"name": node_name, "mesh": 0}],
+        "meshes": [{"name": node_name, "primitives": prims}],
+        "materials": materials,
+        "images": [{"uri": "rv_dirt.png"}, {"uri": "rv_ground_meadow.png"}],
+        "textures": [{"source": 0, "sampler": 0}, {"source": 1, "sampler": 0}],
+        "samplers": [{"magFilter": 9729, "minFilter": 9987,
+                      "wrapS": 10497, "wrapT": 10497}],
+        "buffers": [{"uri": stem + ".bin", "byteLength": len(buffer)}],
+        "bufferViews": views,
+        "accessors": accessors,
+    }
+    (OUT / (stem + ".bin")).write_bytes(buffer)
+    (OUT / (stem + ".gltf")).write_text(
+        json.dumps(gltf, separators=(",", ":")), encoding="utf-8")
+    return len(buffer), len(prims)
 
 
 def main():
@@ -257,69 +352,83 @@ def main():
                                   "baseColorTexture": {"index": 1}}},
     ]
 
-    buffer = b""
-    views = []
-    accessors = []
-    prims = []
-    for mat_index, (positions, normals, indices, uvs) in sorted(m.groups.items()):
-        for raw in (
-                b"".join(struct.pack("<3f", *p) for p in positions),
-                b"".join(struct.pack("<3f", *n) for n in normals),
-                b"".join(struct.pack("<I", i) for i in indices),
-                b"".join(struct.pack("<2f", *t) for t in uvs)):
-            pad = (4 - len(raw) % 4) % 4
-            blob = raw + b"\0" * pad
-            views.append({"buffer": 0, "byteOffset": len(buffer),
-                          "byteLength": len(blob)})
-            buffer += blob
-        vb = len(views) - 4
-        mn = [min(p[i] for p in positions) for i in range(3)]
-        mx = [max(p[i] for p in positions) for i in range(3)]
-        accessors.extend([
-            {"bufferView": vb, "componentType": 5126, "count": len(positions),
-             "type": "VEC3", "min": mn, "max": mx},
-            {"bufferView": vb + 1, "componentType": 5126, "count": len(normals),
-             "type": "VEC3"},
-            {"bufferView": vb + 2, "componentType": 5125, "count": len(indices),
-             "type": "SCALAR"},
-            {"bufferView": vb + 3, "componentType": 5126, "count": len(uvs),
-             "type": "VEC2"},
-        ])
-        ai = len(accessors) - 4
-        prims.append({"attributes": {"POSITION": ai, "NORMAL": ai + 1,
-                                     "TEXCOORD_0": ai + 3},
-                      "indices": ai + 2, "material": mat_index})
+    full_bytes, full_prims = write_gltf("rv_terrain", "RV_Terrain", m, materials)
 
-    gltf = {
-        "asset": {"version": "2.0", "generator": "neon rv terrain generator"},
-        "scene": 0,
-        "scenes": [{"nodes": [0]}],
-        "nodes": [{"name": "RV_Terrain", "mesh": 0}],
-        "meshes": [{"name": "RV_Terrain", "primitives": prims}],
-        "materials": materials,
-        "images": [{"uri": "rv_dirt.png"}, {"uri": "rv_ground_meadow.png"}],
-        "textures": [{"source": 0, "sampler": 0}, {"source": 1, "sampler": 0}],
-        "samplers": [{"magFilter": 9729, "minFilter": 9987,
-                      "wrapS": 10497, "wrapT": 10497}],
-        "buffers": [{"uri": "rv_terrain.bin", "byteLength": len(buffer)}],
-        "bufferViews": views,
-        "accessors": accessors,
-    }
-    (OUT / "rv_terrain.bin").write_bytes(buffer)
-    (OUT / "rv_terrain.gltf").write_text(
-        json.dumps(gltf, separators=(",", ":")), encoding="utf-8")
-    PREFAB.write_text(json.dumps({
-        "components": {
-            "transform": {"pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1]},
-            "mesh": {"meshKey": "gltf:assets/models/rv/rv_terrain.gltf",
-                     "castShadow": False, "receiveShadow": True},
-        },
-    }, indent=2) + "\n", encoding="utf-8")
+    # ---- Chunked terrain with distance LOD ---------------------------------
+    # 4x4 chunks of 72 m. Every chunk gets three meshes (4 m / 8 m / 12 m
+    # spacing) and a prefab whose mesh.lod chain switches at 90 m and 160 m.
+    # The engine culls each chunk by frustum and draws the coarse mesh only
+    # for far chunks, so the near RV keeps 4 m detail and the horizon costs a
+    # fraction of the triangles.
+    lod_stats = []
+    for iz in range(CHUNKS):
+        for ix in range(CHUNKS):
+            cx0 = X0 + CHUNK_SPAN * ix
+            cz0 = Z0 + CHUNK_SPAN * iz
+            cx1 = cx0 + CHUNK_SPAN
+            cz1 = cz0 + CHUNK_SPAN
+            lx = (cx0 + cx1) * 0.5
+            lz = (cz0 + cz1) * 0.5
+            stage = CHUNK_INDEX.format(ix=ix, iz=iz)
+            levels = []
+            for mult, _dist in [(1, 0)] + LODS:
+                step = STEP * mult
+                cm = Mesh(uv_origin=(lx, lz))
+                cm.hidden()
+                n = int(round(CHUNK_SPAN / step))
+                for j in range(n):
+                    for i in range(n):
+                        wx = cx0 + i * step
+                        wz = cz0 + j * step
+                        h00 = height(wx, wz)
+                        h10 = height(wx + step, wz)
+                        h11 = height(wx + step, wz + step)
+                        h01 = height(wx, wz + step)
+                        if max(h00, h10, h11, h01) <= 0.03:
+                            continue
+                        a = (wx - lx, h00, wz - lz)
+                        b = (wx + step - lx, h10, wz - lz)
+                        c = (wx + step - lx, h11, wz + step - lz)
+                        d = (wx - lx, h01, wz + step - lz)
+                        mid_x = wx + step * 0.5
+                        mid_z = wz + step * 0.5
+                        dirt = (DIRT_X0 <= mid_x <= DIRT_X1 and EZ0 <= mid_z <= EZ1
+                                and env_peak(mid_x, mid_z) > 0.2)
+                        cm.quad(DIRT if dirt else GRASS, a, b, c, d)
+                add_skirt(cm, cx0, cz0, CHUNK_SPAN, step, lx, lz)
+                suffix = "" if mult == 1 else "_lod%d" % mult
+                stem = "rv_terrain_%s%s" % (stage, suffix)
+                write_gltf(stem, "RV_Terrain_%s%s" % (stage, suffix), cm, materials)
+                levels.append((mult, stem, cm))
+            # One prefab per level: the game script shows exactly one of them
+            # per chunk based on its distance (see updateTerrainLod), which
+            # keeps the mesh draw path independent of primitive count.
+            for mult, stem, _cm in levels:
+                prefab = {
+                    "components": {
+                        "transform": {"pos": [lx, 0, lz], "rot": [0, 0, 0, 1],
+                                      "scale": [1, 1, 1]},
+                        "mesh": {
+                            "meshKey": "gltf:assets/models/rv/%s.gltf" % stem,
+                            "castShadow": False,
+                            "receiveShadow": True,
+                        },
+                    },
+                }
+                suffix = "" if mult == 1 else "_lod%d" % mult
+                (PREFABS / ("rv_terrain_%s%s.json" % (stage, suffix))).write_text(
+                    json.dumps(prefab, indent=2) + "\n", encoding="utf-8")
+            lod_stats.append((stage, sum(len(g[0]) for g in levels[0][2].groups.values()),
+                              sum(len(g[0]) for g in levels[1][2].groups.values()),
+                              sum(len(g[0]) for g in levels[2][2].groups.values())))
+    for stage, v0, v1, v2 in lod_stats[:3]:
+        print("chunk", stage, "verts", v0, v1, v2)
 
     verts = sum(len(v[0]) for v in m.groups.values())
     print("terrain grid", NX, "x", NZ, "step", STEP,
-          "max", max(heights), "bytes", len(buffer),
-          "prims", len(prims), "verts", verts)
+          "max", max(heights), "bytes", full_bytes,
+          "prims", full_prims, "verts", verts,
+          "chunks", CHUNKS * CHUNKS)
 
 
 def env_peak(x, z):

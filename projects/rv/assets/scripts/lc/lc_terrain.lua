@@ -558,6 +558,51 @@ function updateSteeringCommand(input, dt)
   return rv.steerCmd
 end
 
+-- Distance-based visible terrain-chunk LOD. garage.lua registers every 72 m
+-- chunk with three entities (4 m, 8 m, 12 m meshes); exactly one level is
+-- visible per chunk, chosen from the player/RV distance. Near terrain keeps
+-- full detail while the horizon costs ~1/6 of the vertices.
+local TERRAIN_LOD_NEAR = 90.0
+local TERRAIN_LOD_MID = 140.0
+local terrainLodT = 0.0
+local terrainLodLogged = false
+
+function updateTerrainLod(dt, force)
+  if terrainChunks == nil or #terrainChunks == 0 then return end
+  terrainLodT = terrainLodT + (dt or 0)
+  if not force and terrainLodT < 0.2 then return end
+  terrainLodT = 0
+  local cx, cz = rv.x or 0, rv.z or 0
+  if player ~= nil and player.active and player.x ~= nil then
+    cx, cz = player.x, player.z
+  end
+  local counts = { 0, 0, 0 }
+  local changed = false
+  for _, c in ipairs(terrainChunks) do
+    local dx, dz = c.x - cx, c.z - cz
+    local d = math.sqrt(dx * dx + dz * dz)
+    local want = 1
+    if d > TERRAIN_LOD_MID then
+      want = 3
+    elseif d > TERRAIN_LOD_NEAR then
+      want = 2
+    end
+    if c.level ~= want then
+      c.level = want
+      changed = true
+      for i = 1, 3 do
+        if c.levels[i] ~= nil then SetVisible(c.levels[i], i == want) end
+      end
+    end
+    counts[want] = counts[want] + 1
+  end
+  if changed or not terrainLodLogged then
+    terrainLodLogged = true
+    print(string.format("[terrain-lod] near=%d mid=%d far=%d",
+                        counts[1], counts[2], counts[3]))
+  end
+end
+
 -- Client-side wheel prediction: the chassis pose is replicated from the server,
 -- so only the four wheel bodies are advanced locally (suspension + rolling).
 function updateWheelPrediction(dt)
