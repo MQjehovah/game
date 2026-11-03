@@ -787,12 +787,12 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   （半透明 BLEND 面板），`tools/gen_rv_glass_frags.py` 生成 `rv_glass_frag1..5`
   （5 种不规则薄棱柱）；`lc_scenery.spawnPoiWindows()` 按 POI 类型为商店/加油站/
   仓库/商场/湖边木屋/诊所生成两扇前窗玻璃，`breakPoiWindowsAt()` 在玩家进入或攻击时
-  按固定 3×3 裂纹布局把每扇面板分离为 9 块碎片（共 18 块），`updatePoiWindows()`
-  施加向外 + 重力速度、落地弹跳后让碎片永久留在地面；服务器把
-  `glass=<逗号分隔 POI id>` 写入 `game_state`（变化时立即 `pushState()`），客户端用
-  `applyPoiGlassState()` 播放同一套碎片；日志
-  `[glass] broke windows at ruin/... (enter, 18 fracture shards)` 与
-  `... (server, 18 fracture shards)`，`coop_glassview.txt` 提供门窗特写镜头。
+  把每扇面板按 3×3 裂纹分离为 9 块碎片（共 18 块），并用 seed 镜像/旋转/抖动布局、
+  替换网格变体与尺寸，因此每次破碎花纹不同；`updatePoiWindows()` 施加向外 + 重力速度、
+  落地弹跳后让碎片永久留在地面；服务器选 seed 并把 `glass=<id>:<seed>` 写入
+  `game_state`（变化时立即 `pushState()`），客户端用 `applyPoiGlassState()` 按同一 seed
+  重建相同布局；日志 `[glass] broke windows at ruin/... (enter, 18 fracture shards, seed=N)`
+  与 `... (server, 18 fracture shards, seed=N)`，`coop_glassview.txt` 提供门窗特写镜头。
 - **商品包装图集**（`projects/rv`）：`tools/gen_rv_product_atlas.py` 生成
   `assets/models/rv/rv_products.png`（4×4 包装格），`tools/rv_atlas.py` 提供
   `tile_uvs()` / `product_material()` / `atlas_extras()`；商店/加油站/商场/仓库/

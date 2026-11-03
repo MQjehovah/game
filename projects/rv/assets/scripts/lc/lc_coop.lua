@@ -1224,17 +1224,9 @@ local function clientUpdate(dt)
     end
   end
 
-  -- Shatter display windows when any replicated player steps inside a POI.
-  if breakPoiWindowsAt and coop.state and coop.state.players then
-    for i = 1, MAX_SLOTS do
-      local p = coop.state.players[i]
-      if p ~= nil and p.j == 1 then
-        if breakPoiWindowsAt(p.x or 0, p.z or 0, "enter") > 0 then
-          print(string.format("[coop-glass] player %d broke the POI windows", i))
-        end
-      end
-    end
-  end
+  -- Glass is broken by the server, which broadcasts id:seed pairs; the client
+  -- rebuilds the exact same layout in applyPoiGlassState (no local prediction,
+  -- otherwise the client's random seed would diverge from the server's).
 
   -- Server-authoritative warehouse roll-up door.
   if setPoiDoorOpen and coop.state ~= nil and coop.state.rollup ~= nil then

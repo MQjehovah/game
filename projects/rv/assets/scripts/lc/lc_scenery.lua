@@ -274,9 +274,10 @@ function spawnPoiWindows(nd)
   print(string.format("[glass] intact panes at %s = %d (%s)", nd.id, #panes, kind))
 end
 
--- Fixed nine-piece fracture pattern per pane, in normalised pane-local
--- coordinates: u, v (-0.5..0.5), width/height fraction, mesh variant, yaw.
--- Every break of a given pane separates along the same crack pattern.
+-- Nine-piece fracture layout per pane, in normalised pane-local coordinates:
+-- u, v (-0.5..0.5), width/height fraction, mesh variant, yaw. Each break
+-- mirrors/rotates/jitters this layout and swaps mesh variants from a seed so
+-- two breaks no longer look identical.
 local GLASS_FRAGS = {
   { -0.29,  0.29, 0.36, 0.34, 1,  0.35 },
   {  0.00,  0.30, 0.36, 0.34, 2, -0.55 },
@@ -289,45 +290,78 @@ local GLASS_FRAGS = {
   {  0.30, -0.29, 0.34, 0.32, 1, -1.05 },
 }
 
--- One-shot break: remove the intact pane, then spawn the fixed fracture set.
-function breakPoiWindows(nd, reason)
+-- Deterministic LCG: the server picks a seed and broadcasts it, so every
+-- client reproduces the exact same crack layout from the same integer.
+local function glassRand(seed, k)
+  local x = (seed + k * 1103515245 + 12345) % 2147483648
+  x = (x * 1103515245 + 12345) % 2147483648
+  return x / 2147483648
+end
+
+-- Fresh seed per break. The engine RNG is fixed-seed per process, so mix in
+-- the simulated clock to vary the first break between sessions.
+local function nextGlassSeed()
+  local t = 0
+  if NMath ~= nil and NMath.Time ~= nil then
+    local ok, v = pcall(NMath.Time)
+    if ok and type(v) == "number" then t = math.floor(v * 1000) end
+  end
+  return ((math.random(1, 1000000) + t * 7919) % 1000000) + 1
+end
+
+-- One-shot break: remove the intact pane, then spawn the seeded fracture set.
+function breakPoiWindows(nd, reason, seed)
   if nd == nil then return false end
   local g = poiGlass[nd.id]
   if g == nil or g.broken then return false end
   g.broken = true
+  seed = math.floor(tonumber(seed) or nextGlassSeed())
+  g.seed = seed
   local panes = g.panes
   g.panes = {}
   local made = 0
-  for _, pane in ipairs(panes) do
+  for pi, pane in ipairs(panes) do
     Despawn(pane.ent)
     -- Pane normal (local +Z rotated by yaw) and its in-plane tangent.
     local nx, nz = math.sin(pane.rot), math.cos(pane.rot)
     local tx, tz = math.cos(pane.rot), -math.sin(pane.rot)
-    for _, f in ipairs(GLASS_FRAGS) do
-      local ox, oy = f[1] * pane.sx, f[2] * pane.sy
+    local ps = seed + pi * 977
+    local mirror = (glassRand(ps, 1) < 0.5) and -1.0 or 1.0
+    local rot = math.floor(glassRand(ps, 2) * 4.0) * (math.pi * 0.5)
+    local cr, sr = math.cos(rot), math.sin(rot)
+    for fi, f in ipairs(GLASS_FRAGS) do
+      -- Mirror + rotate the crack cell, then jitter it slightly.
+      local u = (f[1] * cr - f[2] * sr) * mirror
+      local v = f[1] * sr + f[2] * cr
+      u = u + (glassRand(ps, 10 + fi) - 0.5) * 0.07
+      v = v + (glassRand(ps, 40 + fi) - 0.5) * 0.07
+      local variant = 1 + math.floor(glassRand(ps, 70 + fi) * 5.0)
+      local sizeK = 0.80 + glassRand(ps, 100 + fi) * 0.40
+      local yaw = pane.rot + f[6] + (glassRand(ps, 130 + fi) - 0.5) * 1.6
+      local ox, oy = u * pane.sx, v * pane.sy
       local sx = pane.x + tx * ox + nx * 0.05
       local sy = pane.y + oy
       local sz = pane.z + tz * ox + nz * 0.05
-      local e = SpawnPrefab("rv_glass_frag" .. f[5], { x = sx, y = sy, z = sz })
+      local e = SpawnPrefab("rv_glass_frag" .. variant, { x = sx, y = sy, z = sz })
       if e ~= nil then
-        SetScale(e, f[3] * pane.sx, 1.0, f[4] * pane.sy)
-        SetRotationY(e, pane.rot + f[6])
-        local outward = 0.8 + math.random() * 1.3
+        SetScale(e, f[3] * sizeK * pane.sx, 1.0, f[4] * sizeK * pane.sy)
+        SetRotationY(e, yaw)
+        local outward = 0.8 + glassRand(ps, 160 + fi) * 1.3
         poiShards[#poiShards + 1] = {
           ent = e, x = sx, y = sy, z = sz,
-          vx = nx * outward + tx * (f[1] * 3.0),
-          vy = 1.2 + math.random() * 1.8 + math.max(0, oy) * 2.0,
-          vz = nz * outward + tz * (f[1] * 3.0),
-          yaw = pane.rot + f[6],
-          spin = (math.random() - 0.5) * 2.4,
+          vx = nx * outward + tx * (u * 3.0),
+          vy = 1.2 + glassRand(ps, 190 + fi) * 1.8 + math.max(0, oy) * 2.0,
+          vz = nz * outward + tz * (u * 3.0),
+          yaw = yaw,
+          spin = (glassRand(ps, 220 + fi) - 0.5) * 2.4,
           settled = false,
         }
         made = made + 1
       end
     end
   end
-  print(string.format("[glass] broke windows at %s (%s, %d fracture shards)",
-        nd.id, reason or "enter", made))
+  print(string.format("[glass] broke windows at %s (%s, %d fracture shards, seed=%d)",
+        nd.id, reason or "enter", made, seed))
   return true
 end
 
@@ -378,23 +412,30 @@ function updatePoiWindows(dt)
   end
 end
 
--- Broken-window ids for the authoritative co-op state field ("-" = none).
+-- Broken-window "id:seed" pairs for the authoritative co-op state field
+-- ("-" = none). The seed lets every client rebuild the same crack layout.
 function poiGlassBrokenList()
   local ids = {}
   for _, nd in ipairs(NODES) do
     local g = poiGlass[nd.id]
-    if g ~= nil and g.broken then ids[#ids + 1] = nd.id end
+    if g ~= nil and g.broken then
+      ids[#ids + 1] = nd.id .. ":" .. tostring(g.seed or 0)
+    end
   end
   return table.concat(ids, ",")
 end
 
--- Apply a comma-separated broken list broadcast by the server.
+-- Apply a comma-separated "id:seed" list broadcast by the server.
 function applyPoiGlassState(csv)
   if csv == nil or csv == "" then return 0 end
   local n = 0
-  for id in string.gmatch(tostring(csv), "[^,]+") do
+  for item in string.gmatch(tostring(csv), "[^,]+") do
+    local id, seed = string.match(item, "^(.-):(%d+)$")
+    if id == nil then id, seed = item, "0" end
     local nd = nodeById(id)
-    if nd ~= nil and breakPoiWindows(nd, "server") then n = n + 1 end
+    if nd ~= nil and breakPoiWindows(nd, "server", tonumber(seed)) then
+      n = n + 1
+    end
   end
   return n
 end
