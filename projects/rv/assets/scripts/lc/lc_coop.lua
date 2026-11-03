@@ -560,6 +560,7 @@ local function pushState()
     fire = campfireOn and 1 or 0,
     fireFuel = math.floor(campfireFuelMin or 0),
     oil = math.floor(oilLife or 100),
+    coolant = math.floor(coolant or 100),
     warm = math.floor(warmthMin or 0),
     rest = math.floor(restedMin or 0),
     chains = (chainsOn ~= false) and 1 or 0,
@@ -1157,6 +1158,7 @@ local function serverUpdate(dt)
     local nd = nodeById("gasstop")
     if nd ~= nil then rv.x, rv.z = nd.x, nd.z end
     oilLife = 10
+    coolant = 40
     rv.tirePressureCold = { 1.8, 1.8, 1.8, 1.8 }
     materials.metal = (materials.metal or 0) + 10
     local oilOk, oilCost = false, 0
@@ -1167,10 +1169,15 @@ local function serverUpdate(dt)
     if serviceTiresAtGasstop ~= nil then
       airOk, airCost = serviceTiresAtGasstop()
     end
+    local coolOk, coolCost = false, 0
+    if serviceCoolantAtGasstop ~= nil then
+      coolOk, coolCost = serviceCoolantAtGasstop()
+    end
     print(string.format(
-      "[coop-service] demo oil=%s/%d air=%s/%d oilLife=%.0f pressure=%.1f metal=%d",
+      "[coop-service] demo oil=%s/%d air=%s/%d coolant=%s/%d oilLife=%.0f pressure=%.1f metal=%d",
       tostring(oilOk), oilCost or 0, tostring(airOk), airCost or 0,
-      oilLife or 0, (rv.tirePressureCold or {})[1] or 0, materials.metal or 0))
+      tostring(coolOk), coolCost or 0, oilLife or 0,
+      (rv.tirePressureCold or {})[1] or 0, materials.metal or 0))
     pushState()
   end
 
@@ -1670,6 +1677,14 @@ local function serverUpdate(dt)
             did = true
           end
         end
+        if serviceCoolantAtGasstop ~= nil then
+          local coolOk, coolCost = serviceCoolantAtGasstop()
+          if coolOk and (coolCost or 0) > 0 then
+            print(string.format("[coop-service] coolant cost=%d coolant=%.0f metal=%d",
+                                coolCost, coolant or 0, materials.metal or 0))
+            did = true
+          end
+        end
       end
       if did then
         coop.saveDirty = true
@@ -1917,6 +1932,9 @@ local function applyState(s)
   end
   if s.oil ~= nil and setOilLife ~= nil then
     setOilLife(s.oil)
+  end
+  if s.coolant ~= nil then
+    coolant = math.max(0, math.min(100, tonumber(s.coolant) or 100))
   end
   if s.warm ~= nil and setWarmth ~= nil then
     setWarmth(s.warm)
