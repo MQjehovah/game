@@ -1647,6 +1647,18 @@ function runSelfTest()
        string.format("blades=%d angle %.2f->%.2f", blades, a0, a1))
   end
 
+  -- 每日目标池：包含做饭/维修
+  do
+    local ids = {}
+    for _, g in ipairs(DAILY_GOALS) do
+      if g.id and g.name and g.target and g.reward then ids[g.id] = true end
+    end
+    ok(r, "daily goal pool", #DAILY_GOALS >= 6 and ids.jobs and ids.cook and
+       ids.repair and ids.fish and ids.explore and ids.distance,
+       string.format("goals=%d cook=%s repair=%s", #DAILY_GOALS,
+                     tostring(ids.cook), tostring(ids.repair)))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

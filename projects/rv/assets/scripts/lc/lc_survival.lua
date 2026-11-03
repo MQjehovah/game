@@ -467,6 +467,7 @@ function cookAtCampfire()
   if takeItem("rawfish", 1) then
     addItem("fish", 1)
     if PlaySfx then PlaySfx("cook") end
+    if addDailyProgress ~= nil then addDailyProgress("cook", 1) end
     toast.text = "篝火烤好一条鱼（烤鱼 +1）"
     toast.t = 2.4
     return true
@@ -628,6 +629,7 @@ function repairPart(id)
       payCost(cost)
       upgrades[id] = lv + 1
       if id == "tires" and resetTirePressure ~= nil then resetTirePressure() end
+      if addDailyProgress ~= nil then addDailyProgress("repair", 1) end
       if PlaySfx then PlaySfx("repair") end
       toast.text = string.format("%s 升级到 Lv%d", id == "engine" and "引擎" or "轮胎",
                                  upgrades[id]) ..
@@ -662,6 +664,7 @@ function repairPart(id)
     toast.text = "修好 " .. partName .. " — " .. string.format("%.0f%%", partValue(id)) ..
                  (id == "tires" and "（胎压 2.4bar）" or "")
   end
+  if addDailyProgress ~= nil then addDailyProgress("repair", 1) end
   toast.t = 2.4
   return true
 end
@@ -680,6 +683,7 @@ function cookRecipe(id)
   useWater(r.water or 0)
   addItem(r.out, 1)
   if PlaySfx then PlaySfx("cook") end
+  if addDailyProgress ~= nil then addDailyProgress("cook", 1) end
   toast.text = "做好 " .. r.name .. "（背包 +1）"
   toast.t = 2.4
   return true

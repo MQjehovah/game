@@ -143,6 +143,8 @@ DAILY_GOALS = {
   { id = "fish",     name = "钓 3 条鱼",           target = 3,   reward = { cloth = 2, fuel = 6 } },
   { id = "explore",  name = "首次抵达 1 个新地点", target = 1,   reward = { electronics = 1, fuel = 10 } },
   { id = "distance", name = "行驶 500m",           target = 500, reward = { metal = 1, fuel = 8 } },
+  { id = "cook",     name = "做 2 份热饭/鱼汤",    target = 2,   reward = { wood = 2, fuel = 6 } },
+  { id = "repair",   name = "维修或升级 1 次",     target = 1,   reward = { metal = 2, cloth = 1 } },
 }
 
 -- 顺路货运合同：营地板子接单 -> 开到目标 POI -> 结算材料/燃料。
