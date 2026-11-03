@@ -2960,6 +2960,18 @@ function runSelfTest()
                      smoke, slow))
   end
 
+  -- 积水飞溅：雨天、车速够快、压过积水才触发
+  do
+    local hit = puddleSplashActive("rain", 6.0, 2.0)
+    local slow = puddleSplashActive("rain", 1.0, 2.0)
+    local dry = puddleSplashActive("clear", 6.0, 2.0)
+    local far = puddleSplashActive("rain", 6.0, 10.0)
+    ok(r, "puddle splash",
+       hit == true and slow == false and dry == false and far == false,
+       string.format("hit=%s slow=%s dry=%s far=%s", tostring(hit),
+                     tostring(slow), tostring(dry), tostring(far)))
+  end
+
   -- 雪天雪雾：行驶时触发，慢速/晴天不触发
   do
     local fast = snowSprayKind("snow", 6.0)

@@ -1574,6 +1574,7 @@ function on_update(ent, dt)
     if updateGearShiftFx ~= nil then updateGearShiftFx() end
     if updateReverseBeep ~= nil then updateReverseBeep(dt) end
     if updateWheelDust ~= nil then updateWheelDust(dt) end
+    if updatePuddleSplash ~= nil then updatePuddleSplash(dt) end
     updateCamera(dt)
     return
   end

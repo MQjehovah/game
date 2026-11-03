@@ -195,6 +195,43 @@ function wheelDustRate(surface, speed, handbrake)
   return 0, surface
 end
 
+-- 雨后积水飞溅：雨天、车速够快且压过积水时触发
+function puddleSplashActive(weatherValue, speed, dist)
+  if weatherValue ~= "rain" then return false end
+  if math.abs(speed or 0) < 3.0 then return false end
+  return (dist or 1e9) < 3.2
+end
+
+function updatePuddleSplash(dt)
+  if phase ~= "driving" then rv.splashAcc = 0 return end
+  local near = false
+  for _, p in ipairs(puddles or {}) do
+    local dx, dz = p.x - rv.x, p.z - rv.z
+    if dx * dx + dz * dz < 3.2 * 3.2 then near = true break end
+  end
+  if not near or not puddleSplashActive(weather, rv.speed, 0) then
+    rv.splashAcc = 0
+    return
+  end
+  local k = math.min(1, math.abs(rv.speed or 0) / 9)
+  rv.splashAcc = (rv.splashAcc or 0) + (dt or 0) * (10 + 14 * k)
+  while rv.splashAcc >= 1 do
+    rv.splashAcc = rv.splashAcc - 1
+    local side = (math.random() < 0.5) and -1.26 or 1.26
+    local wx, wz = rotOf(side, -2.92)
+    EmitParticles({
+      pos = { x = wx, y = (rv.groundY or 0) + 0.18, z = wz },
+      count = 2, speedMin = 0.5, speedMax = 1.6,
+      vel = { x = 0, y = 1.1, z = 0 },
+      lifeMin = 0.35, lifeMax = 0.75,
+      sizeStart = 0.16, sizeEnd = 0.65,
+      color = { r = 0.72, g = 0.82, b = 0.92, a = 0.55 },
+      colorEnd = { r = 0.72, g = 0.82, b = 0.92, a = 0.0 },
+      additive = false, gravity = -0.9,
+    })
+  end
+end
+
 -- 雪天行驶时车轮卷起雪雾（覆盖原本的路面尘土）
 function snowSprayKind(weatherValue, speed)
   if weatherValue == "snow" and math.abs(speed or 0) > 2.5 then
