@@ -714,6 +714,16 @@ function drawDriveHud()
   drawBanner(top, 14, 16)
 
   if toast.t > 0 then drawBanner(toast.text, 120, 16) end
+
+  -- 低油量：提示最近加油站的距离（金属加油）
+  if (fuel or 0) / fuelMax() < 0.2 and nearestFuelStop ~= nil then
+    local st = nearestFuelStop(rv.x, rv.z)
+    if st ~= nil then
+      drawTextCentered(string.format("油量低 — 最近加油站：%s %.0fm（金属加油）",
+                                     st.name, st.dist),
+                       vw * 0.5, 52, 13, 1.0, 0.72, 0.38, 0.95)
+    end
+  end
 end
 
 -- 停靠搜刮叠加：物资箱标记 / 搜获袋 / 感染者

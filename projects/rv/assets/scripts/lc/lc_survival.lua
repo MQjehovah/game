@@ -353,6 +353,14 @@ function refuelAtNode(id)
   return true, cost, string.format("加油 %dL 花费 %d 金属", math.floor(need + 0.5), cost)
 end
 
+-- 最近的加油点（用于低油量提示）
+function nearestFuelStop(x, z)
+  local nd = (nodeById ~= nil) and nodeById("gasstop") or nil
+  if nd == nil then return nil end
+  local dx, dz = nd.x - (x or rv.x), nd.z - (z or rv.z)
+  return { id = nd.id, name = nd.name, dist = math.sqrt(dx * dx + dz * dz) }
+end
+
 -- 直接吃/喝背包里的东西
 function useItem(id)
   local it = ITEMS[id]

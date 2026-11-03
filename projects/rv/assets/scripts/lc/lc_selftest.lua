@@ -1974,6 +1974,21 @@ function runSelfTest()
                      tostring(poorKept), tostring(richFull), cost or 0))
   end
 
+  -- 低油量导航：最近加油站的距离
+  do
+    local sx, sz = rv.x, rv.z
+    rv.x, rv.z = 0, 60
+    local near = nearestFuelStop(rv.x, rv.z)
+    rv.x, rv.z = 0, 0
+    local far = nearestFuelStop(rv.x, rv.z)
+    rv.x, rv.z = sx, sz
+    ok(r, "fuel stop hint",
+       near ~= nil and near.id == "gasstop" and near.dist < 1 and
+       far ~= nil and far.dist > near.dist,
+       string.format("id=%s near=%.1f far=%.1f", tostring(near and near.id),
+                     near and near.dist or -1, far and far.dist or -1))
+  end
+
   -- 营地板以物易物：布料→金属、电子件→燃油罐、金属→燃料
   do
     local sMetal = materials.metal or 0
