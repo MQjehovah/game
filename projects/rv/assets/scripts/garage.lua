@@ -169,6 +169,7 @@ function saveLayout()
       rawAge = rawFoodAge or 0,
       milestones = milestones,
       radioMastFixed = radioMastFixed and true or false,
+      journal = journal,
       daily = dailyGoal and {
         id = dailyGoal.id, name = dailyGoal.name, target = dailyGoal.target,
         progress = dailyGoal.progress, done = dailyGoal.done,
@@ -364,6 +365,18 @@ function loadLayout()
       end
     end
     radioMastFixed = data.progress.radioMastFixed == true
+    if type(data.progress.journal) == "table" then
+      journal = {}
+      for _, e in ipairs(data.progress.journal) do
+        if type(e) == "table" and type(e.text) == "string" then
+          journal[#journal + 1] = {
+            text = e.text, kind = tostring(e.kind or "note"),
+            day = tonumber(e.day) or 1, clock = tonumber(e.clock) or 0,
+          }
+        end
+      end
+      while #journal > 30 do table.remove(journal, 1) end
+    end
     if type(data.progress.daily) == "table" then
       local d = data.progress.daily
       dailyGoal = {
@@ -1002,6 +1015,16 @@ function on_start()
   elseif startMode == "jobview" then
     jobRefreshOffers()
     jobUI = true
+  elseif startMode == "journal" then
+    journal = {}
+    day = 4
+    clock = 9 * 60 + 20
+    addJournal("完成货运：医疗箱 → 废弃加油站（货况 92%）", "job")
+    addJournal("首次抵达：湖边木屋", "explore")
+    addJournal("钓鱼新纪录：鲤鱼 46cm", "fish")
+    addJournal("里程碑：货运 10 · 电子件+2 燃料+20L", "goal")
+    addJournal("合同超时：粮袋", "fail")
+    journalOpen = true
   elseif startMode == "jobdrive" then
     jobRefreshOffers()
     jobAccept(1)
@@ -1344,6 +1367,8 @@ function on_update(ent, dt)
   ensureHelpers()
   if ActionPressed("m") then mapOpen = not mapOpen end
   if ActionPressed("i") then invOpen = not invOpen end
+  if ActionPressed("j") then journalOpen = not journalOpen end
+  if journalOpen and ActionPressed("e") then journalOpen = false end
   if ActionPressed("l") and setInteriorLights ~= nil then
     setInteriorLights(not interiorLightsOn)
     toast.text = interiorLightsOn and "车内灯已打开" or "车内灯已关闭"
@@ -1571,4 +1596,5 @@ function on_render()
   if jobResult then drawJobResult() end
   if morningReport then drawMorningReport() end
   if mapOpen then drawMapHud() end
+  if journalOpen then drawJournal() end
 end

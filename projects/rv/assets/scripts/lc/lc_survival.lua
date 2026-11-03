@@ -161,6 +161,16 @@ function addDailyProgress(kind, amount)
   end
 end
 
+-- 旅行日志：把跑单/里程碑/纪录等事件记下来，供 J 面板回看
+function addJournal(text, kind)
+  if text == nil or text == "" then return end
+  journal[#journal + 1] = {
+    text = text, kind = kind or "note",
+    day = day or 1, clock = clock or 0,
+  }
+  while #journal > 30 do table.remove(journal, 1) end
+end
+
 -- 长期里程碑：探索地点数 / 完成货运单数达到阈值时一次性发奖
 function checkMilestones(kind, value)
   local list = MILESTONES and MILESTONES[kind]
@@ -187,6 +197,10 @@ function checkMilestones(kind, value)
       toast.text = string.format("里程碑：%s %s · %s", label, shown,
                                  table.concat(got, " "))
       toast.t = 5.0
+      if addJournal ~= nil then
+        addJournal(string.format("里程碑：%s %s · %s", label, shown,
+                                 table.concat(got, " ")), "goal")
+      end
       if PlaySfx then PlaySfx("pickup") end
     end
   end
@@ -657,6 +671,9 @@ function recordFish(name, size, n)
   end
   fishCaught = (fishCaught or 0) + n
   if addDailyProgress ~= nil then addDailyProgress("fish", n) end
+  if overall and addJournal ~= nil then
+    addJournal(string.format("钓鱼新纪录：%s %.0fcm", name, size), "fish")
+  end
   return speciesRecord, overall
 end
 

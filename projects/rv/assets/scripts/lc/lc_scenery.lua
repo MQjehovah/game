@@ -1124,6 +1124,7 @@ function repairRadioMast()
     radioMast.lit = true
   end
   if PlaySfx then PlaySfx("repair") end
+  if addJournal ~= nil then addJournal("修好了仓库无线电塔", "goal") end
   toast.text = "无线电塔修好了——顶端红灯常亮，仓库成为荒野里的信标"
   toast.t = 5.0
   return true

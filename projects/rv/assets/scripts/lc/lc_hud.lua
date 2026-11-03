@@ -1019,6 +1019,47 @@ function drawNightOverlay()
   end
 end
 
+-- 旅行日志面板（J）：最近 12 条事件，带天数/时间
+function drawJournal()
+  if not journalOpen then return end
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local pw, ph = 640, 420
+  local px = math.floor((vw - pw) * 0.5)
+  local py = math.floor((vh - ph) * 0.5)
+  DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.94)
+  DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.95)
+  drawTextCentered("旅行日志", vw * 0.5, py + 12, 20, 0.98, 0.90, 0.68, 1)
+  DrawText("J / E 关闭", px + pw - 108, py + 16, 12, 0.68, 0.70, 0.64, 1)
+  local n = #journal
+  local show = math.min(12, n)
+  local yy = py + 48
+  if n == 0 then
+    DrawText("还没有记录——去跑一单、钓条鱼或探索新地点",
+             px + 24, yy, 13, 0.72, 0.74, 0.68, 1)
+  else
+    for i = n - show + 1, n do
+      local e = journal[i]
+      local hh = math.floor((e.clock or 0) / 60)
+      local mm = math.floor((e.clock or 0) % 60)
+      local col = { 0.80, 0.82, 0.76 }
+      if e.kind == "job" then col = { 0.86, 0.80, 0.58 }
+      elseif e.kind == "fail" then col = { 0.92, 0.56, 0.44 }
+      elseif e.kind == "goal" then col = { 0.62, 0.86, 0.62 }
+      elseif e.kind == "fish" then col = { 0.58, 0.80, 0.92 }
+      elseif e.kind == "explore" then col = { 0.86, 0.72, 0.52 }
+      end
+      DrawText(string.format("第%d天 %02d:%02d", e.day or 1, hh, mm),
+               px + 22, yy, 12, 0.60, 0.62, 0.56, 1)
+      DrawText(e.text or "", px + 132, yy, 13, col[1], col[2], col[3], 1)
+      yy = yy + 28
+    end
+  end
+  DrawText(string.format("共 %d 条记录（最多保留 30 条）", n),
+           px + 22, py + ph - 26, 12, 0.64, 0.66, 0.60, 1)
+end
+
 function drawMapHud()
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280

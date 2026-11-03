@@ -346,6 +346,7 @@ function jobAbandon()
   job = nil
   jobOffers = {}
   jobStreak = 0  -- 主动放弃也算断掉连续送达
+  if addJournal ~= nil then addJournal("放弃货运合同，已卸货", "fail") end
   recomputeStats()
   toast.text = "已卸货，合同作废"
   toast.t = 2.6
@@ -402,6 +403,10 @@ function jobComplete()
   }
   SpawnFloatText(rv.x, 1.8, rv.z,
                  "送达 " .. name .. " x" .. crates, false, 1.6, 1.0, 0.86, 0.4)
+  if addJournal ~= nil then
+    addJournal(string.format("完成货运：%s → %s（货况 %.0f%%）", name,
+                             destName, cond * 100), "job")
+  end
   toast.text = string.format("货运完成（货况 %.0f%%）：%s%s", cond * 100,
                              table.concat(got, " "),
                              fuelGot > 0 and ("  燃料+" .. math.floor(fuelGot + 0.5) .. "L") or "")
@@ -467,6 +472,9 @@ function jobExpire()
   jobStreak = 0  -- 超时断掉连续送达
   recomputeStats()
   jobResult = { ok = false, cargo = name, t = 3.6 }
+  if addJournal ~= nil then
+    addJournal("合同超时：" .. (name or "货物"), "fail")
+  end
   toast.text = "合同超时：" .. (name or "货物") .. " 已退回，没有报酬"
   toast.t = 4.0
 end

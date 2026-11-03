@@ -2383,6 +2383,25 @@ function runSelfTest()
                      rc, rs, nc, ns, dc, ds))
   end
 
+  -- 旅行日志：记录、封顶与内容
+  do
+    local keep = journal
+    local sd, sc = day, clock
+    journal = {}
+    day, clock = 3, 9 * 60 + 15
+    addJournal("测试事件 A", "job")
+    addJournal("测试事件 B", "fish")
+    local two = #journal == 2 and journal[1].text == "测试事件 A" and
+                journal[2].kind == "fish" and journal[2].day == 3
+    for i = 1, 40 do addJournal("填充 " .. i, "note") end
+    local capped = #journal == 30 and journal[30].text == "填充 40"
+    journal = keep
+    day, clock = sd, sc
+    ok(r, "journey log", two and capped,
+       string.format("two=%s capped=%s n=%d", tostring(two), tostring(capped),
+                     #journal))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock
