@@ -1599,8 +1599,14 @@ function runSelfTest()
     local before = bestFish or 0
     if size > before then bestFish = size end
     local recordOk = (bestFish or 0) >= size
-    ok(r, "fishing species", valid and recordOk,
-       string.format("%s %.0fcm best=%.0f", tostring(name), size, bestFish or 0))
+    local poolOk = #FISH_SPECIES >= 6
+    for _, s in ipairs(FISH_SPECIES) do
+      if s.name == nil or s.w == nil or s.min == nil or s.max == nil or
+         s.min >= s.max then poolOk = false end
+    end
+    ok(r, "fishing species", valid and recordOk and poolOk,
+       string.format("%s %.0fcm best=%.0f species=%d", tostring(name), size,
+                     bestFish or 0, #FISH_SPECIES))
   end
 
   -- 咬钩窗口：倒计时结束后进入 1.2s 收线窗口

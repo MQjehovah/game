@@ -85,10 +85,12 @@ ITEM_ORDER = { "water", "canned", "rawfood", "meal", "fishsoup", "feast", "coffe
 
 -- 钓鱼鱼种（权重 / 尺寸 cm）：越稀有越大，用来做纪录与风味
 FISH_SPECIES = {
-  { name = "鲫鱼", w = 50, min = 12, max = 28 },
-  { name = "鲤鱼", w = 30, min = 25, max = 55 },
-  { name = "鲶鱼", w = 15, min = 35, max = 75 },
-  { name = "白鲢", w = 5,  min = 40, max = 80 },
+  { name = "鲫鱼", w = 44, min = 12, max = 28 },
+  { name = "鲤鱼", w = 26, min = 25, max = 55 },
+  { name = "鲶鱼", w = 14, min = 35, max = 75 },
+  { name = "白鲢", w = 6,  min = 40, max = 80 },
+  { name = "鳊鱼", w = 16, min = 18, max = 42 },
+  { name = "黑鱼", w = 5,  min = 38, max = 88 },
 }
 
 -- 工作台可维修的车体/零件
