@@ -1517,6 +1517,19 @@ function runSelfTest()
                      tostring(noGen), tostring(stored)))
   end
 
+  -- 鸟群：白天活跃、夜间隐藏
+  do
+    local sc = clock
+    clock = 12 * 60
+    local day = birdsActive()
+    clock = 22 * 60
+    local night = birdsActive()
+    clock = sc
+    ok(r, "birds day cycle", #birds >= 5 and day == true and night == false,
+       string.format("birds=%d day=%s night=%s", #birds,
+                     tostring(day), tostring(night)))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

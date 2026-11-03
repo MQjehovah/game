@@ -433,6 +433,7 @@ function on_start()
   if updateTerrainLod ~= nil then updateTerrainLod(0, true) end
   spawnMarkers()
   if spawnCampProps ~= nil then spawnCampProps() end
+  if spawnBirds ~= nil then spawnBirds() end
   if spawnJobBoard ~= nil then spawnJobBoard() end
   do  -- 验证钩子
     local flag = ReadText("autopilot_on.txt")
@@ -1173,6 +1174,7 @@ function on_update(ent, dt)
   if updateVehicleLights ~= nil then updateVehicleLights() end
   if updateTaillights ~= nil then updateTaillights() end
   if updateCampfireLight ~= nil then updateCampfireLight(dt) end
+  if updateBirds ~= nil then updateBirds(dt) end
   if updatePoiSigns ~= nil then updatePoiSigns() end
   if updateRvSmoke ~= nil then updateRvSmoke(dt) end
   if rv.shakeT ~= nil and rv.shakeT > 0 then

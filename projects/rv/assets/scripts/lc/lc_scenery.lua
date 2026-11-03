@@ -1278,6 +1278,50 @@ function updatePoiSigns()
   for _, e in ipairs(poiSigns) do SetVisible(e, lit) end
 end
 
+-- 白天鸟群：低多边形剪影绕当前区域飞行，夜间隐藏
+function birdsActive()
+  return not (isNight ~= nil and isNight())
+end
+
+function spawnBirds()
+  birds = {}
+  for i = 1, 7 do
+    local e = SpawnPrefab("rv_bird", { x = 0, y = -60, z = 0 })
+    if e ~= nil then
+      SetScale(e, 0.18, 0.05, 0.32)
+      birds[#birds + 1] = {
+        ent = e,
+        angle = math.random() * math.pi * 2,
+        radius = 7 + math.random() * 11,
+        height = 5.5 + math.random() * 5.5,
+        speed = 0.18 + math.random() * 0.22,
+        phase = math.random() * math.pi * 2,
+        flap = 7 + math.random() * 4,
+      }
+    end
+  end
+end
+
+function updateBirds(dt)
+  if #birds == 0 then return end
+  local active = birdsActive()
+  birdsT = (birdsT or 0) + dt
+  for _, b in ipairs(birds) do
+    SetVisible(b.ent, active)
+    if active then
+      b.angle = b.angle + b.speed * dt
+      local x = rv.x + math.cos(b.angle) * b.radius
+      local z = rv.z + math.sin(b.angle) * b.radius
+      local y = (rv.groundY or 0) + b.height +
+                math.sin(b.angle * 3 + b.phase) * 0.5
+      SetPosition(b.ent, { x = x, y = y, z = z })
+      SetRotationY(b.ent, -b.angle + math.pi * 0.5)
+      local flap = 0.35 + 0.65 * math.abs(math.sin(birdsT * b.flap + b.phase))
+      SetScale(b.ent, 0.18, 0.02 + 0.05 * flap, 0.32)
+    end
+  end
+end
+
 -- 营火暖光的轻微跳动：没有灯光强度 API，用位置抖动 + 高度起伏模拟火光
 function updateCampfireLight(dt)
   if campfireLight == nil or campfire == nil then return end
