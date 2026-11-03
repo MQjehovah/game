@@ -593,27 +593,17 @@ function updateJobs(dt)
         toast.t = 3.4
       end
     end
-    -- 急转弯甩货：用横向加速度判断，猛打方向会损伤货况
+    -- 急转弯甩货：用横向加速度（updateDrive 已算好 rv.latG）判断
     if phase == "driving" and (dt or 0) > 0 then
-      local prevYaw = rv.jobYawPrev
-      rv.jobYawPrev = rv.yaw
-      if prevYaw ~= nil then
-        local dyaw = rv.yaw - prevYaw
-        while dyaw > math.pi do dyaw = dyaw - 2 * math.pi end
-        while dyaw < -math.pi do dyaw = dyaw + 2 * math.pi end
-        local latG = math.abs(dyaw / dt) * math.abs(rv.speed or 0) / 9.81
-        local loss = cornerCargoLoss(latG, job.fragile, dt)
-        if loss > 0 then
-          job.condition = math.max(0, (job.condition or 1) - loss)
-          if not job.tossWarned and job.condition < 0.85 then
-            job.tossWarned = true
-            toast.text = "急转弯甩动了货物——稳住方向，货况在下降"
-            toast.t = 3.4
-          end
+      local loss = cornerCargoLoss(rv.latG, job.fragile, dt)
+      if loss > 0 then
+        job.condition = math.max(0, (job.condition or 1) - loss)
+        if not job.tossWarned and job.condition < 0.85 then
+          job.tossWarned = true
+          toast.text = "急转弯甩动了货物——稳住方向，货况在下降"
+          toast.t = 3.4
         end
       end
-    else
-      rv.jobYawPrev = rv.yaw
     end
     jobPlaceCargo()
     -- 停在目的地（setPhase 已把 atNode 设成节点 id）即结算/推进下一站

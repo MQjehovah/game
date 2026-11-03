@@ -1732,6 +1732,17 @@ function runSelfTest()
                      tostring(counted), tostring(again)))
   end
 
+  -- 轮胎尖叫：横向 G 高且车速够快才触发
+  do
+    local calm = tireSquealActive(0.4, 8.0)
+    local fast = tireSquealActive(0.8, 8.0)
+    local slow = tireSquealActive(0.8, 2.0)
+    ok(r, "tire squeal",
+       calm == false and fast == true and slow == false,
+       string.format("calm=%s fast=%s slow=%s", tostring(calm),
+                     tostring(fast), tostring(slow)))
+  end
+
   -- 定速巡航油门：低于目标给油，接近/超过目标松油
   do
     local below = cruiseThrottle(3.0, 6.0)

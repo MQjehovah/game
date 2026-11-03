@@ -430,6 +430,11 @@ function tirePressureLow(p)
   return (p or 2.4) < 1.95
 end
 
+-- 轮胎尖叫：横向 G 足够高且车速不低时触发
+function tireSquealActive(latG, speed)
+  return (latG or 0) > 0.55 and math.abs(speed or 0) > 4.0
+end
+
 -- 定速巡航油门：低于目标给油，接近/超过目标松油
 function cruiseThrottle(speed, target)
   if target == nil or target <= 0 then return 0 end
@@ -725,6 +730,22 @@ function updateDrive(dt)
   end
   recycleScenery(fx, fz)
   updateDriveWorld(dt)
+
+  -- 横向 G / 轮胎尖叫：用每帧航向变化估算，供甩货与音效共用
+  local prevSquealYaw = rv.squealYaw
+  rv.squealYaw = rv.yaw
+  if prevSquealYaw ~= nil and (dt or 0) > 0 then
+    local dyaw = rv.yaw - prevSquealYaw
+    while dyaw > math.pi do dyaw = dyaw - 2 * math.pi end
+    while dyaw < -math.pi do dyaw = dyaw + 2 * math.pi end
+    rv.latG = math.abs(dyaw / dt) * math.abs(rv.speed or 0) / 9.81
+    rv.squealCd = math.max(0, (rv.squealCd or 0) - dt)
+    if rv.squealCd <= 0 and tireSquealActive(rv.latG, rv.speed) then
+      rv.squealCd = 0.7
+      rv.squealPlays = (rv.squealPlays or 0) + 1
+      if PlaySfx then PlaySfx("squeal") end
+    end
+  end
 
   -- 引擎音量随车速：每 0.2s 更新一次总线增益，避免每帧设置
   rv.audioT = (rv.audioT or 0) + dt
