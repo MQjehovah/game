@@ -115,10 +115,10 @@ end
 local WHEEL_TRACK = 2.52
 local WHEELBASE = 5.84
 local WHEELS = {
-  { lx = -1.26, lz =  2.92 },  -- front left
-  { lx =  1.26, lz =  2.92 },  -- front right
-  { lx = -1.26, lz = -2.92 },  -- rear left
-  { lx =  1.26, lz = -2.92 },  -- rear right
+  { lx = -1.26, lz =  2.92, front = true },   -- front left
+  { lx =  1.26, lz =  2.92, front = true },   -- front right
+  { lx = -1.26, lz = -2.92, front = false },  -- rear left
+  { lx =  1.26, lz = -2.92, front = false },  -- rear right
 }
 
 -- Shared wheel visuals: steering from yaw rate (works for manual driving,
@@ -127,9 +127,16 @@ function updateWheelMotion(dt)
   local prevYaw = rv.prevYaw or rv.yaw
   local dyaw = rv.yaw - prevYaw
   rv.prevYaw = rv.yaw
-  local rate = dyaw / math.max(dt or 0.016, 0.016)
-  local targetSteer = math.max(-0.55, math.min(0.55, rate * 0.35))
-  local ks = math.min(1, (dt or 0.016) * 6)
+  local targetSteer
+  if rv.steerCmd ~= nil then
+    -- Physical path: the visual/contact steering follows the driver input.
+    targetSteer = rv.steerCmd
+  else
+    -- Fallback/co-op: derive the visual steering from the scripted yaw rate.
+    local rate = dyaw / math.max(dt or 0.016, 0.016)
+    targetSteer = math.max(-0.55, math.min(0.55, rate * 0.35))
+  end
+  local ks = math.min(1, (dt or 0.016) * 8)
   rv.steerVis = (rv.steerVis or 0) + (targetSteer - (rv.steerVis or 0)) * ks
   rv.wheelSpin = (rv.wheelSpin or 0) -
                  (rv.speed or 0) * (dt or 0.016) / 0.40
@@ -232,6 +239,18 @@ function rvPitchRollFromQuat(q, yaw)
   return 2 * math.atan(x, w), 2 * math.atan(z, w)
 end
 
+-- Full Euler extraction for R = Ry(yaw) * Rx(pitch) * Rz(roll). Used when the
+-- heading itself is physical (tire forces) instead of scripted.
+function rvYawPitchRollFromQuat(q)
+  local w, x, y, z = q.w, q.x, q.y, q.z
+  local yaw = math.atan(2 * (x * z + w * y), 1 - 2 * (x * x + y * y))
+  local sp = 2 * (w * x - y * z)
+  sp = math.max(-1, math.min(1, sp))
+  local pitch = math.asin(sp)
+  local roll = math.atan(2 * (x * y + w * z), 1 - 2 * (x * x + z * z))
+  return yaw, pitch, roll
+end
+
 -- Physical suspension: the Jolt body is held up by four spring/damper impulses
 -- applied at the wheel contacts. Ride height, pitch and roll therefore come out
 -- of the solver; horizontal motion comes from a friction-capped traction
@@ -261,9 +280,10 @@ function updateRvPhysics(dt)
   local q = PhysicsGetRotation(rvBody)
   if p == nil or q == nil then return false end
 
-  local pitch, roll = rvPitchRollFromQuat(q, rv.yaw)
+  local yaw, pitch, roll = rvYawPitchRollFromQuat(q)
   rv.x, rv.z = p.x, p.z
   rv.groundY = p.y - 0.9
+  rv.yaw = yaw
   rv.pitch = math.max(-0.5, math.min(0.5, pitch))
   rv.roll = math.max(-0.5, math.min(0.5, roll))
 
@@ -284,13 +304,13 @@ function updateRvPhysics(dt)
   local vx = vel and vel.x or 0
   local vz = vel and vel.z or 0
 
-  -- Heading is scripted, so cancel the yaw component of the angular velocity
-  -- that the tire friction torques would otherwise integrate into drift.
+  -- The heading is now driven by the front-wheel steering and tire forces.
+  -- A little angular damping keeps it from oscillating at the friction limit.
   if PhysicsGetAngularVelocity ~= nil and PhysicsAddAngularImpulse ~= nil then
     local w = PhysicsGetAngularVelocity(rvBody)
     if w ~= nil and math.abs(w.y) > 1e-5 then
       local inertia = rv.yawInertia or (mass * (2.4 * 2.4 + 8.6 * 8.6) / 12)
-      PhysicsAddAngularImpulse(rvBody, { x = 0, y = -w.y * inertia, z = 0 })
+      PhysicsAddAngularImpulse(rvBody, { x = 0, y = -w.y * inertia * 0.05, z = 0 })
     end
   end
 

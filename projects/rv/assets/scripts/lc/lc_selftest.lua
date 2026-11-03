@@ -315,6 +315,20 @@ function runSelfTest()
       rv.pitch, rv.roll, rv.yaw = kp, kr, ky
       PhysicsSetRotation(rvBody, rvQuat())
     end
+    if rvBody ~= nil and PhysicsGetRotation ~= nil and rvQuat ~= nil
+       and rvYawPitchRollFromQuat ~= nil then
+      local kp, kr, ky = rv.pitch, rv.roll, rv.yaw
+      rv.pitch, rv.roll, rv.yaw = 0.15, -0.22, 0.8
+      PhysicsSetRotation(rvBody, rvQuat())
+      local q2 = PhysicsGetRotation(rvBody)
+      local y2, p2, r2 = rvYawPitchRollFromQuat(q2)
+      ok(r, "rv yaw attitude roundtrip",
+         math.abs(y2 - 0.8) < 0.02 and math.abs(p2 - 0.15) < 0.02 and
+         math.abs(r2 + 0.22) < 0.02,
+         string.format("yaw=%.2f pitch=%.2f roll=%.2f", y2, p2, r2))
+      rv.pitch, rv.roll, rv.yaw = kp, kr, ky
+      PhysicsSetRotation(rvBody, rvQuat())
+    end
   end
 
   -- 地点物资箱刷在建筑内部，玩家需要从正门进入

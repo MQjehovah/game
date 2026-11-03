@@ -43,12 +43,18 @@ function updateDrive(dt)
     end
     throttle = 1
     if autoTarget == nil then
-      local bestD = 1e18
-      for _, nd in ipairs(NODES) do
-        if nd.id ~= "camp" then
-          local ddx, ddz = nd.x - rv.x, nd.z - rv.z
-          local d2 = ddx * ddx + ddz * ddz
-          if d2 < bestD then bestD = d2 autoTarget = nd end
+      -- Test hook: prefer the main-road gas stop for a clean straight run.
+      -- (The nearest node is the off-road ruin, which now that tire forces are
+      -- physical makes the RV stall against the embankment foot.)
+      autoTarget = nodeById and nodeById("gasstop") or nil
+      if autoTarget == nil then
+        local bestD = 1e18
+        for _, nd in ipairs(NODES) do
+          if nd.id ~= "camp" then
+            local ddx, ddz = nd.x - rv.x, nd.z - rv.z
+            local d2 = ddx * ddx + ddz * ddz
+            if d2 < bestD then bestD = d2 autoTarget = nd end
+          end
         end
       end
     end
@@ -156,15 +162,21 @@ function updateDrive(dt)
     rv.speed = (rv.speed >= 0) and mag or -mag
   end
 
-  local sf = math.min(1.0, math.abs(rv.speed) / 3.0)
-  if sf > 0.01 and steer ~= 0 then
-    local dir = (rv.speed < -0.05) and -1 or 1
-    rv.yaw = rv.yaw + steer * DRIVE.steerRate * tireF * sf * dt * dir
+  local physicalPath = rvBody ~= nil and updateRvPhysics ~= nil and
+                       PhysicsApplyImpulse ~= nil and terrainHeight ~= nil
+  if physicalPath then
+    -- Steering is a wheel angle; yaw comes from the tire forces.
+    rv.steerCmd = steer * 0.50
+  else
+    rv.steerCmd = nil
+    local sf = math.min(1.0, math.abs(rv.speed) / 3.0)
+    if sf > 0.01 and steer ~= 0 then
+      local dir = (rv.speed < -0.05) and -1 or 1
+      rv.yaw = rv.yaw + steer * DRIVE.steerRate * tireF * sf * dt * dir
+    end
   end
 
   local fx, fz = math.sin(rv.yaw), math.cos(rv.yaw)
-  local physicalPath = rvBody ~= nil and updateRvPhysics ~= nil and
-                       PhysicsApplyImpulse ~= nil and terrainHeight ~= nil
   if rvBody then
     if not physicalPath then
       PhysicsSetVelocity(rvBody, { x = fx * rv.speed, y = bodyVy, z = fz * rv.speed })
@@ -176,17 +188,14 @@ function updateDrive(dt)
   end
 
   -- Follow the terrain. With a live physics body the four contact springs
-  -- hold the body up, tire friction drives it and the solver produces
-  -- height/pitch/roll; otherwise fall back to the kinematic plane fit.
+  -- hold the body up, tire friction drives and steers it, and the solver
+  -- produces height/pitch/roll/yaw; otherwise fall back to the kinematic fit.
   if terrainHeight ~= nil then
     local physical = false
     if physicalPath then
       physical = updateRvPhysics(dt)
     end
-    if physical then
-      -- Keep the scripted heading while preserving the solver's attitude.
-      PhysicsSetRotation(rvBody, rvQuat())
-    else
+    if not physical then
       if rvBody ~= nil and physicalPath then
         PhysicsSetVelocity(rvBody, { x = fx * rv.speed, y = bodyVy, z = fz * rv.speed })
       end

@@ -809,21 +809,22 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   （`rv.groundY`、`applyRvTransform`、追逐/驾驶席/俯视相机）、植被摆放
   （草/花/灌木/树/岩石按地形抬高）、公路（5m 分段按坡度抬升、10° 限幅）
   以及合作模式（服务器采样、`game_state` 的 `gy`/`rv.gy`、代理与客户端预测）
-  共同使用。悬挂与轮胎抓地由 Jolt 物理求解：`updateRvPhysics()` 在四个车轮
-  接地点（±1.26m 轮距、±2.92m 轴距）采样 `terrainHeight`，对刚体施加弹簧/阻尼
-  冲量（每轮 k=90000 N/m、c=11000 N·s/m、力限幅 150kN），并按接触点侧滑
-  速度施加受 μ·N·dt 摩擦圆限制的侧向冲量（`tireGripImpulse`，μ=0.9，
-  前轮沿转向后的轮向）；纵向牵引也用受摩擦限制的冲量逼近目标车速。
-  引擎新增 `PhysicsApplyImpulse` / `PhysicsGetPointVelocity` /
+  共同使用。悬挂、轮胎抓地与转向由 Jolt 物理求解：`updateRvPhysics()` 在四个
+  车轮接地点（±1.26m 轮距、±2.92m 轴距）采样 `terrainHeight`，对刚体施加
+  弹簧/阻尼冲量（每轮 k=90000 N/m、c=11000 N·s/m、力限幅 150kN），并按接触点
+  侧滑速度施加受 μ·N·dt 摩擦圆限制的侧向冲量（`tireGripImpulse`，μ=0.9，
+  前轮沿转向角 `rv.steerVis`）；纵向牵引也用受摩擦限制的冲量逼近目标车速。
+  A/D 只给前轮转角（±0.5rad），偏航由前后轮横向力矩积分得到（5% 角速度阻尼），
+  每帧用 `rvYawPitchRollFromQuat()` 从刚体四元数读回 yaw/pitch/roll，
+  因此高度/加速/刹车/转向/侧滑都来自求解器。引擎新增
+  `PhysicsApplyImpulse` / `PhysicsGetPointVelocity` /
   `PhysicsGetAngularVelocity` / `PhysicsAddAngularImpulse`
-  （`physics.hpp`/`physics.cpp`/`jolt_world.*`/`bindings.cpp`），
-  高度/俯仰/侧倾/侧滑由求解器产生；每帧通过 `rvQuat()` 重新套用脚本偏航
-  （轮胎扭矩产生的偏航角速度被主动抵消），并用 `rvPitchRollFromQuat()`
-  从刚体四元数读回姿态。没有物理后端时回退到
-  `updateRvSuspension()` 的四点平面拟合（±0.35rad 限幅、10Hz 平滑）。
+  （`physics.hpp`/`physics.cpp`/`jolt_world.*`/`bindings.cpp`）。
+  没有物理后端时回退到 `updateRvSuspension()` 的四点平面拟合与脚本偏航
+  （±0.35rad 限幅、10Hz 平滑）。
   **四个车轮是独立实体**（`rv_wheel.gltf`，`tools/gen_rv_wheel.py`；
   `rv_body.gltf` 不再烘焙车轮）：`applyRvTransform()` 按采样地面定位每个车轮，
-  前轮再按偏航角速度（`rv.steerVis`）转向，轮毂孔位随 `rv.wheelSpin` 滚动。
+  前轮再按 `rv.steerVis` 偏转，轮毂孔位随 `rv.wheelSpin` 滚动。
   `applyRvTransform()` 用 `rvOffset()` 对部件偏移做
   roll→pitch→yaw 三维旋转，并通过**引擎新增的 `SetRotationEuler`**
   （`bindings.cpp` / `game_runtime.cpp` / `bindings.hpp`）设置朝向，
@@ -834,8 +835,9 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `terrain flat corridor` / `rv slope tilt` / `rv tilted interior` /
   `rv four wheel contact` / `rv wheel articulation` / `rv wheel entities` /
   `rv wheel steer` / `rv physics suspension binding` /
-  `rv tire grip binding` / `rv tire grip model` / `rv attitude roundtrip`，
-  总计 **41/41 PASS**。
+  `rv tire grip binding` / `rv tire grip model` / `rv attitude roundtrip` /
+  `rv yaw attitude roundtrip`，
+  总计 **42/42 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

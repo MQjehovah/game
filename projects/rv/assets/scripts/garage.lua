@@ -878,11 +878,17 @@ function on_update(ent, dt)
   -- or a slope keeps the wheels grounded. Prefer the physical spring/damper
   -- path (height/pitch/roll from Jolt), fall back to the plane fit.
   if rvBody ~= nil and updateRvPhysics ~= nil and updateRvPhysics(dt) then
+    rv.steerCmd = nil
     local v = PhysicsGetVelocity(rvBody)
     if v ~= nil then
       PhysicsSetVelocity(rvBody, { x = 0, y = v.y, z = 0 })
     end
-    PhysicsSetRotation(rvBody, rvQuat())
+    local w = PhysicsGetAngularVelocity ~= nil and
+              PhysicsGetAngularVelocity(rvBody) or nil
+    if w ~= nil and PhysicsAddAngularImpulse ~= nil then
+      local inertia = rv.yawInertia or 8000
+      PhysicsAddAngularImpulse(rvBody, { x = 0, y = -w.y * inertia, z = 0 })
+    end
     applyRvTransform()
   elseif updateRvSuspension ~= nil and rvShell ~= nil then
     updateRvSuspension(dt)
