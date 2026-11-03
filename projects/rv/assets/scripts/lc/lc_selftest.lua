@@ -3835,6 +3835,23 @@ function runSelfTest()
                      inv.repairkit or 0, materials.metal or 0))
   end
 
+  -- 以物易物：金属 x4 → 备胎 x1
+  do
+    local km, ks = materials.metal or 0, inv.sparetire or 0
+    materials.metal = 4
+    inv.sparetire = nil
+    local traded = doTrade(7)
+    local gotTire = inv.sparetire or 0
+    local leftMetal = materials.metal or 0
+    local tire = gotTire == 1
+    local spent = leftMetal == 0
+    materials.metal = km
+    inv.sparetire = ks > 0 and ks or nil
+    ok(r, "spare tire trade", traded and tire and spent,
+       string.format("traded=%s tire=%d metal=%d", tostring(traded),
+                     gotTire, leftMetal))
+  end
+
   -- 以物易物：野浆果 x4 → 鱼饵 x2
   do
     local kb, ka = inv.berry or 0, inv.bait or 0

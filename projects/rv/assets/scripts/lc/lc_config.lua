@@ -220,6 +220,8 @@ TRADES = {
     cost = { metal = 3 }, give = { item = "repairkit", n = 1 } },
   { id = "berry_bait",  name = "野浆果 x4 → 鱼饵 x2",
     costItem = { berry = 4 }, give = { item = "bait", n = 2 } },
+  { id = "metal_spare", name = "金属 x4 → 备胎 x1",
+    cost = { metal = 4 }, give = { item = "sparetire", n = 1 } },
 }
 
 -- 路牌笔记：散落在各地点的可阅读纸条，集齐有一次性奖励
