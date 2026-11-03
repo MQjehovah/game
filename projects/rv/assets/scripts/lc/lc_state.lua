@@ -130,6 +130,7 @@ bestFishName = nil            -- 最大纪录对应的鱼种
 fishRecords = {}              -- 各鱼种最大尺寸 cm
 fishCounts = {}               -- 各鱼种累计条数
 fishCollectionDone = false    -- 是否已集齐全部鱼种并领奖
+exploreAllDone = false        -- 是否已跑遍所有固定地点并领奖
 
 -- 搜刮 / 低强度威胁
 stopBag, stopThreat, evacT = {}, 0, -1

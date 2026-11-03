@@ -3188,6 +3188,35 @@ function runSelfTest()
                      tostring(rewarded), tostring(again)))
   end
 
+  -- 跑遍所有固定地点：一次性奖励，且不会重复领取
+  do
+    local keepVisited = visitedPois
+    local keepDone = exploreAllDone
+    local sm, se, sc = materials.metal or 0, materials.electronics or 0,
+                       materials.cloth or 0
+    local sf, keepSave = fuel or 0, autoSave
+    local kt, kv = toast.text, toast.t
+    autoSave = nil
+    visitedPois = { gasstop = true, ruin = true, mall = true, town = true,
+                    depot = true, farm = true, lakecamp = true, clinic = true }
+    exploreAllDone = false
+    materials.metal, materials.electronics, materials.cloth = 0, 0, 0
+    fuel = 10
+    local first = checkExplorationMilestone()
+    local rewarded = (materials.metal or 0) == 12 and
+                     (materials.electronics or 0) == 4 and
+                     (materials.cloth or 0) == 4 and (fuel or 0) > 10
+    local again = checkExplorationMilestone()
+    visitedPois, exploreAllDone = keepVisited, keepDone
+    materials.metal, materials.electronics, materials.cloth = sm, se, sc
+    fuel = sf
+    autoSave = keepSave
+    toast.text, toast.t = kt, kv
+    ok(r, "explore all reward", first and rewarded and again == false,
+       string.format("first=%s reward=%s again=%s", tostring(first),
+                     tostring(rewarded), tostring(again)))
+  end
+
   -- 地点特色掉落：数据完整，且物品都在 ITEMS 里
   do
     local function has(id, item)

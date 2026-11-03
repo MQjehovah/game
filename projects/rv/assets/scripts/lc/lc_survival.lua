@@ -923,6 +923,32 @@ end
 
 -- 记录一次渔获：各鱼种最大尺寸 + 总纪录 + 累计条数
 -- 集齐全部鱼种的一次性奖励
+-- 跑遍所有固定地点的一次性奖励
+function checkExplorationMilestone()
+  if exploreAllDone then return false end
+  local fixed = { "gasstop", "ruin", "mall", "town", "depot", "farm",
+                  "lakecamp", "clinic" }
+  for _, id in ipairs(fixed) do
+    if not visitedPois[id] then return false end
+  end
+  exploreAllDone = true
+  materials.metal = (materials.metal or 0) + 12
+  materials.electronics = (materials.electronics or 0) + 4
+  materials.cloth = (materials.cloth or 0) + 4
+  local before = fuel or 0
+  fuel = math.min(fuelMax(), (fuel or 0) + 20)
+  local fuelGain = (fuel or 0) - before
+  toast.text = string.format(
+    "跑遍所有地点！奖励 金属+12 电子件+4 布料+4 燃料+%.0fL", fuelGain)
+  toast.t = 5.0
+  if addJournal ~= nil then
+    addJournal(string.format("跑遍所有固定地点（金属+12 电子件+4 布料+4 燃料+%.0fL）",
+                             fuelGain), "goal")
+  end
+  if autoSave ~= nil then autoSave() end
+  return true
+end
+
 function checkFishCollection()
   if fishCollectionDone then return false end
   local total = #(FISH_SPECIES or {})

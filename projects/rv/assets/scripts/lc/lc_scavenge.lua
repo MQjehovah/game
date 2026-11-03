@@ -199,6 +199,7 @@ function firstVisitBonus(nd)
     addJournal("首次抵达：" .. (nd.name or nd.id), "explore")
   end
   if checkMilestones ~= nil then checkMilestones("explore", visitedCount) end
+  if checkExplorationMilestone ~= nil then checkExplorationMilestone() end
   local danger = nd.danger or 0
   local metal = 1 + danger
   local cloth = 1
