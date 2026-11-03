@@ -844,10 +844,18 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `PhysicsAddSliderJoint` / `PhysicsAddWheelJoint` / `PhysicsAddCylinder` /
   `PhysicsSetAngularVelocity` / `PhysicsSetRotationEuler` / `PhysicsActivate`
   （`physics.hpp`/`physics.cpp`/`jolt_world.*`/`bindings.cpp`）。
-  合作服务器运行同一套四轮圆柱刚体物理（同样的 6DOF 车轮关节），
-  把车体 `gy/pitch/roll/yaw` 写入 `game_state`；客户端也建本地车轮刚体
-  （圆柱 + 6DOF），用服务器姿态 + 本地地形运行
-  `updateWheelPrediction()`，只预测悬挂行程/滚动。
+  合作服务器运行同一套四轮圆柱刚体物理（同样的 6DOF 车轮关节）。
+  `game_state` 降到 5Hz（库存/家具/门/玻璃等慢数据），另发紧凑的
+  `game_pose`（20Hz，只用 `x/z/yaw/speed/gy/p/r`）：
+  客户端用相邻两帧估算速度/偏航角速度，`coopPredictPose()` 外推，
+  `coopAngleDelta()` + 自适应混合做服务器对账（≤0.25m 直接采用，
+  中等误差约 30ms 收敛，>2m 吸附）；客户端也建本地车轮刚体
+  （圆柱 + 6DOF），用预测位姿 + 本地地形运行 `updateWheelPrediction()`。
+  实测 20Hz 姿态流下预测误差均值 0.08m / p90 0.21m（行进中 0.12/0.23m），
+  而旧的 12/s 一阶跟随在 7m/s 时约有 0.58m 稳态滞后。
+  注意：`game_state` 曾接近 1KB 的 RPC 上限，烹饪后再加 toast 文本会挤掉
+  后续 RPC（姿态流随之丢失）；现在 toast 改走独立的 `game_event`。
+  引擎侧 `player.cpp` 的客户端 RPC 白名单已加入 `game_pose`。
   注意：碰撞 `mask` 要走 8 位组掩码（`0xFD`）；写 `0xFFFFFFFD` 会在
   Lua→uint32 转换时溢出成 `0x80000000`，掩码被截断为 0，车体与轮胎
   与地面完全失去碰撞（实测会整体下沉）。
@@ -873,8 +881,9 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `rv wheel slip ratio` / `rv tire force curve` / `rv tire temperature` /
   `rv wheel body binding` /
   `rv wheel bodies` / `rv wheel cylinder rolling` / `rv wheel prediction` /
-  `rv wheel rolling` / `rv attitude roundtrip` / `rv yaw attitude roundtrip`，
-  总计 **56/56 PASS**。
+  `rv pose prediction` / `rv wheel rolling` / `rv attitude roundtrip` /
+  `rv yaw attitude roundtrip`，
+  总计 **57/57 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

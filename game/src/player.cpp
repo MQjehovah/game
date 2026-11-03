@@ -911,6 +911,7 @@ void PlayerApp::HandleRpc(const net::MsgRpc& rpc) {
     if (rpc.name == "moba_state" || rpc.name == "moba_hud" || rpc.name == "room.joined" ||
         rpc.name == "room.list" || rpc.name == "room.left" || rpc.name == "lobby" ||
         rpc.name == "match.start" || rpc.name == "game_state" || rpc.name == "game_event" ||
+        rpc.name == "game_pose" ||
         rpc.name == "game_world" || rpc.name == "game_crates") {
         runtime_.PushNetCommand(0, rpc.name, rpc.argsJson);
         return;

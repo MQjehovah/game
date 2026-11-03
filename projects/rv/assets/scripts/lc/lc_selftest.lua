@@ -313,6 +313,17 @@ function runSelfTest()
       end
       ok(r, "rv wheel prediction", okW, "local suspension step ok")
     end
+    if coopPredictPose ~= nil and coopAngleDelta ~= nil then
+      local p = coopPredictPose({ x = 0, z = 0, yaw = 0.5 },
+                                { x = 4, z = 2, yawRate = 0.5 }, 0.25)
+      local d = coopAngleDelta(3.2, -3.2)
+      ok(r, "rv pose prediction",
+         math.abs(p.x - 1.0) < 1e-6 and math.abs(p.z - 0.5) < 1e-6 and
+         math.abs(p.yaw - 0.625) < 1e-6 and
+         math.abs(d - (6.4 - 2 * math.pi)) < 1e-6,
+         string.format("x=%.2f z=%.2f yaw=%.2f wrap=%.2f",
+                       p.x, p.z, p.yaw, d))
+    end
     if PhysicsSetAngularVelocity ~= nil and PhysicsGetAngularVelocity ~= nil
        and rv.wheelBodies ~= nil and rv.wheelBodies[1] ~= nil then
       PhysicsSetAngularVelocity(rv.wheelBodies[1].body, { x = 2.0, y = 0, z = 0 })

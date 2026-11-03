@@ -38,7 +38,7 @@ local coop = {
   mySlot = 1, myClientId = nil, haveSelf = false,
   lookYaw = 0, lookPitch = -0.05,
   state = nil, seq = 0, lastLogSeq = -1,
-  sendT = 0, stateT = 0, worldT = 0,
+  sendT = 0, stateT = 0, poseT = 0, worldT = 0,
   rv = { x = 0, z = 0, yaw = 0, speed = 0, groundY = 0, pitch = 0, roll = 0 },
   fuel = 60, water = 80, day = 1, clock = 8 * 60,
   weather = "clear", lights = true,
@@ -75,6 +75,24 @@ local function clamp(v, lo, hi)
   if v < lo then return lo end
   if v > hi then return hi end
   return v
+end
+
+-- Co-op chassis prediction helpers (also used by the self-test): extrapolate
+-- the last replicated pose with the measured velocity, and wrap angle deltas.
+function coopPredictPose(net, vel, age)
+  if net == nil then return nil end
+  local a = math.max(0, math.min(0.5, age or 0))
+  local vx = vel and vel.x or 0
+  local vz = vel and vel.z or 0
+  local yr = vel and (vel.yawRate or 0) or 0
+  return { x = net.x + vx * a, z = net.z + vz * a, yaw = net.yaw + yr * a }
+end
+
+function coopAngleDelta(a, b)
+  local d = (a or 0) - (b or 0)
+  while d > math.pi do d = d - 2 * math.pi end
+  while d < -math.pi do d = d + 2 * math.pi end
+  return d
 end
 
 local function readFlag(name)
@@ -125,6 +143,11 @@ local function setToast(text)
   coop.toastT = 3.0
   coop.eventId = (coop.eventId or 0) + 1
   print("[coop-main-event] " .. text)
+  -- Send events out-of-band so the 10 Hz game_state stays small (a too-large
+  -- state used to defer/drop later RPCs, including the pose stream).
+  if coop.role == "server" and Rpc ~= nil then
+    Rpc("game_event", { id = coop.eventId, text = text })
+  end
 end
 
 local function copyGlobals()
@@ -477,8 +500,20 @@ local function pushState()
     rollup = coop.rollup and 1 or 0,
     barndoor = coop.barnDoor and 1 or 0,
     glass = glass,
-    event = coop.toast, eventId = coop.eventId or 0,
   })
+end
+
+-- Compact, high-rate pose stream for client prediction. Kept far below the
+-- 1 KB RPC cap so it is not dropped when the full game_state grows.
+local function pushPose()
+  local function q3(v)
+    v = tonumber(v) or 0
+    return math.floor(v * 1000 + 0.5) / 1000
+  end
+  Rpc("game_pose", { seq = coop.seq,
+    rv = { x = q3(coop.rv.x), z = q3(coop.rv.z), yaw = q3(coop.rv.yaw),
+           speed = q3(coop.rv.speed), gy = q3(coop.rv.groundY or 0),
+           p = q3(coop.rv.pitch or 0), r = q3(coop.rv.roll or 0) } })
 end
 
 local function serverDebugLog()
@@ -1097,9 +1132,14 @@ local function serverUpdate(dt)
   end
 
   coop.stateT = coop.stateT + dt
-  if coop.stateT >= 0.1 then
+  if coop.stateT >= 0.2 then
     coop.stateT = 0
     pushState()
+  end
+  coop.poseT = coop.poseT + dt
+  if coop.poseT >= 0.05 then
+    coop.poseT = 0
+    pushPose()
   end
   coop.worldT = coop.worldT + dt
   if coop.worldT >= 1.0 then
@@ -1158,18 +1198,46 @@ local function clientLog(s)
     tostring(s.rollup or 0), tostring(s.barndoor or 0), tostring(s.glass or "-")))
 end
 
+-- Apply one authoritative RV pose (from game_state or the compact game_pose
+-- stream) and derive the replicated velocity for client-side extrapolation.
+local function applyPoseTable(rv)
+  if type(rv) ~= "table" then return end
+  coop.rv.x = tonumber(rv.x) or coop.rv.x
+  coop.rv.z = tonumber(rv.z) or coop.rv.z
+  coop.rv.yaw = tonumber(rv.yaw) or coop.rv.yaw
+  coop.rv.speed = tonumber(rv.speed) or 0
+  coop.rv.groundY = tonumber(rv.gy) or coop.rv.groundY or 0
+  coop.rv.pitch = tonumber(rv.p) or coop.rv.pitch or 0
+  coop.rv.roll = tonumber(rv.r) or coop.rv.roll or 0
+  local now = coop.netClock or 0
+  local prev = coop.rvNet
+  if prev ~= nil then
+    local dtNet = now - prev.t
+    if dtNet > 0.002 then
+      local vx = (coop.rv.x - prev.x) / dtNet
+      local vz = (coop.rv.z - prev.z) / dtNet
+      local cap = RV_SPEED * 1.6 + 2.0
+      local sp = math.sqrt(vx * vx + vz * vz)
+      if sp > cap then vx, vz = vx * cap / sp, vz * cap / sp end
+      coop.rvVel = { x = vx, z = vz,
+                     yawRate = coopAngleDelta(coop.rv.yaw, prev.yaw) / dtNet }
+    end
+  end
+  coop.rvNet = { x = coop.rv.x, z = coop.rv.z, yaw = coop.rv.yaw, t = now }
+  if coop.predLog and coop.rvPred ~= nil then
+    local dx = coop.rvPred.x - coop.rv.x
+    local dz = coop.rvPred.z - coop.rv.z
+    print(string.format("[pred] err=%.2f age=%.2f v=(%.1f,%.1f) yawRate=%.2f",
+      math.sqrt(dx * dx + dz * dz), prev and (now - prev.t) or 0,
+      coop.rvVel and coop.rvVel.x or 0, coop.rvVel and coop.rvVel.z or 0,
+      coop.rvVel and coop.rvVel.yawRate or 0))
+  end
+end
+
 local function applyState(s)
   coop.state = s
   coop.seq = tonumber(s.seq) or coop.seq
-  if s.rv ~= nil then
-    coop.rv.x = tonumber(s.rv.x) or coop.rv.x
-    coop.rv.z = tonumber(s.rv.z) or coop.rv.z
-    coop.rv.yaw = tonumber(s.rv.yaw) or coop.rv.yaw
-    coop.rv.speed = tonumber(s.rv.speed) or 0
-    coop.rv.groundY = tonumber(s.rv.gy) or coop.rv.groundY or 0
-    coop.rv.pitch = tonumber(s.rv.p) or coop.rv.pitch or 0
-    coop.rv.roll = tonumber(s.rv.r) or coop.rv.roll or 0
-  end
+  if s.rv ~= nil then applyPoseTable(s.rv) end
   coop.fuel = tonumber(s.fuel) or coop.fuel
   coop.water = tonumber(s.water) or coop.water
   coop.day = tonumber(s.day) or coop.day
@@ -1244,15 +1312,11 @@ local function applyState(s)
     coop.lastLogSeq = s.seq
     clientLog(s)
   end
-  if s.event ~= nil and s.event ~= "" and s.eventId ~= nil and s.eventId ~= coop.lastEventId then
-    coop.lastEventId = s.eventId
-    coop.toast = s.event
-    coop.toastT = 3.0
-  end
 end
 
 local function clientUpdate(dt)
   coop.myClientId = tonumber(GetVar("myClientId")) or coop.myClientId
+  coop.netClock = (coop.netClock or 0) + dt
 
   for _ = 1, 32 do
     local cmd = NetCommand()
@@ -1261,6 +1325,19 @@ local function clientUpdate(dt)
       local s = nil
       if type(cmd.args) == "string" and cmd.args ~= "" then s = Json.Parse(cmd.args) end
       if type(s) == "table" then applyState(s) end
+    elseif cmd.name == "game_pose" then
+      local s = nil
+      if type(cmd.args) == "string" and cmd.args ~= "" then s = Json.Parse(cmd.args) end
+      if type(s) == "table" and s.rv ~= nil then applyPoseTable(s.rv) end
+    elseif cmd.name == "game_event" then
+      local s = nil
+      if type(cmd.args) == "string" and cmd.args ~= "" then s = Json.Parse(cmd.args) end
+      if type(s) == "table" and s.text ~= nil and s.id ~= nil
+         and s.id ~= coop.lastEventId then
+        coop.lastEventId = s.id
+        coop.toast = s.text
+        coop.toastT = 3.0
+      end
     elseif cmd.name == "game_world" then
       local w = nil
       if type(cmd.args) == "string" and cmd.args ~= "" then w = Json.Parse(cmd.args) end
@@ -1464,13 +1541,35 @@ local function clientUpdate(dt)
     end
   end
 
-  -- Smoothly follow the authoritative RV pose, then move the main-world model.
+  -- Door swing (authoritative open/close) then the predicted chassis pose.
   local targetAngle = (coop.state and coop.state.door == 1) and (math.pi * 0.5) or 0
   coop.doorAngle = coop.doorAngle + (targetAngle - coop.doorAngle) * math.min(1, dt * 6)
   rvDoorAngle = coop.doorAngle
-  rv.x = rv.x + (coop.rv.x - rv.x) * math.min(1, dt * 12)
-  rv.z = rv.z + (coop.rv.z - rv.z) * math.min(1, dt * 12)
-  rv.yaw = coop.rv.yaw
+
+  -- Chassis prediction: extrapolate the last snapshot by its measured velocity,
+  -- then reconcile the local pose toward it. Small errors blend smoothly (the
+  -- render stays ahead of the last snapshot instead of lagging behind it); a
+  -- large error (teleport/collision) snaps so the model never drifts away.
+  if coop.rvPred == nil then
+    coop.rvPred = { x = coop.rv.x, z = coop.rv.z, yaw = coop.rv.yaw }
+  end
+  local net = coop.rvNet
+  local age = net and (coop.netClock - net.t) or 0
+  local target = coopPredictPose(net, coop.rvVel, age) or
+                 { x = coop.rv.x, z = coop.rv.z, yaw = coop.rv.yaw }
+  local pred = coop.rvPred
+  local ex, ez = target.x - pred.x, target.z - pred.z
+  local err = math.sqrt(ex * ex + ez * ez)
+  local k
+  if err <= 0.25 or err > 2.0 then
+    k = 1.0            -- extrapolation is accurate, or this is a teleport
+  else
+    k = math.min(1.0, dt * 30.0)  -- smooth a medium correction over ~30 ms
+  end
+  pred.x = pred.x + ex * k
+  pred.z = pred.z + ez * k
+  pred.yaw = pred.yaw + coopAngleDelta(target.yaw, pred.yaw) * k
+  rv.x, rv.z, rv.yaw = pred.x, pred.z, pred.yaw
   rv.speed = coop.rv.speed or 0
   rv.groundY = coop.rv.groundY or 0
   rv.pitch = coop.rv.pitch or 0
@@ -1728,6 +1827,7 @@ function coopInitWorld(role)
   coop.isServer = (role == "server")
   coop.active = true
   coopRole = role
+  coop.predLog = readFlag("coop_pred_log.txt")
   -- The client loads the same garage scene, so static scene entities do not
   -- need reliable snapshot spawns; only the four CTransformBind proxies do.
   SetVar("netReplicateStatic", 0)
@@ -1810,6 +1910,7 @@ function coopInitWorld(role)
     coop.worldT = 0.99
     coop.clampDemo = readFlag("coop_clamp.txt")
     coop.autoDrive = readFlag("coop_drive.txt")
+    coop.predLog = readFlag("coop_pred_log.txt")
     coop.actionsDemo = readFlag("coop_actions.txt")
     coop.cookDemo = readFlag("coop_cook.txt")
     coop.boardDemo = readFlag("coop_board.txt")

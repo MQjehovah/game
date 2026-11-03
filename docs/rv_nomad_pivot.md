@@ -152,9 +152,12 @@
   `PhysicsGetAngularVelocity` / `PhysicsAddAngularImpulse` /
   `PhysicsAddSliderJoint` / `PhysicsAddWheelJoint` / `PhysicsAddCylinder` /
   `PhysicsSetAngularVelocity` / `PhysicsSetRotationEuler` / `PhysicsActivate`。
-  合作服务器运行同一套四轮刚体物理；客户端也建立本地车轮刚体，
-  用服务器广播的 `gy/pitch/roll/yaw` + 本地地形运行 `updateWheelPrediction()`，
-  只预测悬挂行程/滚动（车体姿态保持权威）。
+  合作服务器运行同一套四轮刚体物理；`game_state`（5Hz，含库存/家具/门/玻璃）
+  之外新增紧凑的 **`game_pose`（20Hz）**，客户端用连续两帧估算速度与偏航角速度，
+  `coopPredictPose()` 外推当前权威姿态，`coopAngleDelta()` + 自适应混合做服务器对账
+  （误差 ≤0.25m 直接采用，中等误差 ~30ms 收敛，>2m 吸附）。
+  车体按预测位姿渲染；客户端同时建立本地车轮刚体，
+  用预测位姿 + 本地地形运行 `updateWheelPrediction()`。
   无物理后端时回退到 `updateRvSuspension()` 的四点平面拟合与脚本偏航。
   视觉车轮直接读取各自车轮刚体的位置，滚动角按每轮接触速度累积
   （`rv.wheelSpinI`），前轮按 Ackermann 左右夹角偏转。
@@ -428,7 +431,7 @@
    的滑移率曲线，胎温与磨损共同影响 μ；
    轮胎是刚性圆柱（没有花纹/变形模型），滑移曲线是简化峰值-平台曲线，
    胎温是单点集总值、没有胎压/爆胎，
-   合作客户端只本地预测悬挂行程（位置/姿态仍由服务器广播）；
+   合作客户端用 20Hz 姿态流做位置/朝向外推与对账，但没有完整物理回滚预测；
    高度场只覆盖营地周边 144×144m，范围外仍是平地；
    商店/加油站/仓库/商场/湖边木屋/诊所前窗已支持透明玻璃，破碎时从 seed 冲击点
    生长径向 + 分支裂纹，按应力衰减决定碎片大小/数量/速度（每扇约 20–30 块），
