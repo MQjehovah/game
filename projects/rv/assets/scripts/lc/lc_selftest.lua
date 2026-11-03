@@ -2365,7 +2365,7 @@ function runSelfTest()
     end
     inv.berry = kb > 0 and kb or nil
     toast.text, toast.t = kt, ktt
-    ok(r, "berry bushes", #(berryBushes or {}) >= 3 and okAll,
+    ok(r, "berry bushes", #(berryBushes or {}) >= 6 and okAll,
        string.format("bushes=%d ok=%s", #(berryBushes or {}),
                      tostring(okAll)))
   end

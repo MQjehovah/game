@@ -1855,8 +1855,18 @@ end
 function spawnBerryBushes()
   for _, b in ipairs(berryBushes) do Despawn(b.ent) end
   berryBushes = {}
-  for i, p in ipairs({ { -8.0, 5.0 }, { -3.5, 8.5 }, { 7.5, 6.0 },
-                       { 5.8, -6.5 } }) do
+  local spots = { { -8.0, 5.0 }, { -3.5, 8.5 }, { 7.5, 6.0 },
+                  { 5.8, -6.5 } }
+  -- 农场与湖边营地也各有一丛，鼓励探索时顺手采集
+  local farm = (nodeById ~= nil) and nodeById("farm") or nil
+  if farm ~= nil then
+    spots[#spots + 1] = { farm.x + 6.5, farm.z + 6.0 }
+  end
+  local lake = (nodeById ~= nil) and nodeById("lakecamp") or nil
+  if lake ~= nil then
+    spots[#spots + 1] = { lake.x - 5.0, lake.z + 4.5 }
+  end
+  for i, p in ipairs(spots) do
     local x, z = p[1], p[2]
     local y = (terrainHeight and terrainHeight(x, z)) or 0
     local e = SpawnPrefab("rv_bush", { x = x, y = y + 0.32, z = z })
