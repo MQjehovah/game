@@ -1035,6 +1035,7 @@ function upgradeRod()
   toast.text = string.format("鱼竿升级到 Lv%d — 上钩率 +%d%%，尺寸 +%dcm",
                              upgrades.rod, upgrades.rod * 7, upgrades.rod * 4)
   toast.t = 2.6
+  if checkUpgradeMilestone ~= nil then checkUpgradeMilestone() end
   return true
 end
 
@@ -1334,6 +1335,34 @@ function readLoreNote(index)
     toast.t = 5.0
     if autoSave ~= nil then autoSave() end
   end
+  return true
+end
+
+-- 全车升级满级（引擎/轮胎/货架/鱼竿/水箱/油箱）：一次性奖励
+function allUpgradesMaxed()
+  for _, id in ipairs({ "engine", "tires", "cargo", "rod", "water", "fuel" }) do
+    if (upgrades[id] or 0) < 3 then return false end
+  end
+  return true
+end
+
+function checkUpgradeMilestone()
+  if allUpgradesDone then return false end
+  if not allUpgradesMaxed() then return false end
+  allUpgradesDone = true
+  materials.metal = (materials.metal or 0) + 10
+  materials.electronics = (materials.electronics or 0) + 5
+  local before = fuel or 0
+  fuel = math.min(fuelMax(), before + 20)
+  local fuelGain = (fuel or 0) - before
+  toast.text = string.format(
+    "全车升级满级！奖励 金属+10 电子件+5 燃料+%.0fL", fuelGain)
+  toast.t = 5.0
+  if addJournal ~= nil then
+    addJournal(string.format(
+      "完成全车升级（金属+10 电子件+5 燃料+%.0fL）", fuelGain), "goal")
+  end
+  if autoSave ~= nil then autoSave() end
   return true
 end
 
@@ -1845,6 +1874,7 @@ function upgradeCargo()
   toast.text = string.format("货架升级到 Lv%d — 载重上限 %dkg",
                              upgrades.cargo, weightMax())
   toast.t = 2.6
+  if checkUpgradeMilestone ~= nil then checkUpgradeMilestone() end
   return true
 end
 
@@ -1874,6 +1904,7 @@ function upgradeWater()
   toast.text = string.format("水箱升级到 Lv%d — 容量 %dL",
                              upgrades.water, waterMax())
   toast.t = 2.6
+  if checkUpgradeMilestone ~= nil then checkUpgradeMilestone() end
   return true
 end
 
@@ -1898,6 +1929,7 @@ function upgradeFuel()
   toast.text = string.format("油箱升级到 Lv%d — 容量 %dL",
                              upgrades.fuel, fuelMax())
   toast.t = 2.6
+  if checkUpgradeMilestone ~= nil then checkUpgradeMilestone() end
   return true
 end
 
@@ -1956,6 +1988,7 @@ function repairPart(id)
                                  upgrades[id]) ..
                    (id == "tires" and "（胎压 2.4bar）" or "")
       toast.t = 2.6
+      if checkUpgradeMilestone ~= nil then checkUpgradeMilestone() end
       return true
     end
     toast.text = lv ~= nil and "已经满级" or "已经修好了"

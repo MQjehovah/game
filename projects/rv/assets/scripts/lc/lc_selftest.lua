@@ -4877,6 +4877,41 @@ function runSelfTest()
                      tostring(done), tostring(once)))
   end
 
+  -- 全车升级满级：一次性奖励，未满级不触发
+  do
+    local kEng, kTir = upgrades.engine, upgrades.tires
+    local kCar, kRod = upgrades.cargo, upgrades.rod
+    local kWat, kFue = upgrades.water, upgrades.fuel
+    local kDone, km, ke = allUpgradesDone, materials.metal or 0,
+                          materials.electronics or 0
+    local kf, kt, kv = fuel or 0, toast.text, toast.t
+    local keepSave = autoSave
+    autoSave = nil
+    upgrades.engine, upgrades.tires = 2, 3
+    upgrades.cargo, upgrades.rod = 3, 3
+    upgrades.water, upgrades.fuel = 3, 3
+    allUpgradesDone = false
+    local notYet = allUpgradesMaxed()
+    local noReward = checkUpgradeMilestone()
+    upgrades.engine = 3
+    materials.metal, materials.electronics, fuel = 0, 0, 0
+    local granted = checkUpgradeMilestone()
+    local rewarded = (materials.metal or 0) == 10 and
+                     (materials.electronics or 0) == 5 and (fuel or 0) >= 19
+    local again = checkUpgradeMilestone()
+    upgrades.engine, upgrades.tires = kEng, kTir
+    upgrades.cargo, upgrades.rod = kCar, kRod
+    upgrades.water, upgrades.fuel = kWat, kFue
+    allUpgradesDone, materials.metal, materials.electronics = kDone, km, ke
+    fuel, toast.text, toast.t = kf, kt, kv
+    autoSave = keepSave
+    ok(r, "all upgrades reward",
+       notYet == false and noReward == false and granted and rewarded and
+       again == false,
+       string.format("notYet=%s reward=%s again=%s", tostring(notYet),
+                     tostring(rewarded), tostring(again)))
+  end
+
   -- 跑遍所有固定地点：一次性奖励，且不会重复领取
   do
     local keepVisited = visitedPois
