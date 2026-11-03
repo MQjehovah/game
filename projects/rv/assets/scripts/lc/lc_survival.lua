@@ -448,8 +448,11 @@ function useItem(id)
     warmthMin = math.max(warmthMin or 0, warmMin)
   end
   -- 热食/热汤：雪天获得一段时间的保暖
-  if id == "fishsoup" or id == "meal" or id == "feast" then
-    warmMin = (id == "feast") and 45 or 30
+  if id == "fishsoup" or id == "meal" or id == "feast" or id == "stew" then
+    local w = 30
+    if id == "feast" then w = 45
+    elseif id == "stew" then w = 40 end
+    warmMin = w
     warmthMin = math.max(warmthMin or 0, warmMin)
   end
   if PlaySfx then PlaySfx(it.kind == "drink" and "drink" or "pickup") end

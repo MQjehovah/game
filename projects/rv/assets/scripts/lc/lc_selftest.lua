@@ -50,6 +50,32 @@ function runSelfTest()
                      itemCount("berry")))
   end
 
+  -- 灶台配方：浆果炖肉（生食材 x1 + 野浆果 x2 + 水），吃下还保暖
+  do
+    local s0 = itemCount("stew")
+    local kr, kb = inv.rawfood or 0, inv.berry or 0
+    local w0 = water
+    addItem("rawfood", 1)
+    addItem("berry", 2)
+    water = math.max(water, 5)
+    local okStew = cookRecipe("stew")
+    local cooked = itemCount("stew") == s0 + 1
+    local used = (inv.rawfood or 0) == kr and (inv.berry or 0) == kb
+    water = w0
+    if kr == 0 then inv.rawfood = nil end
+    if kb == 0 then inv.berry = nil end
+    local keepWarm = warmthMin
+    warmthMin = 0
+    local ate = useItem("stew")
+    local warmOk = (warmthMin or 0) >= 40
+    warmthMin = keepWarm
+    if ate then addItem("stew", 1) end
+    ok(r, "cook berry stew", okStew and cooked and used and ate and warmOk,
+       string.format("stew %d->%d rawfood=%d berry=%d warm=%s", s0,
+                     itemCount("stew"), inv.rawfood or 0, inv.berry or 0,
+                     tostring(warmOk)))
+  end
+
   -- 喝水
   local thirst0 = needs.thirst
   needs.thirst = 50
