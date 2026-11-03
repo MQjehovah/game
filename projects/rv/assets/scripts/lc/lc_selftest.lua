@@ -3407,6 +3407,17 @@ function runSelfTest()
        string.format("low=%.0f high=%.0f empty=%.0f", low, high, empty))
   end
 
+  -- 没油提示：油量归零且未提示过才给出
+  do
+    local first = fuelEmptyWarn(0, false)
+    local again = fuelEmptyWarn(0, true)
+    local hasFuel = fuelEmptyWarn(10, false)
+    ok(r, "fuel empty warning",
+       first ~= nil and again == nil and hasFuel == nil,
+       string.format("first=%s again=%s has=%s", tostring(first),
+                     tostring(again), tostring(hasFuel)))
+  end
+
   -- 营地板以物易物：布料→金属、电子件→燃油罐、金属→燃料
   do
     local sMetal = materials.metal or 0

@@ -553,6 +553,13 @@ function lowFuelBeepInterval(fuelRatio)
   return 0
 end
 
+-- 没油提示：油量归零且尚未提示过时给出文案
+function fuelEmptyWarn(fuelValue, warned)
+  if (fuelValue or 0) > 0 then return nil end
+  if warned then return nil end
+  return "没油了！只能龟速滑行——用燃油罐（E）或叫拖车（Y）"
+end
+
 -- 定速巡航油门：低于目标给油，接近/超过目标松油
 function cruiseThrottle(speed, target)
   if target == nil or target <= 0 then return 0 end
@@ -737,6 +744,15 @@ function updateDrive(dt)
   if fuel <= 0 then
     maxSp = math.min(maxSp, VEH.limpSpeed)
     if rv.speed > VEH.limpSpeed then rv.speed = VEH.limpSpeed end
+    local warnText = fuelEmptyWarn(fuel, rv.fuelEmptyWarned)
+    if warnText ~= nil then
+      rv.fuelEmptyWarned = true
+      toast.text = warnText
+      toast.t = 5.0
+      if PlaySfx then PlaySfx("beep") end
+    end
+  elseif fuel > fuelMax() * 0.1 then
+    rv.fuelEmptyWarned = false
   end
   maxSp = maxSp * (0.5 + 0.5 * dur / VEH.durMax)
   if isRainy and isRainy() then maxSp = maxSp * 0.82 end  -- 雨天/雾天减速
