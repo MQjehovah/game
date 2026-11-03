@@ -2300,6 +2300,31 @@ function runSelfTest()
                      inv.stew or 0, inv.rawfood or 0, inv.berry or 0))
   end
 
+  -- 篝火煮咖啡：有咖啡豆 + 净水时可煮出热咖啡
+  do
+    local keepOn, keepFuel = campfireOn, campfireFuelMin
+    local kcoffee, kwater, kbrew = inv.coffee, water, inv.brew or 0
+    local kf, kr, kd = inv.rawfish, inv.rawfood, inv.dirtywater
+    setCampfireLit(true)
+    campfireFuelMin = 500
+    inv.rawfish, inv.rawfood, inv.dirtywater = nil, nil, nil
+    inv.coffee, water, inv.brew = 1, 60, 0
+    local cooked = cookAtCampfire()
+    local gotBrew = inv.brew or 0
+    local leftBeans = inv.coffee or 0
+    local leftWater = water or 0
+    local got = gotBrew == 1
+    local usedBeans = leftBeans == 0
+    local usedWater = math.abs(leftWater - 45) < 1e-6
+    inv.coffee, water, inv.brew = kcoffee, kwater, kbrew
+    inv.rawfish, inv.rawfood, inv.dirtywater = kf, kr, kd
+    campfireOn, campfireFuelMin = keepOn, keepFuel
+    ok(r, "campfire coffee",
+       cooked and got and usedBeans and usedWater,
+       string.format("cooked=%s brew=%d beans=%d water=%.0f", tostring(cooked),
+                     gotBrew, leftBeans, leftWater))
+  end
+
   -- 篝火烹饪消耗燃料：每次 10 游戏分钟
   do
     local keepOn, keepFuel = campfireOn, campfireFuelMin

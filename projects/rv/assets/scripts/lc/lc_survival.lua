@@ -1609,6 +1609,17 @@ function cookAtCampfire()
     toast.t = 2.4
     return true
   end
+  -- 没有食材时，有咖啡豆和净水可煮一壶热咖啡（无电也能提神）
+  if hasItem("coffee", 1) and (water or 0) >= 15 then
+    takeItem("coffee", 1)
+    useWater(15)
+    addItem("brew", 1)
+    spendCookFuel()
+    if PlaySfx then PlaySfx("cook") end
+    toast.text = "篝火煮好一壶热咖啡（+1，提神保暖）"
+    toast.t = 2.6
+    return true
+  end
   toast.text = "没有生鱼/浑水/生食材 — 去水塘钓/取水或搜刮食物"
   toast.t = 2.2
   return false
