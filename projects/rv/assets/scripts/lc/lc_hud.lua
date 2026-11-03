@@ -1018,6 +1018,43 @@ function drawNightSky(vw, vh)
   DrawCircle(mx + 4, my - 3, 10, 1, 0.02, 0.04, 0.10, sa * 0.35, true)
 end
 
+-- 太阳弧线：返回屏幕比例坐标（06:00 东边、12:00 最高、18:00 西边）
+function sunArc(clockMin)
+  local t = math.max(0, math.min(1, ((clockMin or 720) - 6 * 60) / (12 * 60)))
+  return 0.14 + 0.72 * t, 0.40 - math.sin(math.pi * t) * 0.26
+end
+
+-- 白天天空：太阳光晕 + 缓慢飘动的云（画在天气层之下、场景之上）
+function drawDaySky()
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local a = (nightAmount and nightAmount()) or 0
+  local day = 1 - a
+  if day <= 0.02 then return end
+  local vis = day
+  if weather == "rain" or weather == "fog" then
+    vis = vis * 0.12
+  elseif weather == "cloudy" then
+    vis = vis * 0.45
+  end
+  if vis <= 0.02 then return end
+  local fx, fy = sunArc(clock or 720)
+  local sx, sy = vw * fx, vh * fy
+  DrawCircle(sx, sy, 54, 1, 1.0, 0.92, 0.66, 0.10 * vis, true)
+  DrawCircle(sx, sy, 30, 1, 1.0, 0.90, 0.60, 0.16 * vis, true)
+  DrawCircle(sx, sy, 15, 2, 1.0, 0.96, 0.80, 0.92 * vis, true)
+  local drift = ((weatherT or 0) * 6.0) % (vw + 300)
+  for i = 1, 4 do
+    local cx = (i * 331 + drift) % (vw + 260) - 130
+    local cy = vh * (0.10 + 0.05 * i) + math.sin(i * 1.7) * 12
+    local al = (0.10 + 0.02 * (i % 2)) * vis
+    DrawCircle(cx, cy, 42, 1, 0.94, 0.96, 0.98, al, true)
+    DrawCircle(cx + 38, cy + 6, 30, 1, 0.94, 0.96, 0.98, al * 0.9, true)
+    DrawCircle(cx - 34, cy + 8, 26, 1, 0.94, 0.96, 0.98, al * 0.8, true)
+  end
+end
+
 function drawNightOverlay()
   local a = nightAmount()
   if a <= 0.01 then return end

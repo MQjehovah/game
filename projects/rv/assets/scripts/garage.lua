@@ -1594,12 +1594,14 @@ function on_render()
   if coopRole ~= nil then
     if coopRole ~= "server" then
       -- 客户端也要有雨幕/闪电/夜幕/星空，否则联机夜晚和雨天会明显“少一层”
+      if drawDaySky ~= nil then drawDaySky() end
       drawWeatherOverlay()
       drawNightOverlay()
       coopDrawHud()
     end
     return
   end
+  if drawDaySky ~= nil then drawDaySky() end
   drawWeatherOverlay()
   drawNightOverlay()
   if phase == "driving" then

@@ -2070,6 +2070,18 @@ function runSelfTest()
        string.format("day=%.2f night=%.2f", day, night))
   end
 
+  -- 白天太阳弧线：正午最高、早晚更低
+  do
+    local xm, ym = sunArc(6 * 60)
+    local xn, yn = sunArc(12 * 60)
+    local xe, ye = sunArc(18 * 60)
+    ok(r, "day sky sun arc",
+       math.abs(xn - 0.5) < 0.01 and yn < ym and yn < ye and
+       math.abs(ym - ye) < 0.01,
+       string.format("morning=(%.2f,%.2f) noon=(%.2f,%.2f) evening=(%.2f,%.2f)",
+                     xm, ym, xn, yn, xe, ye))
+  end
+
   -- 下一里程碑提示：探索/货运都给出下一个阈值
   do
     local sv, sj = visitedCount, jobDelivered
