@@ -895,6 +895,11 @@ function on_start()
       pyaw = dirYaw(0, -14.5)
     end
   end
+  if startMode == "pondview" then
+    -- Test-only: fishing dock on the camp pond.
+    px, pz = -18.0, -2.5
+    pyaw = dirYaw(0, -6.0)
+  end
   if startMode == "mall" then
     -- 购物中心店门口
     local nd = nodeById("mall")

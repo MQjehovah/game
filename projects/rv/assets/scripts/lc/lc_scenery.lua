@@ -450,12 +450,44 @@ function spawnRoadNetwork()
   spawnRoadShoulders(0, 60, 0, 220)
 end
 
--- 水塘（钓鱼点）
+-- 水塘（钓鱼点）+ 木栈桥
+function spawnDock(x, z)
+  local dock = { x = x, z = z, parts = {} }
+  local gy = 0.10
+  for i = 0, 4 do
+    local pz = z + 6.4 - i * 0.92
+    local plank = SpawnPrefab("rv_camp_wood",
+                             { x = x, y = gy, z = pz })
+    if plank ~= nil then
+      SetScale(plank, 1.70, 0.08, 0.92)
+      dock.parts[#dock.parts + 1] = plank
+    end
+  end
+  for _, off in ipairs({ { -0.85, 6.3 }, { 0.85, 6.3 },
+                         { -0.85, 2.7 }, { 0.85, 2.7 } }) do
+    local post = SpawnPrefab("rv_camp_wood",
+                            { x = x + off[1], y = 0.55, z = z + off[2] })
+    if post ~= nil then
+      SetScale(post, 0.14, 1.30, 0.14)
+      dock.parts[#dock.parts + 1] = post
+    end
+  end
+  -- 桥头小凳
+  local stool = SpawnPrefab("rv_camp_wood", { x = x + 1.2, y = 0.32, z = z + 6.2 })
+  if stool ~= nil then
+    SetScale(stool, 0.42, 0.10, 0.42)
+    dock.parts[#dock.parts + 1] = stool
+  end
+  docks[#docks + 1] = dock
+  return dock
+end
+
 function spawnPond(x, z)
   local ent = SpawnPrefab("rv_pond", { x = x, y = 0.02, z = z })
   if ent ~= nil then
     ponds[#ponds + 1] = { ent = ent, x = x, z = z }
   end
+  if spawnDock ~= nil then spawnDock(x, z) end
 end
 
 local pondsSeeded = false

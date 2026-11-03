@@ -2159,6 +2159,14 @@ function runSelfTest()
        string.format("drive=%s rain=%s clear=%s", dn, rn, wn))
   end
 
+  -- 钓鱼水塘木栈桥
+  do
+    local n = #docks
+    local parts = (n > 0) and #(docks[n].parts or {}) or 0
+    ok(r, "fishing docks", n >= 2 and parts >= 8,
+       string.format("docks=%d parts=%d", n, parts))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock
