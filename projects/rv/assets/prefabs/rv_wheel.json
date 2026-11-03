@@ -1,11 +1,25 @@
 {
   "components": {
-    "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
+    "transform": {
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "rot": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    },
     "mesh": {
-      "meshKey": "sphere",
-      "colorHex": "#1B1B1B",
-      "roughness": 0.92,
-      "metallic": 0,
+      "meshKey": "gltf:assets/models/rv/rv_wheel.gltf",
       "castShadow": true,
       "receiveShadow": true
     }

@@ -305,6 +305,7 @@ function on_start()
   groundEnt = FindNamedEntity("Ground")
   collectRvParts()
   spawnRvShell()
+  spawnRvWheels()
   spawnInterior()
   -- 合并 worldmap.json：名字/危险度/战利品表/链接
   do

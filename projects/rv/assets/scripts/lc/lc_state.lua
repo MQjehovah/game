@@ -24,6 +24,7 @@ rv = { x = 0, z = 0, yaw = 0, speed = 0, groundY = 0, pitch = 0, roll = 0 }
 curNode, day, clock = "camp", 1, 8 * 60
 rvBody = nil                  -- RV 动态刚体（Jolt）
 rvParts, rvShell, camEnt, groundEnt = nil, nil, nil, nil
+rvWheels = nil               -- 四个独立车轮实体（分轮悬挂/转向）
 rvDoor, rvDoorAngle = nil, 0
 roadEnt, roadSegments, roadPhase, roadScroll, roadDashes = nil, {}, 0, 0, {}
 camSmooth = nil

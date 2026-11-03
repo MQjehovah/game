@@ -280,12 +280,8 @@ def main():
     for hy in (0.55, 1.45):
         m.box(TRIM, fx + 0.01, hy, -3.52, 0.05, 0.10, 0.10)
 
-    # ---- Wheels + arches (front both sides, rear left only: the right-rear
-    #      arch would sit inside the preserved door opening) ----
-    for sign in (-1, 1):
-        wheel(m, sign, 2.92)
-    wheel(m, -1, -2.92)
-    wheel(m, 1, -2.92)
+    # ---- Wheels are separate entities (rv_wheel.gltf) so each one can follow
+    #      its own terrain contact and steer; the arches/wells stay here. ----
 
     # ---- Bumpers, rub strips, lights, mirrors, exhaust ----
     m.box(TRIM, 0, 0.60, -4.08, 2.34, 0.30, 0.18)

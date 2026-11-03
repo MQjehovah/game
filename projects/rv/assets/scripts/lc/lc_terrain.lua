@@ -182,6 +182,31 @@ function updateRvSuspension(dt)
   if maxPen > 0.25 then maxPen = 0.25 end
   h0 = h0 + maxPen
 
+  -- Per-wheel data for the visual articulation: the height of the fitted body
+  -- plane at each wheel, plus how far that wheel droops/compresses from it.
+  s.plane = s.plane or {}
+  s.travel = s.travel or {}
+  for i, w in ipairs(WHEELS) do
+    local plane = a * w.lx + b * w.lz
+    s.plane[i] = plane
+    s.travel[i] = hs[i] - (h0 + plane)
+  end
+
+  -- Visual steering from the yaw rate (works for manual driving, autopilot
+  -- and co-op without an extra state field) and wheel roll from speed.
+  local prevYaw = rv.prevYaw or rv.yaw
+  local dyaw = rv.yaw - prevYaw
+  rv.prevYaw = rv.yaw
+  local rate = dyaw / math.max(dt or 0.016, 0.016)
+  local targetSteer = math.max(-0.55, math.min(0.55, rate * 0.35))
+  local ks = math.min(1, (dt or 0.016) * 6)
+  rv.steerVis = (rv.steerVis or 0) + (targetSteer - (rv.steerVis or 0)) * ks
+  rv.wheelSpin = (rv.wheelSpin or 0) -
+                 (rv.speed or 0) * (dt or 0.016) / 0.40
+  if rv.wheelSpin > math.pi * 2 or rv.wheelSpin < -math.pi * 2 then
+    rv.wheelSpin = rv.wheelSpin % (math.pi * 2)
+  end
+
   local kk = math.min(1, (dt or 0.016) * 10)
   local tp = math.max(-0.35, math.min(0.35, -math.atan(b)))
   local tr = math.max(-0.35, math.min(0.35, math.atan(a)))

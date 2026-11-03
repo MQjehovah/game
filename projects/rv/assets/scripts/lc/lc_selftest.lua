@@ -218,7 +218,7 @@ function runSelfTest()
       local kx, kz, ky = rv.x, rv.z, rv.yaw
       local kp, kr, kg, ks = rv.pitch, rv.roll, rv.groundY, rv.susp
       local yaw = 0.6
-      rv.x, rv.z, rv.yaw = 13.0, 10.0, yaw
+      rv.x, rv.z, rv.yaw = 10.0, -6.0, yaw
       rv.pitch, rv.roll, rv.groundY = 0.0, 0.0, 0.0
       rv.susp = nil
       updateRvSuspension(1.0)
@@ -257,6 +257,27 @@ function runSelfTest()
          spread > 0.05,
          string.format("gy=%.2f h0=%.2f clearance=%.2f pitch=%.2f roll=%.2f spread=%.2f",
                        rv.groundY, h0, maxClear, rv.pitch, rv.roll, spread))
+      local tr = (rv.susp and rv.susp.travel) or {}
+      local tmin, tmax = 1e9, -1e9
+      for i = 1, #tr do
+        if tr[i] < tmin then tmin = tr[i] end
+        if tr[i] > tmax then tmax = tr[i] end
+      end
+      ok(r, "rv wheel articulation",
+         #tr == 4 and (tmax - tmin) > 0.05 and
+         math.abs(tmax) < 0.6 and math.abs(tmin) < 0.6,
+         string.format("travel=%.2f..%.2f", tmin, tmax))
+      ok(r, "rv wheel entities",
+         rvWheels ~= nil and #rvWheels == 4 and rvWheels[1].ent ~= nil and
+         rvWheels[4].ent ~= nil,
+         string.format("wheels=%d", rvWheels and #rvWheels or 0))
+      -- Front wheels steer from the yaw rate (no extra network field).
+      rv.prevYaw = rv.yaw - 0.05
+      updateRvSuspension(0.1)
+      ok(r, "rv wheel steer",
+         math.abs(rv.steerVis or 0) > 0.01,
+         string.format("steer=%.2f spin=%.1f",
+                       rv.steerVis or 0, rv.wheelSpin or 0))
       rv.x, rv.z, rv.yaw = kx, kz, ky
       rv.pitch, rv.roll, rv.groundY = kp, kr, kg
       rv.susp = ks

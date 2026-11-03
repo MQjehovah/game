@@ -5,15 +5,14 @@ function collectRvParts()
   if rvParts then return end
   rvParts = {}
   local names = { "RV_Floor", "RV_WallL", "RV_WallR", "RV_RearWall", "RV_Cab",
-                  "RV_Windshield", "Wheel_FL", "Wheel_FR", "Wheel_RL", "Wheel_RR" }
+                  "RV_Windshield" }
   for _, n in ipairs(names) do
     local e = FindNamedEntity(n)
     if e ~= nil then
       local p = GetPosition(e)
       if n == "RV_Cab" then SetScale(e, 2.6, 1.8, 1.7) end  -- 与车身同宽
       -- 外壳换成 glTF 模型；旧盒体隐藏，仅保留地板
-      if n ~= "RV_Floor" and n ~= "Wheel_FL" and n ~= "Wheel_FR"
-         and n ~= "Wheel_RL" and n ~= "Wheel_RR" then
+      if n ~= "RV_Floor" then
         SetVisible(e, false)
       end
       rvParts[#rvParts + 1] = { ent = e, name = n, lx = p.x, ly = p.y, lz = p.z }
@@ -54,6 +53,29 @@ function spawnRvShell()
   -- open without a cube overlay.
   rvDoor = SpawnPrefab("rv_door", { x = 0, y = 0, z = 0 })
   if rvDoor ~= nil then SetRotationY(rvDoor, rv.yaw) end
+end
+
+-- Four standalone wheels: each follows its own terrain contact (vertical
+-- suspension travel) and the front pair steers. Local layout matches the old
+-- baked wheels and the wheel arches.
+local WHEEL_DEFS = {
+  { lx = -1.26, lz =  2.92, front = true },   -- front left
+  { lx =  1.26, lz =  2.92, front = true },   -- front right
+  { lx = -1.26, lz = -2.92, front = false },  -- rear left
+  { lx =  1.26, lz = -2.92, front = false },  -- rear right
+}
+local WHEEL_CENTER_Y = 0.38
+local WHEEL_RADIUS = 0.40
+
+function spawnRvWheels()
+  if rvWheels then return end
+  rvWheels = {}
+  for i, w in ipairs(WHEEL_DEFS) do
+    local ent = SpawnPrefab("rv_wheel", { x = rv.x, y = WHEEL_CENTER_Y, z = rv.z })
+    if ent ~= nil then
+      rvWheels[i] = { ent = ent, lx = w.lx, lz = w.lz, front = w.front }
+    end
+  end
 end
 
 function spawnInterior()
@@ -130,6 +152,29 @@ function applyRvTransform()
     for _, p in ipairs(rvInterior) do
       setTilted(p.ent, p.lx, p.ly, p.lz, 0)
       if p.hideInCab then SetVisible(p.ent, not hideCab) end
+    end
+  end
+  -- Wheels: body-local height = fitted plane offset + per-wheel suspension
+  -- travel + wheel centre height. Steering and rolling are added on top.
+  if rvWheels then
+    local s = rv.susp
+    local spin = rv.wheelSpin or 0
+    for i, w in ipairs(rvWheels) do
+      local travel, plane = 0, 0
+      if s ~= nil and s.travel ~= nil then
+        travel = s.travel[i] or 0
+        plane = (s.plane and s.plane[i]) or 0
+      end
+      local ly = WHEEL_CENTER_Y + plane + travel
+      local ox, oy, oz = rvOffset(w.lx, ly, w.lz)
+      SetPosition(w.ent, { x = rv.x + ox, y = gy + oy, z = rv.z + oz })
+      local steer = w.front and (rv.steerVis or 0) or 0
+      local pitch = (rv.pitch or 0) + spin
+      if SetRotationEuler ~= nil then
+        SetRotationEuler(w.ent, pitch, rv.roll or 0, rv.yaw + steer)
+      else
+        SetRotationY(w.ent, rv.yaw + steer)
+      end
     end
   end
   for _, inst in pairs(instances) do
