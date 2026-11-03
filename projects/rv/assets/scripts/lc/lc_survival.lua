@@ -596,9 +596,14 @@ function sleepInBed()
   restedMin = 240
   local atCamp = (atNode == "camp")
   local comfort = (stats ~= nil and stats.comfort) or 0
+  local campfireWarm = atCamp and campfireOn ~= false
   local factor = hygieneEnergyFactor(needs.hygiene) +
-                 (atCamp and 0.10 or 0) + comfortSleepBonus(comfort)
+                 (atCamp and 0.10 or 0) + comfortSleepBonus(comfort) +
+                 (campfireWarm and 0.05 or 0)
   factor = math.min(1.0, factor)
+  if campfireWarm then
+    warmthMin = math.max(warmthMin or 0, 120)
+  end
   needs.energy = math.min(100, needs.energy + (100 - needs.energy) * factor)
   needs.hunger = math.max(0, needs.hunger - 20)
   needs.thirst = math.max(0, needs.thirst - 32)

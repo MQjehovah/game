@@ -3898,6 +3898,25 @@ function runSelfTest()
        string.format("health=%.0f camp=%s", gotHealth, tostring(campOk)))
   end
 
+  -- 营地篝火燃着时睡觉：额外保暖并提高体力恢复
+  do
+    local sd, sc, sa = day, clock, atNode
+    local se, sg, sw = needs.energy, needs.hygiene, warmthMin
+    local sk, sf = campfireOn, campfireFuelMin
+    atNode, campfireOn, campfireFuelMin = "camp", true, 500
+    needs.energy, needs.hygiene, warmthMin = 0, 100, 0
+    sleepInBed()
+    local gotEnergy = needs.energy or 0
+    local gotWarm = warmthMin or 0
+    day, clock, atNode = sd, sc, sa
+    needs.energy, needs.hygiene, warmthMin = se, sg, sw
+    campfireOn, campfireFuelMin = sk, sf
+    morningReport = nil
+    ok(r, "campfire sleep",
+       gotEnergy > 55 and gotWarm >= 120,
+       string.format("energy=%.0f warmth=%.0f", gotEnergy, gotWarm))
+  end
+
   -- 舒适度提高睡眠恢复，最多 +15%
   do
     local a = comfortSleepBonus(0)
