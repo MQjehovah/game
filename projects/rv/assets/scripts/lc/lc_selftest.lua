@@ -2702,6 +2702,17 @@ function runSelfTest()
        string.format("cold=%.1f half=%.1f hot=%.1f", cold, half, hot))
   end
 
+  -- 雨雪天刹车效率下降
+  do
+    local dry = brakeRate(1.0, 0, "clear")
+    local rain = brakeRate(1.0, 0, "rain")
+    local snow = brakeRate(1.0, 0, "snow")
+    ok(r, "wet brakes",
+       dry > snow and dry > rain and rain < snow and
+       math.abs(weatherBrakeScale("rain") - 0.92) < 1e-6,
+       string.format("dry=%.1f rain=%.1f snow=%.1f", dry, rain, snow))
+  end
+
   -- 载重增加轮胎磨损（超载最高 ×2.2）
   do
     local empty = tireWearScale(1.0)

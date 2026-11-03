@@ -186,14 +186,22 @@ function brakeFadeScale(heat)
   return 1.0 - 0.30 * h
 end
 
-function brakeRate(loadRatio, heat)
+-- 雨雪天刹车效率：湿滑路面制动力略降
+function weatherBrakeScale(weatherValue)
+  if weatherValue == "rain" then return 0.92 end
+  if weatherValue == "snow" then return 0.95 end
+  return 1.0
+end
+
+function brakeRate(loadRatio, heat, weatherValue)
   local over = math.max(0, (loadRatio or 1) - 1.0)
-  return DRIVE.brake / (1.0 + over * 0.60) * brakeFadeScale(heat)
+  return DRIVE.brake / (1.0 + over * 0.60) * brakeFadeScale(heat) *
+         weatherBrakeScale(weatherValue)
 end
 
 -- 手刹：比脚刹更强的减速度（载重同样衰减）
-function handbrakeRate(loadRatio, heat)
-  return brakeRate(loadRatio, heat) * 1.55
+function handbrakeRate(loadRatio, heat, weatherValue)
+  return brakeRate(loadRatio, heat, weatherValue) * 1.55
 end
 
 -- 车轮扬尘/胎烟发射率（/s）与颜色种类：硬路面不扬尘，草地/土路/泥地明显，
@@ -758,14 +766,14 @@ function updateDrive(dt)
   local handbrake = ActionDown("shift")
   if handbrake and rv.speed > 0.05 then
     rv.braking = true
-    rv.speed = math.max(0.0, rv.speed - handbrakeRate(ratio, brakeHeat) * dt)
+    rv.speed = math.max(0.0, rv.speed - handbrakeRate(ratio, brakeHeat, weather) * dt)
   elseif throttle > 0 then
     rv.braking = false
     rv.speed = math.min(maxSp, rv.speed + acc * dt)
   elseif throttle < 0 then
     rv.braking = true
     if rv.speed > 0.05 then
-      rv.speed = math.max(0.0, rv.speed - brakeRate(ratio, brakeHeat) * dt)
+      rv.speed = math.max(0.0, rv.speed - brakeRate(ratio, brakeHeat, weather) * dt)
     else
       rv.speed = math.max(-DRIVE.reverseMax, rv.speed - acc * 0.6 * dt)
     end
