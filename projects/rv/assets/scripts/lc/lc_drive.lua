@@ -113,6 +113,15 @@ function surfaceFuelScale(name)
   return 1.0
 end
 
+-- 防滑链在干燥铺装路上略拖慢车速（雪链抓地的权衡）
+function chainsSpeedScale(surface)
+  if hasItem ~= nil and hasItem("chains", 1) and
+     (surface == "asphalt" or surface == "concrete") then
+    return 0.95
+  end
+  return 1.0
+end
+
 function fuelBurnRate(speed, loadRatio, throttle)
   local v = math.min(1, math.abs(speed or 0) / DRIVE.maxSpeed)
   local ratio = loadRatio or 1
@@ -511,6 +520,14 @@ function updateDrive(dt)
   local oilF = engineOilPowerScale()
   maxSp = maxSp * oilF
   acc = acc * oilF
+  -- 防滑链在干燥铺装路上略拖慢
+  local surfName = "asphalt"
+  if surfaceInfo ~= nil then
+    surfName = surfaceInfo(rv.x, rv.z)
+  end
+  local chainF = chainsSpeedScale(surfName)
+  maxSp = maxSp * chainF
+  acc = acc * chainF
   -- 引擎濒临报废：只能龟速，必须先修
   if (parts.engine or 100) < 10 then
     maxSp = math.min(maxSp, 1.6)

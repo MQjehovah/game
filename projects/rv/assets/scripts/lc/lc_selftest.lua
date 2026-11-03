@@ -3843,6 +3843,20 @@ function runSelfTest()
                      tostring(dry)))
   end
 
+  -- 防滑链在干燥铺装路上略拖慢车速（权衡）
+  do
+    local keep = inv.chains
+    inv.chains = 1
+    local dry = chainsSpeedScale("asphalt")
+    local grass = chainsSpeedScale("grass")
+    inv.chains = nil
+    local none = chainsSpeedScale("asphalt")
+    inv.chains = keep
+    ok(r, "chains tradeoff",
+       dry < none and grass == none and none == 1.0,
+       string.format("dry=%.2f grass=%.2f none=%.2f", dry, grass, none))
+  end
+
   -- 雪天寒冷：没开取暖器时体力消耗更快
   do
     local a = coldEnergyExtra("snow", false)
