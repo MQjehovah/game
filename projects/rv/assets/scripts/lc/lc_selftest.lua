@@ -1897,20 +1897,31 @@ function runSelfTest()
                      tostring(high), tostring(low)))
   end
 
-  -- 车况同步串：dur:engine:tires:battery:temp 可解析
+  -- 车况同步串：dur:engine:tires:battery:temp:brake + 四轮压/温/磨损
   do
     local kd, ke, kt = dur, parts.engine, parts.tires
     local kb, kt2 = parts.battery, engineTemp
+    local kheat = brakeHeat
+    local kp, ktt, kw = rv.tirePressureCold, rv.tireTemps, rv.tireWear
     dur, parts.engine, parts.tires, parts.battery = 80, 70, 60, 55
-    engineTemp = 90
+    engineTemp, brakeHeat = 90, 0.4
+    rv.tirePressureCold = { 2.4, 2.2, 2.0, 1.8 }
+    rv.tireTemps = { 22, 40, 60, 80 }
+    rv.tireWear = { 90, 80, 70, 60 }
     local token = vehicleConditionToken()
     local veh = parseVehicleCondition(token)
     local bad = parseVehicleCondition("nope")
+    local wheelOk = veh ~= nil and veh.pressures ~= nil and
+                    math.abs(veh.pressures[4] - 1.8) < 1e-6 and
+                    veh.temps[4] == 80 and veh.wear[4] == 60 and
+                    math.abs((veh.brake or 0) - 0.4) < 1e-6
     dur, parts.engine, parts.tires = kd, ke, kt
-    parts.battery, engineTemp = kb, kt2
+    parts.battery, engineTemp, brakeHeat = kb, kt2, kheat
+    rv.tirePressureCold, rv.tireTemps, rv.tireWear = kp, ktt, kw
     ok(r, "vehicle condition sync",
        veh ~= nil and veh.dur == 80 and veh.engine == 70 and
-       veh.tires == 60 and veh.battery == 55 and veh.temp == 90 and bad == nil,
+       veh.tires == 60 and veh.battery == 55 and veh.temp == 90 and
+       wheelOk and bad == nil,
        string.format("token=%s", tostring(token)))
   end
 

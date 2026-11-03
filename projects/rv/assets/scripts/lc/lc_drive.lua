@@ -69,24 +69,50 @@ function setOilLife(v)
   oilLife = math.max(0, math.min(100, tonumber(v) or 0))
 end
 
--- 车况同步串：dur:engine:tires:battery:temp（联机客机显示用）
+-- 车况同步串：dur:engine:tires:battery:temp:brake:p1..p4:t1..t4:w1..w4
+-- （联机客机显示用；刹车热与四轮数据让保养面板也保持一致）
 function vehicleConditionToken()
-  return string.format("%d:%d:%d:%d:%d",
-    math.floor(dur or 100), math.floor((parts and parts.engine) or 100),
-    math.floor((parts and parts.tires) or 100),
-    math.floor((parts and parts.battery) or 100),
-    math.floor(engineTemp or 20))
+  local out = {
+    tostring(math.floor(dur or 100)),
+    tostring(math.floor((parts and parts.engine) or 100)),
+    tostring(math.floor((parts and parts.tires) or 100)),
+    tostring(math.floor((parts and parts.battery) or 100)),
+    tostring(math.floor(engineTemp or 20)),
+    tostring(math.floor((brakeHeat or 0) * 100)),
+  }
+  for i = 1, 4 do
+    out[#out + 1] = string.format("%.1f",
+      (rv.tirePressureCold or {})[i] or 2.4)
+  end
+  for i = 1, 4 do
+    out[#out + 1] = string.format("%.0f", (rv.tireTemps or {})[i] or 22)
+  end
+  for i = 1, 4 do
+    out[#out + 1] = string.format("%.0f",
+      (rv.tireWear or {})[i] or ((parts and parts.tires) or 100))
+  end
+  return table.concat(out, ":")
 end
 
 function parseVehicleCondition(str)
   if type(str) ~= "string" then return nil end
   local out = {}
-  for n in string.gmatch(str, "%-?%d+") do
-    out[#out + 1] = tonumber(n) or 0
+  for token in string.gmatch(str, "[^:]+") do
+    out[#out + 1] = tonumber(token)
   end
-  if #out < 5 then return nil end
-  return { dur = out[1], engine = out[2], tires = out[3],
-           battery = out[4], temp = out[5] }
+  if #out < 5 or out[1] == nil then return nil end
+  local v = { dur = out[1], engine = out[2], tires = out[3],
+              battery = out[4], temp = out[5] }
+  if out[6] ~= nil then
+    v.brake = (out[6] or 0) / 100
+    v.pressures, v.temps, v.wear = {}, {}, {}
+    for i = 1, 4 do
+      v.pressures[i] = out[6 + i] or 2.4
+      v.temps[i] = out[10 + i] or 22
+      v.wear[i] = out[14 + i] or 100
+    end
+  end
+  return v
 end
 
 -- 车辆保养面板数据：每一项返回 {label, value, ok}

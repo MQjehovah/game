@@ -1955,6 +1955,19 @@ local function applyState(s)
                           coop.veh.dur, coop.veh.engine, coop.veh.tires,
                           coop.veh.battery, coop.veh.temp))
     end
+    if coop.veh ~= nil then
+      if coop.veh.brake ~= nil then brakeHeat = coop.veh.brake end
+      if coop.veh.pressures ~= nil then
+        rv.tirePressureCold = rv.tirePressureCold or {}
+        rv.tireTemps = rv.tireTemps or {}
+        rv.tireWear = rv.tireWear or {}
+        for i = 1, 4 do
+          rv.tirePressureCold[i] = coop.veh.pressures[i]
+          rv.tireTemps[i] = coop.veh.temps[i]
+          rv.tireWear[i] = coop.veh.wear[i]
+        end
+      end
+    end
   end
   if s.warm ~= nil and setWarmth ~= nil then
     setWarmth(s.warm)

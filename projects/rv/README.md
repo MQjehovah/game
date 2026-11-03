@@ -906,7 +906,7 @@
 - `coop_wood.txt`：服务端 3s 站到营地柴堆旁取木材，日志
   `[coop-wood] demo ok=true wood=40 cd=60`，验证联机柴堆补给。
 - `coop_veh.txt`：服务端 3s 写入车况并广播，日志
-  `[coop-veh] demo token=72:60:55:80:95`，验证联机车况同步。
+  `[coop-veh] demo token=72:60:55:80:95:0:...`，验证联机车况/四轮数据同步。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /
@@ -1055,9 +1055,12 @@ POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃
 - **每日目标同步**：`game_state.goal` 为 `id:progress:target:done`，
   客户端合作 HUD 显示 `今日目标 jobs 1/2`；服务器日志可直接看到
   `goal=jobs:0:2:0`，合作 smoke 通过。
-- **车况同步**：`game_state.veh` 为 `dur:engine:tires:battery:temp`，
-  客机 HUD 显示 `车况 车体x% 引擎x% 轮胎x% 电瓶x% 水温x°C`；
-  服务器日志 `[coop-veh] demo token=72:60:55:80:95`，自检 `vehicle condition sync`。
+- **车况同步**：`game_state.veh` 为
+  `dur:engine:tires:battery:temp:brake:p1..p4:t1..t4:w1..w4`，
+  客机 HUD 显示 `车况 车体x% 引擎x% 轮胎x% 电瓶x% 水温x°C`，
+  并把刹车热与四轮胎压/胎温/磨损同步给客机（保养面板数据一致）；
+  服务器日志 `[coop-veh] demo token=72:60:55:80:95:0:...`，
+  自检 `vehicle condition sync`。
 - **联机天气/夜幕对齐**：合作客户端现在也会绘制雨幕、闪电、夜幕与星空
   （之前只有单机 `on_render` 画），联机夜雨不再少一层氛围；合作 smoke 通过。
 - **联机罗盘/小地图**：合作客户端 HUD 也绘制顶部罗盘与右下角小地图，
