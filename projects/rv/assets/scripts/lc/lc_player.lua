@@ -148,7 +148,10 @@ function updatePlayer(dt)
   -- inside the RV the floor (and therefore the player) follows the RV.
   if terrainHeight ~= nil then
     if isPlayerInsideRv() then
-      player.groundY = rv.groundY or 0
+      -- Stand on the leaning floor: local (lx, lz) -> tilted height.
+      local lx, lz = worldToLocal(player.x, player.z)
+      local off = rvFloorOffset and rvFloorOffset(lx, lz) or 0
+      player.groundY = (rv.groundY or 0) + off
     else
       player.groundY = terrainFollow(player.groundY or 0, player.x, player.z, dt, 14)
     end

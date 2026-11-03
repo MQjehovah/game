@@ -414,7 +414,7 @@ function on_start()
                          { mass = math.max(800, 1200 + stats.weight * 0.8),
                            friction = 0.4, restitution = 0.05 })
 
-  if startMode == "rvslope" then
+  if startMode == "rvslope" or startMode == "rvslope_in" then
     -- Test-only: park the RV on the steep part of the embankment so height
     -- following and pitch/roll tilt are visible in a screenshot.
     rv.x, rv.z = 13.0, 10.0
@@ -493,6 +493,12 @@ function on_start()
     -- Test-only: the RV is parked on the embankment (see rvBody block).
     px, pz = -7.0, -5.0
     pyaw = dirYaw(7.0, 5.0)
+  end
+  if startMode == "rvslope_in" then
+    -- Test-only: first-person view from inside the RV on the slope; the eye
+    -- follows the leaning floor (rvFloorOffset) instead of the flat ground.
+    px, pz = -0.5, -2.6
+    pyaw = 0
   end
   if startMode == "poi" then
     -- 路边商店门口：用于检查可进入建筑（门洞/内衬/战利品）

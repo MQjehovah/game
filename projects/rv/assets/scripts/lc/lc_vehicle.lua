@@ -88,6 +88,15 @@ local function rvOffset(lx, ly, lz)
   return x1 * cy + z2 * sy, y2, -x1 * sy + z2 * cy
 end
 
+-- Height of the tilted floor at an RV-local (lx, lz), relative to the RV
+-- origin. The first-person player inside the RV stands on this surface, so the
+-- eye follows the lean instead of floating through the wall on a slope.
+function rvFloorOffset(lx, lz)
+  local cp, sp = math.cos(rv.pitch or 0), math.sin(rv.pitch or 0)
+  local sr = math.sin(rv.roll or 0)
+  return lx * sr * cp - lz * sp
+end
+
 local function setTilted(ent, lx, ly, lz, extraYaw)
   local ox, oy, oz = rvOffset(lx, ly, lz)
   SetPosition(ent, { x = rv.x + ox, y = (rv.groundY or 0) + oy, z = rv.z + oz })

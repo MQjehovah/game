@@ -808,8 +808,10 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   （±0.35rad 限幅、8Hz 阻尼）；`applyRvTransform()` 用 `rvOffset()` 对部件偏移做
   roll→pitch→yaw 三维旋转，并通过**引擎新增的 `SetRotationEuler`**
   （`bindings.cpp` / `game_runtime.cpp` / `bindings.hpp`）设置朝向，
-  物理刚体使用同样的四元数。自检新增 `terrain height profile` /
-  `terrain ground follow` / `rv slope tilt`，总计 **29/29 PASS**。
+  物理刚体使用同样的四元数；车内第一人称站立高度由 `rvFloorOffset()` 取倾斜
+  地板高度，镜头随车厢一起倾斜。自检新增 `terrain height profile` /
+  `terrain ground follow` / `rv slope tilt` / `rv tilted interior`，
+  总计 **30/30 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

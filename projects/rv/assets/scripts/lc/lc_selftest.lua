@@ -174,6 +174,17 @@ function runSelfTest()
       ok(r, "rv slope tilt",
          math.abs(rv.roll) > 0.15 and math.abs(rv.pitch) < 0.2,
          string.format("pitch=%.2f roll=%.2f", rv.pitch, rv.roll))
+      -- The interior floor must lean with the body: the nose (lz=+3) drops
+      -- with positive pitch and the right side (lx=+3) rises with roll.
+      if rvFloorOffset ~= nil then
+        rv.pitch, rv.roll = 0.20, 0.00
+        local nose = rvFloorOffset(0, 3.0)
+        rv.pitch, rv.roll = 0.00, 0.20
+        local right = rvFloorOffset(3.0, 0)
+        ok(r, "rv tilted interior",
+           nose < -0.5 and right > 0.5,
+           string.format("nose=%.2f right=%.2f", nose, right))
+      end
       rv.x, rv.z, rv.yaw = kx, kz, ky
       rv.pitch, rv.roll = kp, kr
     end

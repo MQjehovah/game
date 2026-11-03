@@ -112,7 +112,8 @@
   模型与枪械、驾驶时 `rv.groundY` + 外壳/内饰/家具/相机全部跟随土坡高度。
   `updateRvTilt()` 用梯度算出 `rv.pitch/rv.roll`（限幅 ±0.35rad），
   `applyRvTransform()` 用三维旋转摆放每个部件并通过引擎新增的
-  `SetRotationEuler(entity,pitch,roll,yaw)` 设置朝向，物理刚体也用同一四元数。
+  `SetRotationEuler(entity,pitch,roll,yaw)` 设置朝向，物理刚体也用同一四元数；
+  车内第一人称的站立高度由 `rvFloorOffset()` 取倾斜地板高度。
   合作 `game_state` 广播每位玩家的 `gy` 与房车 `rv.gy`，两端各自计算相同的倾斜。
 
 ## 验证
