@@ -17,6 +17,8 @@ function despawnDriveWorld()
   driveProps = {}
   for _, z in ipairs(driveHorde) do Despawn(z.ent) end
   driveHorde = {}
+  for _, d in ipairs(driveDeer) do Despawn(d.ent) end
+  driveDeer = {}
 end
 
 -- 事件原语（流程图 game/drive-* 节点调用；权重编排放 drive_event.flow.json）
@@ -89,6 +91,31 @@ function despawnDriveRoadblock(p)
     if PhysicsRemove ~= nil then PhysicsRemove(id) end
   end
   p.parts, p.bodyIds = {}, {}
+end
+
+-- 野生动物横穿：从路侧冲向另一侧，撞上掉车体耐久/货况；不追车。
+function spawnDriveDeer(n)
+  local base = 26 + math.random() * 12
+  local side = (math.random() < 0.5) and -1 or 1
+  for _ = 1, math.min(2, n or 1) do
+    local ent = SpawnPrefab("rv_rabbit", { x = 0, y = -60, z = 0 })
+    if ent ~= nil then
+      local lx = side * 9.0
+      local wx, wz = rotOf(lx, base + (math.random() * 2 - 1) * 4)
+      local gy = (terrainHeight and terrainHeight(wx, wz)) or 0
+      SetPosition(ent, { x = wx, y = gy + 0.55, z = wz })
+      SetScale(ent, 1.10, 0.85, 1.45)
+      local sp = 3.2 + math.random() * 1.6
+      -- 速度方向：世界空间垂直于公路（沿 X）
+      local vx = -side * sp
+      driveDeer[#driveDeer + 1] = { ent = ent, x = wx, z = wz, vx = vx, vz = 0,
+                                    life = 14, phase = math.random() * 6.28 }
+    end
+  end
+end
+
+function despawnDriveDeer(d)
+  Despawn(d.ent)
 end
 
 function triggerEvent()
@@ -176,6 +203,35 @@ function updateDriveWorld(dt)
     elseif z.life <= 0 or dist > 70 then
       Despawn(z.ent)
       table.remove(driveHorde, i)
+    end
+  end
+  for i = #driveDeer, 1, -1 do
+    local d = driveDeer[i]
+    d.life = d.life - dt
+    d.x, d.z = d.x + d.vx * dt, d.z + d.vz * dt
+    local gy = (terrainHeight and terrainHeight(d.x, d.z)) or 0
+    SetPosition(d.ent, { x = d.x, y = gy + 0.55 +
+                         math.abs(math.sin(raidT * 7 + d.phase)) * 0.18, z = d.z })
+    SetRotationY(d.ent, dirYaw(d.vx, d.vz))
+    local dx, dz = rv.x - d.x, rv.z - d.z
+    local dist = math.sqrt(dx * dx + dz * dz)
+    if dist < 2.6 and math.abs(rv.speed) > 1.5 then
+      dur = math.max(0, dur - 5)
+      if jobApplyImpact ~= nil then jobApplyImpact(3.0) end
+      if PlaySfx then PlaySfx("hurt") end
+      EmitParticles({ pos = { x = d.x, y = gy + 0.8, z = d.z }, count = 14,
+                      speedMin = 1, speedMax = 3.0, lifeMin = 0.3, lifeMax = 0.7,
+                      sizeStart = 0.18, sizeEnd = 0.05,
+                      color = { r = 0.42, g = 0.20, b = 0.12, a = 0.9 },
+                      colorEnd = { r = 0.42, g = 0.20, b = 0.12, a = 0.0 },
+                      additive = false })
+      SpawnFloatText(d.x, 1.2, d.z, "撞到野生动物 车体 -5",
+                     false, 1.4, 1, 0.4, 0.3)
+      Despawn(d.ent)
+      table.remove(driveDeer, i)
+    elseif d.life <= 0 or dist > 60 then
+      Despawn(d.ent)
+      table.remove(driveDeer, i)
     end
   end
 end

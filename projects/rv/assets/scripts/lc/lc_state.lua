@@ -112,6 +112,7 @@ weather, weatherT, weatherNext = "clear", 0, 15
 -- 途中事件
 nextEventT = 20
 driveProps, driveHorde = {}, {}
+driveDeer = {}                -- 横穿公路的野生动物（鹿/野兔放大）
 
 -- 主角
 player = { active = false, x = 0, z = 0, yaw = 0, pitch = 0, ent = nil, anim = "",

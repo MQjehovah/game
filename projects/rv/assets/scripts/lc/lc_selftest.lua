@@ -1785,6 +1785,30 @@ function runSelfTest()
     ok(r, "milestone hint", okHint, hint)
   end
 
+  -- 野生动物横穿：生成后沿路横移，清理干净
+  do
+    local before = #driveDeer
+    spawnDriveDeer(1)
+    local d = driveDeer[#driveDeer]
+    local spawned = #driveDeer == before + 1 and d ~= nil and
+                    (d.vx or 0) ~= 0 and (d.life or 0) > 0
+    local moved = false
+    if d ~= nil then
+      local x0 = d.x
+      updateDriveWorld(0.5)
+      moved = math.abs((d.x or x0) - x0) > 0.05
+      for i = #driveDeer, 1, -1 do
+        if driveDeer[i] == d then
+          despawnDriveDeer(d)
+          table.remove(driveDeer, i)
+        end
+      end
+    end
+    ok(r, "drive deer crossing", spawned and moved and #driveDeer == before,
+       string.format("spawned=%s moved=%s left=%d", tostring(spawned),
+                     tostring(moved), #driveDeer))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

@@ -15,7 +15,10 @@
     { "id": 8, "type": "game/toast", "text": "路边有燃油桶！开过去拾取", "duration": 3.5 },
     { "id": 9, "type": "flow/random", "chance": 0.55 },
     { "id": 10, "type": "game/drive-roadblock" },
-    { "id": 11, "type": "game/toast", "text": "前方路面被堵——打方向绕过去", "duration": 3.5 }
+    { "id": 11, "type": "game/toast", "text": "前方路面被堵——打方向绕过去", "duration": 3.5 },
+    { "id": 12, "type": "flow/random", "chance": 0.5 },
+    { "id": 13, "type": "game/drive-deer", "count": 1 },
+    { "id": 14, "type": "game/toast", "text": "野生动物横穿公路——减速避让", "duration": 3.5 }
   ],
   "links": [
     { "from": 1, "out": "true",  "to": 2, "in": "exec" },
@@ -26,16 +29,20 @@
     { "from": 4, "out": "false", "to": 9, "in": "exec" },
     { "from": 9, "out": "true",  "to": 7, "in": "exec" },
     { "from": 7, "out": "exec",  "to": 8, "in": "exec" },
-    { "from": 9, "out": "false", "to": 10, "in": "exec" },
-    { "from": 10, "out": "exec", "to": 11, "in": "exec" }
+    { "from": 9, "out": "false", "to": 12, "in": "exec" },
+    { "from": 12, "out": "true", "to": 10, "in": "exec" },
+    { "from": 10, "out": "exec", "to": 11, "in": "exec" },
+    { "from": 12, "out": "false", "to": 13, "in": "exec" },
+    { "from": 13, "out": "exec", "to": 14, "in": "exec" }
   ],
   "editor": {
     "positions": { "1": [80, 60], "2": [340, 40], "3": [580, 40], "4": [80, 240],
                    "5": [340, 220], "6": [580, 220], "7": [340, 400], "8": [580, 400],
-                   "9": [80, 470], "10": [340, 560], "11": [580, 560] },
+                   "9": [80, 470], "10": [340, 560], "11": [580, 560],
+                   "12": [80, 640], "13": [340, 720], "14": [580, 720] },
     "notes": { "1": "权重 4/9 ≈ 0.44（原 EVENTS w=4/9）", "4": "剩余 5/9 里补给 3/5 = 0.6",
-               "9": "剩余 2/9 里油桶/路障各半" },
+               "9": "剩余 2/9 里油桶占 55%", "12": "油桶之外再平分路障/野生动物" },
     "groups": [ { "title": "尸群横穿 (w=4)", "x": 48, "y": 8, "w": 740, "h": 130, "color": 12503040 },
-                { "title": "补给/油桶/路障 (w=3+2)", "x": 48, "y": 168, "w": 740, "h": 450, "color": 3244032 } ]
+                { "title": "补给/油桶/路障/野生动物", "x": 48, "y": 168, "w": 740, "h": 610, "color": 3244032 } ]
   }
 }
