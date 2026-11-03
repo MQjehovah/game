@@ -37,6 +37,12 @@ function rollWeather()
   return "clear"
 end
 
+-- 闪电：雨天每隔一段时间触发一次全屏闪光（thunder 由 HUD 层绘制）
+function triggerLightning()
+  lightningT = 0.50
+  lightningNext = 8 + math.random() * 12
+end
+
 -- 地面薄雾发射率（/s）：雾天最浓，深夜也有少量；自检/调参用
 function fogWispRate()
   if weather == "fog" then return 6 end
@@ -46,6 +52,13 @@ end
 
 function updateWeather(dt)
   weatherT = weatherT + dt * SURVIVAL.timeScale
+  if lightningT ~= nil and lightningT > 0 then
+    lightningT = math.max(0, lightningT - dt)
+  end
+  if weather == "rain" then
+    lightningNext = (lightningNext or (6 + math.random() * 8)) - dt
+    if lightningNext <= 0 then triggerLightning() end
+  end
   if weatherT >= weatherNext then
     local nextWeather = rollWeather()
     if nextWeather ~= weather then setWeather(nextWeather) else weatherT = 0 end
@@ -135,6 +148,11 @@ function drawWeatherOverlay()
       local x = (i * 97 + math.floor(weatherT * 17)) % vw
       local y = (i * 53 + math.floor(weatherT * 230)) % vh
       DrawLine(x, y, x - 7, y + 22, 1, 0.62, 0.72, 0.82, 0.32)
+    end
+    -- 闪电全屏闪光（亮度随时间衰减）
+    if lightningT ~= nil and lightningT > 0 then
+      local a = math.min(0.35, lightningT * 0.9)
+      DrawRect(0, 0, vw, vh, 0.86, 0.90, 1.0, a)
     end
   elseif weather == "fog" then
     DrawRect(0, 0, vw, vh, 0.72, 0.75, 0.79, 0.24)

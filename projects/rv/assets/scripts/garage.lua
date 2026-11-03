@@ -893,6 +893,11 @@ function on_start()
     setWeather("fog")
     setPhase("driving")
     driveView = "chase"
+  elseif startMode == "lightning" then
+    setWeather("rain")
+    triggerLightning()
+    setPhase("driving")
+    driveView = "chase"
   elseif startMode == "inside_dark" then
     setInteriorLights(false)
   elseif startMode == "tripview" then

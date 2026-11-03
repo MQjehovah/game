@@ -1216,6 +1216,17 @@ function runSelfTest()
        string.format("shakeT=%.2f", s))
   end
 
+  -- 雨天闪电：触发后闪光计时开始衰减
+  do
+    local keep = lightningT
+    triggerLightning()
+    local on = (lightningT or 0) > 0
+    local a = math.min(0.35, (lightningT or 0) * 0.9)
+    lightningT = keep
+    ok(r, "rv lightning flash", on and a > 0.10,
+       string.format("t=0.50 alpha=%.2f", a))
+  end
+
   -- 存读档：行程/探索/货运单数
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
