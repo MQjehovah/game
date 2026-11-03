@@ -74,10 +74,12 @@ function fireflyRate()
   return 6
 end
 
--- 闪电：雨天每隔一段时间触发一次全屏闪光（thunder 由 HUD 层绘制）
+-- 闪电：雨天每隔一段时间触发一次全屏闪光 + 雷声
 function triggerLightning()
   lightningT = 0.50
   lightningNext = 8 + math.random() * 12
+  lightningCount = (lightningCount or 0) + 1
+  if PlaySfx then PlaySfx("thunder") end
 end
 
 -- 地面薄雾发射率（/s）：雾天最浓，深夜也有少量；自检/调参用

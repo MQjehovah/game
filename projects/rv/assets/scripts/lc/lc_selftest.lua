@@ -1481,15 +1481,18 @@ function runSelfTest()
        string.format("shakeT=%.2f sfx=%s", s, tostring(sfx)))
   end
 
-  -- 雨天闪电：触发后闪光计时开始衰减
+  -- 雨天闪电：触发后闪光计时开始衰减，并累计雷声次数
   do
     local keep = lightningT
+    local c0 = lightningCount or 0
     triggerLightning()
     local on = (lightningT or 0) > 0
+    local counted = (lightningCount or 0) == c0 + 1
     local a = math.min(0.35, (lightningT or 0) * 0.9)
     lightningT = keep
-    ok(r, "rv lightning flash", on and a > 0.10,
-       string.format("t=0.50 alpha=%.2f", a))
+    lightningCount = c0
+    ok(r, "rv lightning flash", on and a > 0.10 and counted,
+       string.format("t=0.50 alpha=%.2f thunder=%d", a, c0 + 1))
   end
 
   -- 主路两侧废弃车/石块（带静态碰撞）
