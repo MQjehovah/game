@@ -4877,9 +4877,11 @@ function runSelfTest()
                              rep.oil or 0, tostring(rep.notes)) or "missing")
   end
 
-  -- 存读档：行程/探索/货运单数 + 天气
+  -- 存读档：行程/探索/货运单数 + 天气 + 笔记/风车/补给日期
   do
     local keepFireFuel, keepFireOn = campfireFuelMin, campfireOn
+    local keepNotes, keepMill = notesFound, windmillUpgraded
+    local keepSupplyDay = relaySupplyDay
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
     visitedPois["ruin"] = true
     bestFish, fishCaught = 63, 12
@@ -4889,6 +4891,9 @@ function runSelfTest()
     if setInteriorLights ~= nil then setInteriorLights(false) end
     weather, weatherT, weatherNext = "rain", 7, 120
     relayDone = true
+    notesFound = { note_ruin = true }
+    windmillUpgraded = true
+    relaySupplyDay = 42
     campfireFuelMin, campfireOn = 123, false
     local saved0 = saveLayout()
     tripDistance, tripFuel, jobDelivered = 0, 0, 0
@@ -4901,6 +4906,7 @@ function runSelfTest()
     weather, weatherT, weatherNext = "clear", 0, 90
     relayDone = false
     campfireFuelMin, campfireOn = 720, true
+    notesFound, windmillUpgraded, relaySupplyDay = {}, false, 0
     loadLayout()
     local lightsOk = interiorLightsOn == false and highBeam == true
     local powerOk2 = math.abs((batteryCharge or 0) - 1.1) < 1e-6 and
@@ -4908,9 +4914,15 @@ function runSelfTest()
     local relayOk = relayDone == true
     local fireOk = math.abs((campfireFuelMin or 0) - 123) < 1 and
                    campfireOn == false
+    local notesOk = notesFound["note_ruin"] == true
+    local millOk = windmillUpgraded == true
+    local supplyOk = (relaySupplyDay or 0) == 42
+    local loadedSupplyDay = tonumber(relaySupplyDay) or 0
     if setInteriorLights ~= nil then setInteriorLights(true) end
     highBeam = false
     campfireFuelMin, campfireOn = keepFireFuel, keepFireOn
+    notesFound, windmillUpgraded = keepNotes, keepMill
+    relaySupplyDay = keepSupplyDay
     for _, f in ipairs(campfireFlames or {}) do SetVisible(f.ent, campfireOn) end
     if campfireLight ~= nil then SetVisible(campfireLight, campfireOn) end
     ok(r, "save progress stats",
@@ -4919,12 +4931,12 @@ function runSelfTest()
        visitedPois["ruin"] == true and weather == "rain" and
        math.abs((weatherNext or 0) - 120) < 1 and
        math.abs((bestFish or 0) - 63) < 1 and fishCaught == 12 and
-       lastJobDay == 11 and lightsOk and powerOk2 and relayOk and fireOk,
-       string.format("trip=%.0f jobs=%d weather=%s fish=%.0f/%d day=%d lights=%s batt=%.2f age=%.0f relay=%s fire=%s",
+       lastJobDay == 11 and lightsOk and powerOk2 and relayOk and fireOk and
+       notesOk and millOk and supplyOk,
+       string.format("trip=%.0f jobs=%d weather=%s fish=%.0f/%d notes=%s mill=%s supply=%d",
                      tripDistance or 0, jobDelivered, tostring(weather),
-                     bestFish or 0, fishCaught or 0, lastJobDay or 0,
-                     tostring(lightsOk), batteryCharge or 0, rawFoodAge or 0,
-                     tostring(relayOk), tostring(fireOk)))
+                     bestFish or 0, fishCaught or 0, tostring(notesOk),
+                     tostring(millOk), loadedSupplyDay))
   end
 
   -- 存读档
