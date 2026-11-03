@@ -942,7 +942,8 @@ function on_start()
       pyaw = dirYaw(4.0, -20.0)
     end
   end
-  if startMode == "farm" or startMode == "windmillview" then
+  if startMode == "farm" or startMode == "windmillview" or
+     startMode == "farmfield" then
     -- 旧农场谷仓门口
     local nd = nodeById("farm")
     if nd ~= nil then
@@ -950,6 +951,9 @@ function on_start()
       if startMode == "windmillview" then
         px, pz = cx + 20.0, cz + 10.0
         pyaw = dirYaw(-11.5, -15.5)
+      elseif startMode == "farmfield" then
+        px, pz = cx - 6.5, cz + 9.0
+        pyaw = dirYaw(-0.5, -10.0)
       else
         px, pz, pyaw = cx, cz + 3.6, math.pi
       end

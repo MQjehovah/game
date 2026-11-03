@@ -1247,6 +1247,24 @@ function spawnRuinFor(nd)
       scProp("rv_rock", scX, scY + 1.55, scZ, 0.28, 0.30, 0.28)
       scProp("rv_panel_dark", scX, scY + 1.74, scZ, 0.55, 0.06, 0.55, 0.3)
     end
+    -- 农田作物：谷仓西侧成排的低多边形作物，补全农田区域
+    do
+      for row = 0, 3 do
+        for col = 0, 5 do
+          local cropX = cx - 10.0 + col * 1.15
+          local cropZ = cz - 3.0 + row * 1.35
+          local cropY = (terrainHeight and terrainHeight(cropX, cropZ)) or 0
+          local e = SpawnPrefab("rv_plant", {
+            x = cropX, y = cropY + 0.18, z = cropZ })
+          if e ~= nil then
+            local s = 0.55 + ((row + col) % 3) * 0.08
+            SetScale(e, s, s * 1.5, s)
+            SetRotationY(e, (row * 0.7 + col * 0.4) % math.pi)
+            farmCrops[#farmCrops + 1] = e
+          end
+        end
+      end
+    end
     -- 农场风车（低多边形地标，叶片持续旋转）
     local wx, wz = cx + 8.5, cz - 5.5
     local wy = (terrainHeight and terrainHeight(wx, wz)) or 0

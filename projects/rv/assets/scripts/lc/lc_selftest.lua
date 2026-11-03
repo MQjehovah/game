@@ -2271,6 +2271,12 @@ function runSelfTest()
     ok(r, "farm scarecrow", n >= 5, string.format("parts=%d", n))
   end
 
+  -- 农田作物：4 行 × 6 列成排
+  do
+    local n = #farmCrops
+    ok(r, "farm crops", n >= 20, string.format("crops=%d", n))
+  end
+
   -- 每日目标池：包含做饭/维修
   do
     local ids = {}
