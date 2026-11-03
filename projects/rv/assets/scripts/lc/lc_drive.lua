@@ -604,6 +604,13 @@ function triggerBlowout()
   return true
 end
 
+-- 碰撞对零部件的额外损伤：轻微剐蹭只掉车体，重撞才伤引擎/轮胎
+function impactPartDamage(drop)
+  local d = drop or 0
+  if d <= 4 then return 0, 0 end
+  return math.min(3, (d - 4) * 0.8), math.min(4, (d - 4) * 1.0)
+end
+
 function updateBlowout(dt)
   if rv.blowout then return end
   local pMin = 2.4
@@ -851,6 +858,10 @@ function updateDrive(dt)
         if drop > 1.5 and impactCd <= 0 then
           impactCd = 0.5
           dur = math.max(0, dur - math.min(8, drop * VEH.impactK))
+          -- 重撞还会伤引擎/轮胎
+          local engDmg, tireDmg = impactPartDamage(drop)
+          parts.engine = math.max(0, (parts.engine or 100) - engDmg)
+          parts.tires = math.max(0, (parts.tires or 100) - tireDmg)
           rv.speed = proj
           if jobApplyImpact ~= nil then jobApplyImpact(drop) end
           if rvImpactFeedback ~= nil then rvImpactFeedback(drop) end

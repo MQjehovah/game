@@ -3030,6 +3030,18 @@ function runSelfTest()
        string.format("cold=%.1f half=%.1f hot=%.1f", cold, half, hot))
   end
 
+  -- 重撞伤引擎/轮胎：轻微剐蹭不伤，重撞有上限
+  do
+    local e0, t0 = impactPartDamage(3.0)
+    local e1, t1 = impactPartDamage(6.0)
+    local eCap, tCap = impactPartDamage(100)
+    ok(r, "impact part damage",
+       e0 == 0 and t0 == 0 and e1 > 0 and t1 > 0 and
+       eCap <= 3 and tCap <= 4,
+       string.format("light=%.1f/%.1f hit=%.1f/%.1f cap=%.1f/%.1f",
+                     e0, t0, e1, t1, eCap, tCap))
+  end
+
   -- 雨雪天刹车效率下降
   do
     local dry = brakeRate(1.0, 0, "clear")
