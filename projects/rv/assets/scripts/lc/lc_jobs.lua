@@ -238,11 +238,14 @@ function jobPayText(pay)
   return table.concat(parts, " ")
 end
 
--- 以物易物：材料够不够
+-- 以物易物：材料/背包物品够不够
 function tradeAvailable(t)
   if t == nil then return false end
   for mat, n in pairs(t.cost or {}) do
     if (materials[mat] or 0) < n then return false end
+  end
+  for id, n in pairs(t.costItem or {}) do
+    if (inv[id] or 0) < n then return false end
   end
   return true
 end
@@ -257,6 +260,9 @@ function doTrade(idx)
   end
   for mat, n in pairs(t.cost or {}) do
     materials[mat] = (materials[mat] or 0) - n
+  end
+  for id, n in pairs(t.costItem or {}) do
+    takeItem(id, n)
   end
   local got = {}
   for k, v in pairs(t.give or {}) do

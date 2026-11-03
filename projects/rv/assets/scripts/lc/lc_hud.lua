@@ -1824,7 +1824,7 @@ function drawJobPanel()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
   local rows = math.max(1, #jobOffers)
-  local pw, ph = 620, 158 + rows * 62 + 132
+  local pw, ph = 620, 158 + rows * 62 + 162
   local px = math.floor((vw - pw) * 0.5)
   local py = math.floor((vh - ph) * 0.5)
   DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.93)
@@ -1900,7 +1900,7 @@ function drawJobPanel()
       yy = yy + 30
     end
   end
-  DrawText("1-3 接单   0 放弃   4-8 以物易物   E 关闭", px + 20,
+  DrawText("1-3 接单   0 放弃   4-9 以物易物   E 关闭", px + 20,
            py + ph - 26, 12, 0.70, 0.72, 0.66, 1)
 end
 

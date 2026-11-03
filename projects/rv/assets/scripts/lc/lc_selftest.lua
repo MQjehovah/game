@@ -3338,6 +3338,23 @@ function runSelfTest()
                      inv.repairkit or 0, materials.metal or 0))
   end
 
+  -- 以物易物：野浆果 x4 → 鱼饵 x2
+  do
+    local kb, ka = inv.berry or 0, inv.bait or 0
+    inv.berry = 4
+    inv.bait = nil
+    local traded = doTrade(6)
+    local gotBait = inv.bait or 0
+    local leftBerry = inv.berry or 0
+    local bait = gotBait == 2
+    local spent = leftBerry == 0
+    inv.berry = kb > 0 and kb or nil
+    inv.bait = ka > 0 and ka or nil
+    ok(r, "berry bait trade", traded and bait and spent,
+       string.format("traded=%s bait=%d berry=%d", tostring(traded),
+                     gotBait, leftBerry))
+  end
+
   -- 长期里程碑：探索 3 个地点一次性发奖，且不会重复发
   do
     local keep = milestones

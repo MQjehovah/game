@@ -216,6 +216,8 @@ TRADES = {
     cost = { metal = 4 }, give = { item = "chains", n = 1 } },
   { id = "metal_kit",   name = "金属 x3 → 修理包 x1",
     cost = { metal = 3 }, give = { item = "repairkit", n = 1 } },
+  { id = "berry_bait",  name = "野浆果 x4 → 鱼饵 x2",
+    costItem = { berry = 4 }, give = { item = "bait", n = 2 } },
 }
 
 -- 路牌笔记：散落在各地点的可阅读纸条，集齐有一次性奖励
