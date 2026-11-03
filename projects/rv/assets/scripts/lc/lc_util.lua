@@ -144,10 +144,12 @@ function collidePoiWalls(px, pz, nx, nz)
         end
       end
 
-      -- Front wall, split around the doorway.
+      -- Front wall, split around the doorway. A closed roll-up/sliding door
+      -- makes the whole front plane solid until it has rolled/slid open.
       if px > cx - hx - margin and px < cx + hx + margin then
         local front = cz + hz
-        if math.abs(nx - cx) > POI_DOOR_HALF then
+        local doorClosed = (poiDoorBlocking ~= nil) and poiDoorBlocking(nd.id)
+        if doorClosed or math.abs(nx - cx) > POI_DOOR_HALF then
           if pz <= front then
             if nz > front - margin then nz = front - margin end
           elseif nz < front + margin then

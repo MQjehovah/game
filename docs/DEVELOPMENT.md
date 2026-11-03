@@ -801,15 +801,21 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `lc_scenery.spawnPoiDoor()` 在物流仓库装卸门生成，`updatePoiDoors()` 用
   `scaleY = 1 - 0.94*cur` 绕顶边卷起；单机由 `updatePoiDoorProximity()` 触发，
   合作模式由服务器按玩家到月台的距离计算 `rollup` 并写入 `game_state`
-  （状态变化时立即 `pushState()`），客户端在 `clientUpdate` 里调用 `setPoiDoorOpen()`；
-  日志 `[depot-door] open/close (server)` 与 `... now open/closed (client)`。
+  （状态变化时立即 `pushState()`），服务器自己也调用 `setPoiDoorOpen()` 驱动本地
+  动画，客户端在 `clientUpdate` 里同样调用；日志 `[depot-door] open/close (server)`
+  与 `... now open/closed (client)`。
+  `lc_scenery.poiDoorBlocking()` 在 `cur < 0.9` 时返回真，`lc_util.collidePoiWalls()`
+  据此把整个前墙面当成实体，所以关闭的卷帘门在服务器权威移动与客户端预测里都会挡住
+  玩家；`coop_doortest.txt=depot` 可复现「顶着关门被挡住 → 开门后穿过」。`
 - **谷仓滑动门**（`projects/rv`）：`tools/gen_rv_sliding_door.py` 生成
   `rv_sliding_door.gltf`（5 块红木板 + 白横梁/斜撑 + 顶滑轮 + 把手/门牌，1.86×2.42m）；
   `lc_scenery.spawnPoiSlidingDoor()` 在谷仓门洞生成，`updatePoiSlidingDoors()` 沿 X
   滑动 2.05m 停到右前墙上方；单机由 `updatePoiBarnDoorProximity()` 触发，合作模式由
   服务器按玩家到谷仓门口的距离计算 `barndoor` 并写入 `game_state`（变化时立即
-  `pushState()`），客户端在 `clientUpdate` 里调用 `setPoiSlidingDoorOpen()`；
-  日志 `[barn-door] open/close (server)` 与 `... now open/closed (client)`。
+  `pushState()`），服务器与客户端都调用 `setPoiSlidingDoorOpen()`；
+  日志 `[barn-door] open/close (server)` 与 `... now open/closed (client)`；
+  未完全滑开时同样通过 `poiDoorBlocking()` 参与碰撞，`coop_doortest.txt=farm` 可复现
+  「顶着关门被挡住 → 开门后穿过」。
 
 ---
 

@@ -55,6 +55,8 @@ local coop = {
   buildDemo = false, buildDemoT = 0, buildDemoStage = 0,
   buildUi = false, buildUiDone = false,
   poiDemo = false, poiView = false, poiExt = false, poiNode = nil, poiIn = {}, poiT = 0,
+  doorDemo = false, doorT = 0, doorNode = nil,
+  doorClosedLogged = false, doorOpenLogged = false, doorCrossed = false,
   sitDemo = false, doorView = false, sitView = false,
   animDemo = nil, animDemoEnt = nil,
   doorAngle = 0, doorTarget = 0, animT = 0,
@@ -723,6 +725,33 @@ local function serverUpdate(dt)
   drainCommands()
   coop.autoT = coop.autoT + dt
 
+  -- Test-only door collision demo: stand outside the depot doorway, walk into
+  -- the closed shutter, then open it and keep walking.
+  if coop.doorDemo then
+    local nd = nodeById(coop.doorNode or "depot")
+    if nd ~= nil then
+      local cx, cz = poiCenter(nd)
+      local anyJoined = false
+      for i = 1, MAX_SLOTS do
+        if coop.slots[i].joined then anyJoined = true end
+      end
+      if anyJoined then coop.doorT = coop.doorT + dt end
+      for i = 1, 2 do
+        local s = coop.slots[i]
+        if s.joined then
+          if coop.doorT < 0.3 then
+            s.x, s.z = cx + ((i == 1) and -0.45 or 0.45), cz + 3.4
+            s.yaw = math.pi
+            s.f, s.s = 0, 0
+          else
+            s.yaw = math.pi
+            s.f, s.s = 1, 0
+          end
+        end
+      end
+    end
+  end
+
   if coop.carryT > 0 then
     coop.carryT = coop.carryT - dt
     if coop.carryT <= 0 then
@@ -744,6 +773,11 @@ local function serverUpdate(dt)
           near = true
         end
       end
+      -- Door collision demo: hold the shutter closed for the first phase,
+      -- then hold it open so the pass-through is unambiguous.
+      if coop.doorDemo and coop.doorNode == "depot" then
+        near = (coop.doorT >= 5.0)
+      end
       if near ~= coop.rollup then
         coop.rollup = near
         print(string.format("[depot-door] %s (server)", near and "open" or "close"))
@@ -751,6 +785,9 @@ local function serverUpdate(dt)
         -- the next 10 Hz state tick.
         pushState()
       end
+      -- Drive the authoritative door animation locally too: the server's
+      -- collidePoiWalls must see the same open/closed state as the clients.
+      if setPoiDoorOpen then setPoiDoorOpen("depot", near) end
     end
   end
 
@@ -767,11 +804,17 @@ local function serverUpdate(dt)
           near = true
         end
       end
+      -- Door collision demo: hold the sliding panel closed for the first phase,
+      -- then hold it open for the pass-through.
+      if coop.doorDemo and coop.doorNode == "farm" then
+        near = (coop.doorT >= 5.0)
+      end
       if near ~= coop.barnDoor then
         coop.barnDoor = near
         print(string.format("[barn-door] %s (server)", near and "open" or "close"))
         pushState()
       end
+      if setPoiSlidingDoorOpen then setPoiSlidingDoorOpen("farm", near) end
     end
   end
 
@@ -919,6 +962,39 @@ local function serverUpdate(dt)
       SetRotationY(ent, s.yaw)
     end
     s.slotIndex = i
+  end
+
+  -- Door collision test: report the stopped / passed positions once per phase.
+  if coop.doorDemo then
+    local nd = nodeById(coop.doorNode or "depot")
+    if nd ~= nil then
+      local dtx, dtz = poiCenter(nd)
+      local front = dtz + POI_HALF_Z
+      local d = poiDoors[nd.id]
+      local sb = poiBarnDoors[nd.id]
+      local cur = d and d.cur or (sb and sb.cur or -1)
+      if coop.doorT >= 4.6 and not coop.doorClosedLogged then
+        coop.doorClosedLogged = true
+        local z1 = coop.slots[1].z
+        print(string.format(
+          "[door-test] closed: p1 z=%.2f front=%.2f blocked=%s (door cur=%.2f)",
+          z1, front, tostring(z1 > front), cur))
+      end
+      if coop.doorT > 0.5 and not coop.doorCrossed and
+         coop.slots[1].z < front then
+        coop.doorCrossed = true
+        print(string.format(
+          "[door-test] crossed: p1 z=%.2f front=%.2f (door cur=%.2f)",
+          coop.slots[1].z, front, cur))
+      end
+      if coop.doorT >= 7.6 and not coop.doorOpenLogged then
+        coop.doorOpenLogged = true
+        local z1 = coop.slots[1].z
+        print(string.format(
+          "[door-test] open: p1 z=%.2f inside=%s (door cur=%.2f)",
+          z1, tostring(z1 < front), cur))
+      end
+    end
   end
 
   coop.stateT = coop.stateT + dt
@@ -1594,6 +1670,13 @@ function coopInitWorld(role)
     coop.autoDrive = readFlag("coop_drive.txt")
     coop.actionsDemo = readFlag("coop_actions.txt")
     coop.boardDemo = readFlag("coop_board.txt")
+    local doorTest = ReadText("coop_doortest.txt")
+    if doorTest ~= nil and doorTest ~= "" then
+      local v = string.lower((doorTest:gsub("%s+", "")))
+      coop.doorDemo = true
+      coop.doorNode = (v == "farm") and "farm" or "depot"
+      coop.poiNode = coop.doorNode
+    end
     coop.poiDemo = readFlag("coop_ruin.txt") or readFlag("coop_gas.txt") or
                     readFlag("coop_depot.txt") or readFlag("coop_farm.txt") or
                     readFlag("coop_mall.txt") or readFlag("coop_lake.txt") or
@@ -1701,6 +1784,11 @@ function coopInitWorld(role)
     coop.carryView = readFlag("coop_carryview.txt")
     coop.glassView = readFlag("coop_glassview.txt")
     coop.propView = readFlag("coop_propview.txt")
+    local doorTest = ReadText("coop_doortest.txt")
+    if doorTest ~= nil and doorTest ~= "" then
+      local v = string.lower((doorTest:gsub("%s+", "")))
+      coop.poiNode = (v == "farm") and "farm" or "depot"
+    end
     if readFlag("coop_gas.txt") then
       coop.poiNode = "gasstop"
     elseif readFlag("coop_ruin.txt") then

@@ -478,6 +478,23 @@ function updatePoiBarnDoorProximity(x, z)
   end
 end
 
+-- Doorway collision: a roll-up/sliding panel is solid until it is almost fully
+-- open. Called from collidePoiWalls on both the authoritative server and the
+-- client's local prediction so a closed door blocks in both places.
+local DOOR_PASS_CUR = 0.9
+
+function poiDoorBlocking(ndId)
+  if poiDoors ~= nil then
+    local d = poiDoors[ndId]
+    if d ~= nil and d.cur < DOOR_PASS_CUR then return true end
+  end
+  if poiBarnDoors ~= nil then
+    local b = poiBarnDoors[ndId]
+    if b ~= nil and b.cur < DOOR_PASS_CUR then return true end
+  end
+  return false
+end
+
 -- 简易路边建筑：一个带门洞/窗的废弃小屋（纯装饰，原型级）
 function spawnRuinFor(nd)
   if nd.ruinSpawned then return end
