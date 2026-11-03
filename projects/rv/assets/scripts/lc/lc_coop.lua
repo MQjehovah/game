@@ -77,6 +77,19 @@ local function clamp(v, lo, hi)
   return v
 end
 
+-- 合作服务器：房车停稳在营地/加油站附近时判定补给点
+local STATION_RADIUS = 9.0
+function coopStationAtRv()
+  for _, id in ipairs({ "camp", "gasstop" }) do
+    local nd = nodeById(id)
+    if nd ~= nil then
+      local dx, dz = rv.x - nd.x, rv.z - nd.z
+      if dx * dx + dz * dz < STATION_RADIUS * STATION_RADIUS then return id end
+    end
+  end
+  return nil
+end
+
 -- Co-op chassis prediction helpers (also used by the self-test): extrapolate
 -- the last replicated pose with the measured velocity, and wrap angle deltas.
 function coopPredictPose(net, vel, age)
@@ -963,6 +976,14 @@ local function serverUpdate(dt)
     pushState()
   end
 
+  -- Test-only co-op refuel: drop fuel to 20L at the camp and let the server
+  -- station check refill it (proves single-player/co-op parity).
+  if coop.refuelDemo and not coop.refuelDemoDone and coop.autoT >= 3.0 then
+    coop.refuelDemoDone = true
+    fuel, rv.x, rv.z = 20, 0, 0
+    print("[coop-refuel] set fuel=20 at camp")
+  end
+
   -- Test-only co-op freight board: accept the first contract server-side and
   -- broadcast it, so clients can prove the job state crosses the network.
   if coop.jobDemo and not coop.jobDemoDone and coop.autoT >= 3.0 then
@@ -1194,6 +1215,26 @@ local function serverUpdate(dt)
         if terrainHeight ~= nil then
           s.gy = terrainHeight(s.x, s.z)
         end
+      end
+    end
+  end
+
+  -- 合作服务器：停稳在营地/加油站时自动补给（与单机一致：营地免费、
+  -- 加油站按油量缺口扣金属）
+  coop.refuelCd = (coop.refuelCd or 0) - dt
+  if coop.refuelCd <= 0 and math.abs(rv.speed or 0) < 0.4 then
+    local stationId = coopStationAtRv and coopStationAtRv() or nil
+    if stationId ~= nil and (fuelMax() - (fuel or 0)) > 0.5 then
+      coop.refuelCd = 3.0
+      local okRefuel, cost = false, 0
+      if refuelAtNode ~= nil then okRefuel, cost = refuelAtNode(stationId) end
+      if okRefuel then
+        if water < waterMax() then water = waterMax() end
+        print(string.format(
+          "[coop-refuel] node=%s fuel=%.1f water=%.1f metal=%d cost=%d",
+          stationId, fuel, water, materials.metal or 0, cost or 0))
+        coop.saveDirty = true
+        pushState()
       end
     end
   end
@@ -2140,6 +2181,7 @@ function coopInitWorld(role)
     coop.jobDemo = readFlag("coop_job.txt")
     coop.lightsDemo = readFlag("coop_lights.txt")
     coop.hornDemo = readFlag("coop_horn.txt")
+    coop.refuelDemo = readFlag("coop_refuel.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2248,6 +2290,7 @@ function coopInitWorld(role)
     coop.walkDemo = readFlag("coop_walk.txt")
     coop.hornDemo = readFlag("coop_horn.txt")
     coop.highDemo = readFlag("coop_highbeam.txt")
+    coop.refuelDemo = readFlag("coop_refuel.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
