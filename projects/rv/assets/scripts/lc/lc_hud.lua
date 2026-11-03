@@ -1392,6 +1392,12 @@ function drawMapHud()
   if job ~= nil then
     local stops = job.stops or { { id = job.destId, name = job.destName } }
     local cur = job.stopIndex or 1
+    -- 路线线：从房车画到当前目标站
+    local activeNd = nodeById((stops[cur] or stops[1]).id)
+    if activeNd ~= nil then
+      local ax2, ay2 = mapXY(activeNd.x, activeNd.z)
+      DrawLine(rx, ry, ax2, ay2, 2, 0.95, 0.78, 0.32, 0.55)
+    end
     for i, s in ipairs(stops) do
       local nd2 = nodeById(s.id)
       if nd2 then
@@ -1407,8 +1413,8 @@ function drawMapHud()
       end
     end
   end
-  DrawText("● 房车    ● 地点（越红越危险）  ? 未探索    — 公路", px + 16, py + ph - 24,
-           12, 0.7, 0.7, 0.65, 1)
+  DrawText("● 房车    ● 地点（越红越危险）  ? 未探索    — 公路    ◎ 货运目标",
+           px + 16, py + ph - 24, 12, 0.7, 0.7, 0.65, 1)
   DrawText(string.format("已探索 %d / %d 个地点", visitedCount or 0, #NODES),
            px + pw - 16, py + ph - 24, 12, 0.7, 0.7, 0.65, 1, true)
   if fishingRecordText ~= nil then
