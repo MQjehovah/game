@@ -791,8 +791,11 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `[glass] broke windows at ruin/clinic/... (enter)`，`coop_glassview.txt` 提供门窗特写镜头。
 - **商品包装图集**（`projects/rv`）：`tools/gen_rv_product_atlas.py` 生成
   `assets/models/rv/rv_products.png`（4×4 包装格），`tools/rv_atlas.py` 提供
-  `tile_uvs()` / `product_material()` / `atlas_extras()`；商店/加油站/商场的商品盒
-  使用 `*_product` 材质 + TEXCOORD_0，商品墙显示品牌条/标签/条码而不是纯色块。
+  `tile_uvs()` / `product_material()` / `atlas_extras()`；商店/加油站/商场/仓库/
+  农场的商品盒、托盘货箱与诊所药盒都使用 `*_product` 材质 + TEXCOORD_0，
+  显示品牌条/标签/条码而不是纯色块；`coop_propview.txt` 为仓库托盘、谷仓货架木箱和
+  诊所药柜提供特写镜头（`rv_wh_atlas_final.png` / `rv_farm_atlas_final2.png` /
+  `rv_clinic_atlas_final.png`）。诊所药柜前另加一盏补光灯，避免玻璃门内的药盒过暗。
 - **仓库卷帘门**（`projects/rv`）：`tools/gen_rv_rollup_door.py` 生成
   `rv_rollup_door.gltf`（11 条板 + 导轨 + 底梁 + 卷轴，2.6m 高）；
   `lc_scenery.spawnPoiDoor()` 在物流仓库装卸门生成，`updatePoiDoors()` 用

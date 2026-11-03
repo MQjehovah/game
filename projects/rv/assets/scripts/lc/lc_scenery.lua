@@ -503,10 +503,14 @@ function spawnRuinFor(nd)
     -- 可进入的路边诊所：玻璃门 + 红十字 + 接待台/候诊椅/诊床/药柜/窗帘
     local clinic = SpawnPrefab("rv_clinic", { x = cx, y = 0, z = cz })
     if clinic ~= nil then SetRotationY(clinic, 0) end
-    for _, lp in ipairs({ { -1.35, -0.80 }, { 1.35, 1.00 } }) do
+    for _, lp in ipairs({ { -1.40, -1.55 }, { 1.35, 1.00 } }) do
       local lamp = SpawnPrefab("rv_lamp", { x = cx + lp[1], y = 2.35, z = cz + lp[2] })
       if lamp ~= nil then SetScale(lamp, 1.4, 1.4, 1.4) end
     end
+    -- Extra fill light directly in front of the medicine cabinet so the
+    -- packaged medicine boxes stay readable when the glass front is closed.
+    local med = SpawnPrefab("rv_lamp", { x = cx - 1.40, y = 1.95, z = cz - 1.05 })
+    if med ~= nil then SetScale(med, 0.9, 0.9, 0.9) end
     spawnPoiWindows(nd)
     return
   end

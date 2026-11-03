@@ -11,6 +11,8 @@ import math
 import struct
 from pathlib import Path
 
+from rv_atlas import atlas_extras, product_material, tile_uvs
+
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "projects/rv/assets/models/rv"
 PREFAB = ROOT / "projects/rv/assets/prefabs/rv_barn.json"
@@ -21,9 +23,9 @@ class MeshBuilder:
         self.groups = {}
 
     def _group(self, mat):
-        return self.groups.setdefault(mat, ([], [], []))
+        return self.groups.setdefault(mat, ([], [], [], []))
 
-    def box(self, mat, cx, cy, cz, sx, sy, sz):
+    def box(self, mat, cx, cy, cz, sx, sy, sz, uv=None):
         hx, hy, hz = sx * 0.5, sy * 0.5, sz * 0.5
         x0, x1 = cx - hx, cx + hx
         y0, y1 = cy - hy, cy + hy
@@ -36,7 +38,9 @@ class MeshBuilder:
             ((0, 1, 0), [(x0, y1, z1), (x1, y1, z1), (x1, y1, z0), (x0, y1, z0)]),
             ((0, -1, 0), [(x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1)]),
         ]
-        positions, normals, indices = self._group(mat)
+        positions, normals, indices, uvs = self._group(mat)
+        if uv is not None:
+            uvs.extend(uv)
         for n, quad in faces:
             base = len(positions)
             for q in quad:
@@ -58,7 +62,7 @@ class MeshBuilder:
         if ln < 1e-8:
             return
         n = tuple(c / ln for c in n)
-        positions, normals, indices = self._group(mat)
+        positions, normals, indices, _uvs = self._group(mat)
         base = len(positions)
         for q in quad:
             positions.append(q)
@@ -70,7 +74,8 @@ class MeshBuilder:
 
 def main():
     b = MeshBuilder()
-    WALL, TRIM, ROOF, FLOOR, WOOD, HAY, DARK, STEEL, WHITE, RED, AMBER = range(1, 12)
+    WALL, TRIM, ROOF, FLOOR, WOOD, HAY, DARK, STEEL, WHITE, RED, AMBER, \
+        PRODUCT = range(1, 13)
     H = 3.15
 
     # Hidden dummy geometry using material 0. The engine's glTF importer
@@ -181,16 +186,25 @@ def main():
     b.box(WHITE, 1.05, 0.28, 2.15, 0.50, 0.40, 0.42)
     b.box(AMBER, 1.35, 0.30, 2.20, 0.46, 0.36, 0.36)
     b.box(WHITE, 0.75, 0.70, 2.15, 0.46, 0.30, 0.40)
-    for cx, cz in ((-2.55, 2.15), (2.55, 2.15)):
-        b.box(WOOD, cx, 0.22, cz, 0.60, 0.44, 0.50)
+    for ci, (cx, cz) in enumerate(((-2.55, 2.15), (2.55, 2.15))):
+        b.box(PRODUCT, cx, 0.22, cz, 0.60, 0.44, 0.50,
+              uv=tile_uvs(2 + ci * 5))
         b.box(WHITE, cx, 0.30, cz + 0.26, 0.26, 0.14, 0.02)
         b.box(TRIM, cx, 0.26, cz + 0.27, 0.16, 0.03, 0.01)
 
-    # Back-wall shelves + crates.
+    # Back-wall shelves + packaged crates.
     for shelf_y in (0.55, 1.15, 1.75):
         b.box(WOOD, 1.45, shelf_y, -2.32, 2.60, 0.08, 0.32)
-    b.box(WOOD, 0.20, 0.42, -2.30, 0.55, 0.80, 0.50)
-    b.box(WOOD, 2.55, 0.42, -1.95, 0.55, 0.80, 0.50)
+    shelf_crates = (0.55, 1.45, 2.35)
+    for ci, cx in enumerate(shelf_crates):
+        b.box(PRODUCT, cx, 1.34, -2.26, 0.36, 0.30, 0.26,
+              uv=tile_uvs((ci * 4 + 3) % 16))
+        b.box(WHITE, cx, 1.34, -2.12, 0.30, 0.06, 0.01)
+    for ci, cx in enumerate((1.00, 1.90)):
+        b.box(PRODUCT, cx, 1.94, -2.26, 0.36, 0.30, 0.26,
+              uv=tile_uvs((ci * 6 + 9) % 16))
+    b.box(PRODUCT, 0.20, 0.42, -2.30, 0.55, 0.80, 0.50, uv=tile_uvs(11))
+    b.box(PRODUCT, 2.55, 0.42, -1.95, 0.55, 0.80, 0.50, uv=tile_uvs(14))
 
     # --- Exterior: hay stack, trough, fence ---
     b.box(HAY, -3.85, 0.26, 3.55, 1.10, 0.50, 0.70)
@@ -240,23 +254,28 @@ def main():
         {"name": "barn_amber",
          "pbrMetallicRoughness": {"baseColorFactor": [0.66, 0.44, 0.16, 1],
                                   "metallicFactor": 0.02, "roughnessFactor": 0.75}},
+        product_material("barn_product"),
     ]
 
     buffer = b""
     buffer_views = []
     accessors = []
     primitives = []
-    for mat_index, (positions, normals, indices) in sorted(b.groups.items()):
+    for mat_index, (positions, normals, indices, uvs) in sorted(b.groups.items()):
         pos_bytes = b"".join(struct.pack("<3f", *p) for p in positions)
         nrm_bytes = b"".join(struct.pack("<3f", *n) for n in normals)
         idx_bytes = b"".join(struct.pack("<I", i) for i in indices)
-        for raw in (pos_bytes, nrm_bytes, idx_bytes):
+        raw_chunks = [pos_bytes, nrm_bytes, idx_bytes]
+        has_uv = len(uvs) == len(positions) and len(uvs) > 0
+        if has_uv:
+            raw_chunks.append(b"".join(struct.pack("<2f", *t) for t in uvs))
+        for raw in raw_chunks:
             pad = (4 - len(raw) % 4) % 4
             blob = raw + b"\0" * pad
             buffer_views.append({"buffer": 0, "byteOffset": len(buffer),
                                  "byteLength": len(blob)})
             buffer += blob
-        vb = len(buffer_views) - 3
+        vb = len(buffer_views) - len(raw_chunks)
         mn = [min(p[i] for p in positions) for i in range(3)]
         mx = [max(p[i] for p in positions) for i in range(3)]
         accessors.extend([
@@ -268,7 +287,12 @@ def main():
              "type": "SCALAR"},
         ])
         ai = len(accessors) - 3
-        primitives.append({"attributes": {"POSITION": ai, "NORMAL": ai + 1},
+        attrs = {"POSITION": ai, "NORMAL": ai + 1}
+        if has_uv:
+            accessors.append({"bufferView": vb + 3, "componentType": 5126,
+                              "count": len(uvs), "type": "VEC2"})
+            attrs["TEXCOORD_0"] = len(accessors) - 1
+        primitives.append({"attributes": attrs,
                            "indices": ai + 2, "material": mat_index})
 
     gltf = {
@@ -282,6 +306,7 @@ def main():
         "bufferViews": buffer_views,
         "accessors": accessors,
     }
+    gltf.update(atlas_extras())
     (OUT / "rv_barn.bin").write_bytes(buffer)
     (OUT / "rv_barn.gltf").write_text(
         json.dumps(gltf, separators=(",", ":")), encoding="utf-8")

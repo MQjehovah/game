@@ -230,11 +230,12 @@
   16 块重力下落的碎片，`updatePoiWindows()` 负责弹跳与回收。
 - `assets/models/rv/rv_products.png`（`tools/gen_rv_product_atlas.py`）：4×4 商品包装
   图集（品牌条/标签文字/色带/条码）；`tools/rv_atlas.py` 提供 UV 映射，商店/加油站/
-  商场的商品墙与货架使用 `*_product` 材质 + 图集 UV，商品显示为包装盒而不是纯色块。
+  商场/仓库/农场/诊所的商品盒/托盘/货箱/药盒使用 `*_product` 材质 + 图集 UV，
+  商品显示为包装而不是纯色块；`coop_propview.txt` 提供道具特写镜头。
 - `assets/models/rv/rv_warehouse.gltf` + `rv_warehouse.bin`（`tools/gen_rv_warehouse.py`）：
   3.6m 高棚、宽装卸门 + 月台（黄色警示线/防撞柱/升降台板）、两扇可破碎前橱窗、
   顶部高窗、两侧与后墙
-  钢制货架、黄底白字货架标识、标签托盘堆（胶带封箱）、叉车、发货台（显示器/标签
+  钢制货架、黄底白字货架标识、带包装图集的标签托盘堆（胶带封箱）、叉车、发货台（显示器/标签
   打印机/键盘/凳子）、散装货箱、地面通道线；`depot` 和所有“仓库/物流”地点生成该 glTF。
 - `assets/models/rv/rv_rollup_door.gltf` + `rv_rollup_door.bin`（`tools/gen_rv_rollup_door.py`）：
   11 条钢/深色板条 + 两侧导轨 + 底梁 + 顶部卷轴（2.6m 高）；`lc_scenery.spawnPoiDoor()`
@@ -243,8 +244,8 @@
 - `assets/models/rv/rv_barn.gltf` + `rv_barn.bin`（`tools/gen_rv_barn.py`）：
   红谷仓 + 山墙屋顶、干草阁楼与顶部滑轨、白灰内衬、畜栏（干草槽/饮水桶/栏号牌）、
   饲料槽、工作台（工具箱/台钳/挂板工具）、马具墙（挂钩/缰绳/马蹄铁）、马鞍架、
-  奶桶、粮袋、带标签木箱、后墙货架，门外干草堆/水槽/木栅栏；`farm` 和所有
-  “农场”地点生成该 glTF。
+  奶桶、粮袋、带标签木箱、后墙货架（摆带包装图集的木箱），门外干草堆/水槽/木栅栏；
+  `farm` 和所有“农场”地点生成该 glTF。
 - `assets/models/rv/rv_sliding_door.gltf` + `rv_sliding_door.bin`
   （`tools/gen_rv_sliding_door.py`）：5 块红木板 + 白横梁/斜撑 + 顶滑轮 + 把手/门牌
   （1.86×2.42m）；`lc_scenery.spawnPoiSlidingDoor()` 在谷仓门洞生成，
@@ -261,9 +262,10 @@
   旁边生成水塘。
 - `assets/models/rv/rv_clinic.gltf` + `rv_clinic.bin`（`tools/gen_rv_clinic.py`）：
   白/青色外墙、平屋顶、玻璃双开门 + 红十字、两扇可破碎橱窗；店内接待台（蓝图显示器/
-  键盘/电话/单据）、候诊椅、诊床（床单/枕头/纸卷）、三层玻璃门药柜（彩色药盒 +
+  键盘/电话/单据）、候诊椅、诊床（床单/枕头/纸卷）、三层玻璃门药柜（带包装图集的药盒 +
   白色标签）、检查壁灯、生命体征监护仪、输液架、器械托盘、隐私窗帘、`RECEPTION`/
-  `EXAM` 标识、壁钟，门外长椅/花箱/轮椅推车；`clinic` 和所有“诊所/医院”地点生成该 glTF。
+  `EXAM` 标识、壁钟与药柜补光，门外长椅/花箱/轮椅推车；`clinic` 和所有“诊所/医院”地点
+  生成该 glTF。
 - `lc_scenery.spawnRuinFor()` 对 `ruin`/`gasstop`/`depot`/`farm`/`mall`/`lakecamp`/
   `clinic` 和对应名称的地点直接生成对应 glTF，不再使用缩放立方体拼装。
 - `collidePoiWalls()`（`lc_util.lua`）在**服务器和客户端预测**同时生效：侧/后墙
@@ -300,8 +302,8 @@
 2. **家具自由摆放**：已改为第一人称无网格自由放置 + AABB/车内边界校验。
 3. **美术**：房车外壳/车内仍是程序化低多边形 glTF + Kenney 家具，缺少高精度车内软装、
    材质；商店/加油站/仓库/商场/湖边木屋/诊所前窗已支持透明玻璃与碎片飞散，但碎片是
-   简单刚体而非逐块断裂模拟；物流仓库卷帘门与谷仓滑动门均已可开合；
-   商店/加油站/商场的商品已使用包装图集，其余 POI 的商品仍是纯色块，
+   简单刚体而非逐块断裂模拟；物流仓库卷帘门与谷仓滑动门均已可开合但关闭时不阻挡通行；
+   商店/加油站/商场/仓库/农场/诊所的主要商品已使用包装图集，木屋等其余道具仍是纯色块，
    角色动画也仍是手工关键帧。
 4. **世界**：已有世界固定公路网 + 15 个地点；废宅/商店 → `rv_store.gltf`、
    废弃加油站 → `rv_gasstation.gltf`、物流仓库 → `rv_warehouse.gltf`、

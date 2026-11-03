@@ -62,6 +62,7 @@ local coop = {
   visualAnim = {},
   boardDemo = false, boardDemoT = 0, boardDemoStage = 0,
   carrySlot = 0, carryT = 0, carryView = false, glassView = false,
+  propView = false,
   rollup = false, barnDoor = false,
   toast = "", toastT = 0, logT = 0,
 }
@@ -1427,6 +1428,31 @@ local function clientUpdate(dt)
     SetVar("cameraYaw", 0.30)
     SetVar("cameraPitch", 0.28)
     SetVar("cameraDist", 15.0)
+  elseif coop.propView then
+    -- Test-only close-up of a POI product/crate cluster.
+    local nd = nodeById(coop.poiNode or "ruin")
+    local cx, cz = rv.x, rv.z
+    if nd ~= nil then cx, cz = poiCenter(nd) end
+    local fx, fy, fz, yaw, dist = cx, 0.6, cz, 0.0, 2.2
+    local kind = nd and nd.id or ""
+    if kind == "farm" then
+      -- Packaged crates on the back-wall shelf (centre aisle view).
+      fx, fy, fz = cx + 0.55, 1.34, cz - 2.20
+      yaw, dist = 0.05, 2.0
+    elseif kind == "depot" then
+      -- Back-left labelled pallet stack, viewed from the central aisle.
+      fx, fy, fz = cx - 1.95, 0.60, cz - 1.15
+      yaw, dist = 0.60, 2.4
+    elseif kind == "clinic" then
+      -- Top row of the glass-front medicine cabinet (best lit).
+      fx, fy, fz = cx - 1.40, 1.98, cz - 2.10
+      yaw, dist = 0.05, 1.9
+    end
+    SetVar("cameraMouseLock", 1)
+    SetVar("cameraFocus", { x = fx, y = fy, z = fz })
+    SetVar("cameraYaw", yaw)
+    SetVar("cameraPitch", 0.04)
+    SetVar("cameraDist", dist)
   elseif coop.poiView then
     local nd = nodeById(coop.poiNode or "ruin")
     local cx, cz = rv.x, rv.z
@@ -1674,6 +1700,7 @@ function coopInitWorld(role)
     coop.poiExt = readFlag("coop_poiext.txt")
     coop.carryView = readFlag("coop_carryview.txt")
     coop.glassView = readFlag("coop_glassview.txt")
+    coop.propView = readFlag("coop_propview.txt")
     if readFlag("coop_gas.txt") then
       coop.poiNode = "gasstop"
     elseif readFlag("coop_ruin.txt") then

@@ -12,6 +12,8 @@ import json
 import struct
 from pathlib import Path
 
+from rv_atlas import atlas_extras, product_material, tile_uvs
+
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "projects/rv/assets/models/rv"
 PREFAB = ROOT / "projects/rv/assets/prefabs/rv_warehouse.json"
@@ -22,9 +24,9 @@ class MeshBuilder:
         self.groups = {}
 
     def _group(self, mat):
-        return self.groups.setdefault(mat, ([], [], []))
+        return self.groups.setdefault(mat, ([], [], [], []))
 
-    def box(self, mat, cx, cy, cz, sx, sy, sz):
+    def box(self, mat, cx, cy, cz, sx, sy, sz, uv=None):
         hx, hy, hz = sx * 0.5, sy * 0.5, sz * 0.5
         x0, x1 = cx - hx, cx + hx
         y0, y1 = cy - hy, cy + hy
@@ -37,7 +39,9 @@ class MeshBuilder:
             ((0, 1, 0), [(x0, y1, z1), (x1, y1, z1), (x1, y1, z0), (x0, y1, z0)]),
             ((0, -1, 0), [(x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1)]),
         ]
-        positions, normals, indices = self._group(mat)
+        positions, normals, indices, uvs = self._group(mat)
+        if uv is not None:
+            uvs.extend(uv)
         for n, quad in faces:
             base = len(positions)
             for q in quad:
@@ -50,7 +54,7 @@ class MeshBuilder:
 def main():
     b = MeshBuilder()
     (WALL, TRIM, ROOF, FLOOR, GLASS, YELLOW, STEEL, WOOD,
-     RED, WHITE, BLUE, GREEN, ORANGE) = range(1, 14)
+     RED, WHITE, BLUE, GREEN, ORANGE, PRODUCT) = range(1, 15)
     H = 3.6
 
     # Hidden material-0 primitive (the importer's first primitive uses the
@@ -126,15 +130,14 @@ def main():
         b.box(WHITE, sx * 2.27, 2.30, 1.00, 0.02, 0.20, 0.60)
 
     # --- Labelled pallet stacks with tape-striped cargo ---
-    pallet_colors = (ORANGE, BLUE, GREEN, WOOD, RED)
     stacks = [(-2.15, 1.35, 3), (1.95, 1.45, 2), (-1.95, -1.15, 3),
               (0.55, -1.35, 2)]
-    for px, pz, levels in stacks:
+    for si, (px, pz, levels) in enumerate(stacks):
         b.box(WOOD, px, 0.08, pz, 0.90, 0.12, 0.75)
         for i in range(levels):
             cy = 0.14 + 0.18 + i * 0.34
-            c = pallet_colors[(i + int(abs(px * 10))) % len(pallet_colors)]
-            b.box(c, px, cy, pz, 0.70, 0.30, 0.58)
+            b.box(PRODUCT, px, cy, pz, 0.70, 0.30, 0.58,
+                  uv=tile_uvs((si * 3 + i * 2) % 16))
             b.box(WHITE, px, cy + 0.15, pz, 0.72, 0.04, 0.10)
         top = 0.14 + 0.18 + levels * 0.34
         # Shipping label facing the aisle (+Z).
@@ -176,11 +179,13 @@ def main():
     b.box(STEEL, dx, 0.20, dz + 0.58, 0.40, 0.40, 0.10)
 
     # --- Loose cargo boxes by the bay ---
-    for c, bx, bz, sx, sy, sz in (
-            (WOOD, -2.30, 2.10, 0.80, 0.55, 0.60),
-            (ORANGE, 1.55, 2.15, 0.70, 0.65, 0.55),
-            (BLUE, -2.55, 2.10, 0.60, 0.30, 0.45)):
-        b.box(c, bx, sy * 0.5 + 0.06, bz, sx, sy, sz)
+    loose = (
+            (-2.30, 2.10, 0.80, 0.55, 0.60, 1),
+            (1.55, 2.15, 0.70, 0.65, 0.55, 5),
+            (-2.55, 2.10, 0.60, 0.30, 0.45, 9))
+    for bx, bz, sx, sy, sz, tile in loose:
+        b.box(PRODUCT, bx, sy * 0.5 + 0.06, bz, sx, sy, sz,
+              uv=tile_uvs(tile))
         b.box(WHITE, bx, sy * 0.5 + 0.10, bz + sz * 0.5 + 0.01, sx * 0.7, 0.05, 0.02)
 
     materials = [
@@ -228,23 +233,28 @@ def main():
         {"name": "wh_orange",
          "pbrMetallicRoughness": {"baseColorFactor": [0.78, 0.40, 0.10, 1],
                                   "metallicFactor": 0.03, "roughnessFactor": 0.65}},
+        product_material("wh_product"),
     ]
 
     buffer = b""
     buffer_views = []
     accessors = []
     primitives = []
-    for mat_index, (positions, normals, indices) in sorted(b.groups.items()):
+    for mat_index, (positions, normals, indices, uvs) in sorted(b.groups.items()):
         pos_bytes = b"".join(struct.pack("<3f", *p) for p in positions)
         nrm_bytes = b"".join(struct.pack("<3f", *n) for n in normals)
         idx_bytes = b"".join(struct.pack("<I", i) for i in indices)
-        for raw in (pos_bytes, nrm_bytes, idx_bytes):
+        raw_chunks = [pos_bytes, nrm_bytes, idx_bytes]
+        has_uv = len(uvs) == len(positions) and len(uvs) > 0
+        if has_uv:
+            raw_chunks.append(b"".join(struct.pack("<2f", *t) for t in uvs))
+        for raw in raw_chunks:
             pad = (4 - len(raw) % 4) % 4
             blob = raw + b"\0" * pad
             buffer_views.append({"buffer": 0, "byteOffset": len(buffer),
                                  "byteLength": len(blob)})
             buffer += blob
-        vb = len(buffer_views) - 3
+        vb = len(buffer_views) - len(raw_chunks)
         mn = [min(p[i] for p in positions) for i in range(3)]
         mx = [max(p[i] for p in positions) for i in range(3)]
         accessors.extend([
@@ -256,7 +266,12 @@ def main():
              "type": "SCALAR"},
         ])
         ai = len(accessors) - 3
-        primitives.append({"attributes": {"POSITION": ai, "NORMAL": ai + 1},
+        attrs = {"POSITION": ai, "NORMAL": ai + 1}
+        if has_uv:
+            accessors.append({"bufferView": vb + 3, "componentType": 5126,
+                              "count": len(uvs), "type": "VEC2"})
+            attrs["TEXCOORD_0"] = len(accessors) - 1
+        primitives.append({"attributes": attrs,
                            "indices": ai + 2, "material": mat_index})
 
     gltf = {
@@ -270,6 +285,7 @@ def main():
         "bufferViews": buffer_views,
         "accessors": accessors,
     }
+    gltf.update(atlas_extras())
     (OUT / "rv_warehouse.bin").write_bytes(buffer)
     (OUT / "rv_warehouse.gltf").write_text(
         json.dumps(gltf, separators=(",", ":")), encoding="utf-8")
