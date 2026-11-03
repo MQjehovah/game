@@ -1340,15 +1340,21 @@ function runSelfTest()
       jobComplete()
       return (materials.metal or 0) - m0, jobResult.eco == true
     end
+    local keepGoal = dailyGoal
     local normal, normalEco = deliverWithEco(false)
+    dailyGoal = { id = "eco", name = "省油测试", target = 1, progress = 0,
+                  done = false, reward = { fuel = 8 } }
     local eco, ecoGot = deliverWithEco(true)
+    local ecoGoal = dailyGoal ~= nil and dailyGoal.done == true
+    dailyGoal = keepGoal
     weather, day, clock, lastJobDay = sw, sd, sc, slast
     jobDelivered, jobStreak = jd, js
     tripDistance, tripFuel = std, stf
     ok(r, "eco driving bonus",
-       normal == 20 and eco == 21 and normalEco == false and ecoGot == true,
-       string.format("normal=%d eco=%d flags=%s/%s", normal, eco,
-                     tostring(normalEco), tostring(ecoGot)))
+       normal == 20 and eco == 21 and normalEco == false and ecoGot == true and
+       ecoGoal,
+       string.format("normal=%d eco=%d flags=%s/%s goal=%s", normal, eco,
+                     tostring(normalEco), tostring(ecoGot), tostring(ecoGoal)))
   end
 
   -- 雨天行驶：易碎货缓慢受潮掉货况

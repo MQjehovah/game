@@ -431,7 +431,10 @@ function jobComplete()
   jobUnloadFx(crates)
   jobDelivered = jobDelivered + 1
   jobStreak = (jobStreak or 0) + 1
-  if addDailyProgress ~= nil then addDailyProgress("jobs", 1) end
+  if addDailyProgress ~= nil then
+    addDailyProgress("jobs", 1)
+    if ecoBonus then addDailyProgress("eco", 1) end
+  end
   if checkMilestones ~= nil then checkMilestones("jobs", jobDelivered) end
   jobHistory[#jobHistory + 1] = string.format("%s → %s（%.0f%%）",
                                               name, destName, cond * 100)

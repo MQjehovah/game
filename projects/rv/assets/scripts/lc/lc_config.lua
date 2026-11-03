@@ -225,6 +225,7 @@ DAILY_GOALS = {
   { id = "cook",     name = "做 2 份热饭/鱼汤",    target = 2,   reward = { wood = 2, fuel = 6 } },
   { id = "repair",   name = "维修或升级 1 次",     target = 1,   reward = { metal = 2, cloth = 1 } },
   { id = "forage",   name = "采集 4 份野果/补给",  target = 4,   reward = { metal = 1, fuel = 5 } },
+  { id = "eco",      name = "省油完成 1 单货运",   target = 1,   reward = { metal = 1, fuel = 8 } },
 }
 
 -- 顺路货运合同：营地板子接单 -> 开到目标 POI -> 结算材料/燃料。
