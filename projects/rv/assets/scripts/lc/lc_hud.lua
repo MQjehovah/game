@@ -1614,7 +1614,10 @@ function drawJobTracker(vw)
   elseif cond < 0.8 then
     cr, cg, cb = 0.95, 0.76, 0.36
   end
-  DrawText(string.format("%.0fm · 货况 %.0f%% · %s", dist, cond * 100, payText),
+  local bonusTags = (jobDeliveryBonusTags and jobDeliveryBonusTags()) or ""
+  if bonusTags ~= "" then bonusTags = " · " .. bonusTags end
+  DrawText(string.format("%.0fm · 货况 %.0f%% · %s%s", dist, cond * 100,
+           payText, bonusTags),
            bx + 12, 68, 12, cr, cg, cb, 1)
   DrawRect(bx + 12, 84, bw - 24, 3, 0.14, 0.15, 0.14, 0.9)
   DrawRect(bx + 12, 84, (bw - 24) * done, 3, 0.78, 0.66, 0.32, 1)

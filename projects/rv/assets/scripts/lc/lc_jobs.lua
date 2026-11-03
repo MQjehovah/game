@@ -502,6 +502,18 @@ function jobStreakBonus()
   return 1.0 + math.min(0.10, (s - 2) * 0.02)
 end
 
+-- 当前送达环境加成标签（HUD 追踪条提示用）
+function jobDeliveryBonusTags()
+  local tags = {}
+  if isNight ~= nil and isNight() then tags[#tags + 1] = "夜间+10%" end
+  if weather == "rain" then
+    tags[#tags + 1] = "雨天+8%"
+  elseif weather == "snow" then
+    tags[#tags + 1] = "雪天+12%"
+  end
+  return table.concat(tags, " · ")
+end
+
 -- 今日首单加成是否还能领（每天一次）
 function jobDailyBonusAvailable()
   return (day or 1) ~= (lastJobDay or 0)

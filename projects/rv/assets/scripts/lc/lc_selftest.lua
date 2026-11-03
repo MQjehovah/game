@@ -1270,6 +1270,26 @@ function runSelfTest()
        string.format("clear=%d snow=%d", clearGain, snowGain))
   end
 
+  -- 送达环境加成标签：雨/雪/夜间分别出现在追踪提示里
+  do
+    local sw, sc = weather, clock
+    weather, clock = "rain", 12 * 60
+    local rain = jobDeliveryBonusTags()
+    weather, clock = "snow", 12 * 60
+    local snow = jobDeliveryBonusTags()
+    weather, clock = "clear", 22 * 60
+    local night = jobDeliveryBonusTags()
+    weather, clock = "clear", 12 * 60
+    local none = jobDeliveryBonusTags()
+    weather, clock = sw, sc
+    ok(r, "delivery bonus tags",
+       rain:find("雨天", 1, true) ~= nil and
+       snow:find("雪天", 1, true) ~= nil and
+       night:find("夜间", 1, true) ~= nil and none == "",
+       string.format("rain=%s snow=%s night=%s none=%s",
+                     rain, snow, night, none))
+  end
+
   -- 雨天行驶：易碎货缓慢受潮掉货况
   do
     local sw, sp = weather, phase
