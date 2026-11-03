@@ -170,12 +170,12 @@
 - 车内保留独立内饰板/仪表台/暖光点光源；驾驶席视角隐藏外壳，追逐视角显示完整车体。
 - 公路改为 20 段 10m 深灰立方体 + 独立黄色虚线几何体：抬高路面并加 polygon offset，
   避免远距离 z-fighting 导致的整条路发白；不再依赖贴图/深度投影。
-- **画风：低多边形草甸 + 路旁土坡**：`tools/gen_rv_ground.py` 生成可平铺的
+- **画风：低多边形草甸 + 起伏地形**：`tools/gen_rv_ground.py` 生成可平铺的
   `rv_ground_meadow.png`（草绿基底 + 深浅草丛条纹 + 泥土斑块 + 小花点）与
   `rv_dirt.png`，场景 `Ground` 改为 `albedoTex` + `uvRepeat 160`，从沙地变为草地；
-  `tools/gen_rv_embankment.py` 生成 `rv_embankment.gltf`：主路右侧 5–38m、
-  z -24–46m 的土坡（近路侧泥土斜坡 + 顶部草地，高度沿 z 起伏、两端收口），
-  对应参考图里的土坡/路肩。
+  `tools/gen_rv_terrain.py` 生成营地级高度场（见下），其中保留了
+  主路右侧 5–38m、z -24–46m 的土坡（近路侧泥土斜坡 + 顶部草地，
+  高度沿 z 起伏、两端收口），对应参考图里的土坡/路肩。
   `tools/gen_rv_vegetation.py` 生成 `rv_meadow_a/b/c`（6×6m 草甸拼块，每块含
   18 簇草 + 2 丛花）、`rv_grass_tuft` / `rv_grass_tuft_b` / `rv_fern` /
   `rv_flower_white/blue/yellow/red` / `rv_bush`；`lc_config.MEADOW` 用 60 个
@@ -183,17 +183,23 @@
   POI 与土坡），并按 RV 位置回收复用。
   `updateMeadowWind()` 让草/花以 20Hz、分 4 批绕根部轻摆（草叶统一倾斜方向，
   偏航摆动看起来像随风倒伏）；土坡顶部另种 90 株草花灌木。
-- **地形高度采样 + 房车俯仰/侧倾**：`lc_terrain.lua` 与 `tools/gen_rv_embankment.py`
-  共用同一截面表 / 噪声 / 收口公式，`terrainHeight(x,z)` 给出土坡任意点高度，
-  `terrainSlope(x,z)` 给出梯度。步行时 `player.groundY`、眼高、角色模型与枪械
-  都跟随地形；驾驶时 `rv.groundY` 平滑跟随，`updateRvTilt()` 由梯度算出
+- **营地级高度场 + 房车俯仰/侧倾**：`tools/gen_rv_terrain.py` 生成
+  144×144m 的通用高度场（4m 网格），同时写出
+  `assets/data/rv_terrain.json` 和可见网格 `rv_terrain.gltf`，两者出自同一
+  高度函数：保留原土坡截面，并在营地西/南侧加起伏草丘；营地、水塘、
+  固定公路走廊与 POI 占地全部压平，因此道路和建筑仍然水平。
+  `lc_terrain.lua` 对 JSON 做双线性采样，`terrainHeight(x,z)` 给出任意点
+  高度、`terrainSlope(x,z)` 给出梯度；公路段按高度抬升并按坡度倾斜
+  （5m 分段、坡度限幅 10°，像切进坡里的土路），新生成的地点会拒绝落在
+  坡面上。步行时 `player.groundY`、眼高、角色模型与枪械都跟随地形；
+  驾驶时 `rv.groundY` 平滑跟随，`updateRvTilt()` 由梯度算出
   `rv.pitch/rv.roll`（限幅 ±0.35rad，8Hz 阻尼），`applyRvTransform()` 用
   `rvOffset()` 对每个部件的局部偏移做 roll→pitch→yaw 三维旋转并用
   **引擎新增的 `SetRotationEuler(entity,pitch,roll,yaw)`** 设置朝向，
   外壳/车门/内饰/家具/网格与物理刚体一起倾斜，房车不再插进坡体。
   车内第一人称站立高度由 `rvFloorOffset()` 取倾斜地板高度，镜头随车厢一起
   俯仰/侧倾。合作模式把每个槽位的 `gy` 与房车 `rv.gy` 写入 `game_state`
-  （量化到 3 位小数），两端各自用同一解析地形计算 `pitch/roll`，
+  （量化到 3 位小数），两端各自用同一高度场计算 `pitch/roll`，
   服务器代理、客户端预测、旁观相机都一致。
 - **操作**：A/D 横移已修正为 A 向左、D 向右（右向量取 `forward × up`）；
   驾驶时 A 左转、D 右转，合作模式服务器转向方向同步修正。
@@ -258,8 +264,8 @@
   `farm`（旧农场谷仓）/ `mall`（购物中心店门口）/ `lake`（湖边木屋）/
   `clinic`（路边诊所）。
 
-自检覆盖 30 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、
-土坡高度剖面/地面跟随/坡面倾斜/车内倾斜、废宅商店/加油站/物流仓库/旧农场/购物中心/湖边木屋/路边诊所店内物资箱（6/6）、
+自检覆盖 33 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、
+高度场剖面/草丘/道路压平/地面跟随/坡面倾斜/车内倾斜、废宅商店/加油站/物流仓库/旧农场/购物中心/湖边木屋/路边诊所店内物资箱（6/6）、
 POI 墙体碰撞/门洞通行等。
 
 ## 网络合作（主世界 2–4 人）
@@ -398,20 +404,25 @@ POI 墙体碰撞/门洞通行等。
   土坡顶部另有 90 株，单株 grass/flower 关闭投影。
   截图：`rv_final_drive2.png`（车顶追逐视角：公路两侧密集草丛、灌木、彩色野花，
   HUD 约 **91 FPS**）、`rv_patch_back.png`（回望公路，右侧土坡与草地）、
-  `rv_embankment_view2.png`（贴近路旁的泥土斜坡 + 顶部草地/草丛）、
+  `rv_hilltop.png`（从西南草丘回望营地：起伏草甸 + 水塘 + 房车）、
   `rv_patch_right.png`（草甸与池塘）。
   对照参考图，地面由原来的沙土色变为饱和草绿，并出现高矮草丛、灌木团、
   蓝/黄/白/红野花与沿路土坡，形成低多边形草甸风格。
-- **地形高度跟随 / 坡面倾斜验证**：`lc_terrain.terrainHeight()` 与土坡网格同源；
-  自检新增 `terrain height profile`（flat=0.00 mid=2.10 top=3.61）、
-  `terrain ground follow`（follow=3.61 top=3.61）、
-  `rv slope tilt`（pitch=-0.13 roll=0.35）与
-  `rv tilted interior`（nose=-0.60 right=0.60），单机自检 **30/30 PASS**。
-  截图 `rv_slope_player.png`：玩家站在土坡上，视线/角色高度随坡抬升；
-  `rv_tilt.png`：房车停在土坡中段（`rv.groundY≈2.0`，roll≈0.35），
-  车身、车窗、车轮随坡明显侧倾，而不是水平插入坡体；
-  `rv_slope_inside.png`：车内第一人称，床/柜/墙板随坡倾斜，镜头站在倾斜地板上。
-  合作模式 `game_state` 带每位玩家 `gy` 与房车 `rv.gy`，两端用同一解析地形
+- **营地高度场 / 坡面倾斜验证**：`assets/data/rv_terrain.json`（37×37，4m 网格，
+  144×144m）与 `rv_terrain.gltf` 由 `tools/gen_rv_terrain.py` 同源生成，
+  `lc_terrain.terrainHeight()` 双线性采样。自检新增
+  `terrain height profile`（flat=0.00 mid=2.10 top=3.55）、
+  `terrain ground follow`（follow=3.55 top=3.55）、
+  `terrain heightfield`（37×37 step=4）、`terrain knoll`（knoll=2.09）、
+  `terrain flat corridor`（camp/gas/ruin/clinic/road/edge 均 ≤0.06）、
+  `rv slope tilt`（pitch=-0.12 roll=0.32）与
+  `rv tilted interior`（nose=-0.60 right=0.60），单机自检 **33/33 PASS**。
+  截图 `rv_hilltop.png`：站在营地西南草丘回望，起伏草甸、水塘、房车与土坡；
+  `rv_hills.png`：从丘间看营地与远处建筑；`rv_lookback_hf.png`：营地视角，
+  右侧是新增草丘、左侧是公路与房车；`rv_slope_rv_hf.png`：房车停在土坡上，
+  `rv.groundY≈2.0` 且车身随坡侧倾；`rv_drive_road6.png`：自动驾驶途中，
+  公路贴着坡面而不是悬空（HUD 约 100 FPS）。
+  合作模式 `game_state` 带每位玩家 `gy` 与房车 `rv.gy`，两端用同一高度场
   算出相同 `pitch/roll`。
 - **可破碎橱窗验证**：`rv_window_glass.gltf` 使用 BLEND 材质，商店/加油站/仓库/商场/
   湖边木屋/诊所橱窗初始为半透明蓝色面板（`rv_glass_intact_close.png` 中窗内商品呈蓝色调，
@@ -497,8 +508,9 @@ POI 墙体碰撞/门洞通行等。
   2 张自发光贴图，共 38 张，每个 primitive 带平面投影 UV 并接入
   法线/粗糙度/金属度/AO/自发光；但几何仍是“倒角盒体/棱柱”组合，
   没有曲面细分、视差贴图或手工建模的高精度资产。
-- 地形只有路旁土坡一条固定横截面（`lc_terrain` 采样），没有覆盖营地周边的
-  通用高度场；房车已按坡度做俯仰/侧倾，但只按中心点采样、没有四轮独立悬挂；
+- 地形已有 144×144m 的营地级高度场（4m 网格，文件仅约 7.5KB）与土坡，
+  但超出该范围仍是平地，网格分辨率也较粗（4m 面片）；
+  房车按中心点采样坡度做俯仰/侧倾，没有四轮独立悬挂/分轮接地；
   植被风摆是整体偏航而非逐叶片顶点动画。
 - 车辆零件是整体状态，不是可拆装的独立部件。
 - 音效是程序合成的占位音，缺少更丰富的环境声/音乐。

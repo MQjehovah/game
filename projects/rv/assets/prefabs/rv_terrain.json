@@ -19,7 +19,7 @@
       ]
     },
     "mesh": {
-      "meshKey": "gltf:assets/models/rv/rv_embankment.gltf",
+      "meshKey": "gltf:assets/models/rv/rv_terrain.gltf",
       "castShadow": false,
       "receiveShadow": true
     }

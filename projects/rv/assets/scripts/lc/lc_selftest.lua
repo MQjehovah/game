@@ -165,6 +165,30 @@ function runSelfTest()
     ok(r, "terrain ground follow",
        math.abs(followed - hTop) < 0.001,
        string.format("follow=%.2f top=%.2f", followed, hTop))
+    -- General heightfield: the grid is loaded, the camp/roads stay level and
+    -- the meadow knolls roll.
+    if terrainFieldInfo ~= nil then
+      local fi = terrainFieldInfo()
+      ok(r, "terrain heightfield",
+         fi ~= nil and fi.nx >= 33 and fi.nz >= 33,
+         fi and string.format("%dx%d step=%.0f", fi.nx, fi.nz, fi.step)
+            or "analytic fallback")
+      local knoll = terrainHeight(-26, -20)
+      ok(r, "terrain knoll",
+         knoll > 1.5,
+         string.format("knoll=%.2f", knoll))
+      local flatOk = terrainHeight(0, 0) < 0.1 and
+                     terrainHeight(0, 60) < 0.1 and
+                     terrainHeight(38, 27) < 0.1 and
+                     terrainHeight(24, -40) < 0.1 and
+                     terrainHeight(12, -20) < 0.1 and
+                     terrainHeight(72, 0) < 0.1
+      ok(r, "terrain flat corridor", flatOk,
+         string.format("camp=%.2f gas=%.2f ruin=%.2f clinic=%.2f road=%.2f edge=%.2f",
+                       terrainHeight(0, 0), terrainHeight(0, 60),
+                       terrainHeight(38, 27), terrainHeight(24, -40),
+                       terrainHeight(12, -20), terrainHeight(72, 0)))
+    end
     if updateRvTilt ~= nil then
       local kx, kz, ky = rv.x, rv.z, rv.yaw
       local kp, kr = rv.pitch, rv.roll

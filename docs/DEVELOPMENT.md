@@ -791,27 +791,34 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
 - **草甸画风与地形**（`projects/rv`）：`tools/gen_rv_ground.py` 生成可平铺的
   `rv_ground_meadow.png`（草绿基底 + 深浅草丛条纹 + 泥土斑块 + 小花点）与
   `rv_dirt.png`，场景 `Ground` 改用 `albedoTex` + `uvRepeat=160`；
-  `tools/gen_rv_embankment.py` 生成 `rv_embankment.gltf`（主路右侧泥土斜坡 +
-  草地顶部，高度沿 z 起伏、两端收口）；
+  `tools/gen_rv_terrain.py` 生成营地级高度场并保留主路右侧泥土斜坡 +
+  草地顶部（高度沿 z 起伏、两端收口），同时输出 `rv_terrain.gltf` 与
+  `assets/data/rv_terrain.json`（见下）；
   `tools/gen_rv_vegetation.py` 生成 `rv_meadow_a/b/c`（6×6m 拼块，每块 18 簇草 +
   2 丛花）、`rv_grass_tuft` / `rv_grass_tuft_b` / `rv_fern`、`rv_flower_*`、
   `rv_bush`。`lc_config.MEADOW` 用 60 个拼块 + 约 130 株近景草花 + 34 丛灌木
   （约 570 实体）铺满营地/公路两侧，按 RV 位置回收；生成时避开路面、水塘、
   POI、土坡与 RV。`updateMeadowWind()` 以 20Hz、分 4 批让草/花绕根部轻摆；
   土坡顶部另种 90 株。实测追逐视角约 **91 FPS**。
-- **地形高度采样 / 坡面倾斜**（`projects/rv`）：`assets/scripts/lc/lc_terrain.lua` 与
-  `tools/gen_rv_embankment.py` 共用同一截面表、噪声和收口公式；
-  `terrainHeight(x,z)` / `terrainFollow()` 被步行（`player.groundY`、眼高、
-  模型与枪械）、驾驶（`rv.groundY`、`applyRvTransform`、追逐/驾驶席/俯视相机）
+- **营地级高度场 / 坡面倾斜**（`projects/rv`）：`tools/gen_rv_terrain.py` 用一个
+  高度函数同时生成 `assets/data/rv_terrain.json`（144×144m、4m 网格）和
+  可见网格 `rv_terrain.gltf`，保留路旁土坡并在营地西/南侧加草丘；
+  营地、水塘、固定公路走廊与 POI 占地压平，范围外为平地。
+  `lc_terrain.lua` 双线性采样 JSON，提供 `terrainHeight` / `terrainFollow` /
+  `terrainSlope`；步行（`player.groundY`、眼高、模型与枪械）、驾驶
+  （`rv.groundY`、`applyRvTransform`、追逐/驾驶席/俯视相机）、植被摆放
+  （草/花/灌木/树/岩石按地形抬高）、公路（5m 分段按坡度抬升、10° 限幅）
   以及合作模式（服务器采样、`game_state` 的 `gy`/`rv.gy`、代理与客户端预测）
   共同使用。`terrainSlope(x,z)` + `updateRvTilt()` 由梯度算出 `rv.pitch/rv.roll`
   （±0.35rad 限幅、8Hz 阻尼）；`applyRvTransform()` 用 `rvOffset()` 对部件偏移做
   roll→pitch→yaw 三维旋转，并通过**引擎新增的 `SetRotationEuler`**
   （`bindings.cpp` / `game_runtime.cpp` / `bindings.hpp`）设置朝向，
   物理刚体使用同样的四元数；车内第一人称站立高度由 `rvFloorOffset()` 取倾斜
-  地板高度，镜头随车厢一起倾斜。自检新增 `terrain height profile` /
-  `terrain ground follow` / `rv slope tilt` / `rv tilted interior`，
-  总计 **30/30 PASS**。
+  地板高度，镜头随车厢一起倾斜。新生成 POI 会拒绝落在坡面上，
+  避免平底建筑悬空。自检新增 `terrain height profile` /
+  `terrain ground follow` / `terrain heightfield` / `terrain knoll` /
+  `terrain flat corridor` / `rv slope tilt` / `rv tilted interior`，
+  总计 **33/33 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

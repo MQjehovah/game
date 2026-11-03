@@ -83,13 +83,14 @@ function placeScenery(p, fx, fz, fMin, fMax)
       end
       if not blocked then
         local s = sceneryScale(p.kind)
-        local y = 0
+        local gy = (terrainHeight and terrainHeight(wx, wz)) or 0
+        local y = gy
         if p.kind == "scrub" then
-          y = 0.015
+          y = gy + 0.015
           SetScale(p.ent, 0.5 + math.random(), 0.03 + math.random() * 0.04, 0.5 + math.random())
         else
           SetScale(p.ent, s, s, s)
-          if p.kind == "rock" then y = s * 0.55 end
+          if p.kind == "rock" then y = gy + s * 0.55 end
         end
         SetPosition(p.ent, { x = wx, y = y, z = wz })
         local yaw = math.random() * math.pi * 2
@@ -100,12 +101,12 @@ function placeScenery(p, fx, fz, fMin, fMax)
         -- 树/岩石 = 静态碰撞体（越野障碍），回收 = 传送刚体
         if p.kind == "tree" or p.kind == "rock" then
           local half = (p.kind == "rock") and s * 0.7 or 0.3
-          local cy = (p.kind == "rock") and s * 0.55 or 1.0
+          local cy = gy + ((p.kind == "rock") and s * 0.55 or 1.0)
           if p.body then
             PhysicsSetPosition(p.body, { x = wx, y = cy, z = wz })
           else
             p.body = PhysicsAddBox({ x = wx, y = cy, z = wz },
-                                   { x = half, y = cy, z = half }, false, {})
+                                   { x = half, y = cy - gy, z = half }, false, {})
           end
         end
         return
@@ -114,7 +115,7 @@ function placeScenery(p, fx, fz, fMin, fMax)
   end
   local wx = rv.x + fx * (fMax + 20) - fz * 30
   local wz = rv.z + fz * (fMax + 20) + fx * 30
-  SetPosition(p.ent, { x = wx, y = 0.3, z = wz })
+  SetPosition(p.ent, { x = wx, y = ((terrainHeight and terrainHeight(wx, wz)) or 0) + 0.3, z = wz })
   p.x, p.z = wx, wz
 end
 
@@ -163,28 +164,6 @@ end
 -- Plants anchored on the embankment crest (they must not be recycled away).
 local hillSpawned = false
 
-local HX = { 5.0, 8.0, 11.5, 15.0, 19.0, 23.5, 28.0, 33.0, 38.0 }
-local HY = { 0.0, 0.70, 1.90, 3.00, 3.50, 3.55, 3.00, 1.50, 0.0 }
-
-local function hillBase(x)
-  for i = 1, #HX - 1 do
-    if x >= HX[i] and x <= HX[i + 1] then
-      local t = (x - HX[i]) / (HX[i + 1] - HX[i])
-      return HY[i] + (HY[i + 1] - HY[i]) * t
-    end
-  end
-  return 0.0
-end
-
-local function hillHeight(x, z)
-  local y = hillBase(x) + 0.28 * math.sin(z * 0.23 + x * 0.35) +
-            0.12 * math.sin(z * 0.61)
-  local taper = math.min(1.0,
-                         math.max(0.0, (z + 24.0) / 6.0),
-                         math.max(0.0, (46.0 - z) / 6.0))
-  return y * taper
-end
-
 function spawnHillPlants()
   if hillSpawned then return end
   hillSpawned = true
@@ -197,7 +176,7 @@ function spawnHillPlants()
     for _ = 1, k[2] do
       local x = 16.0 + math.random() * 7.0
       local z = -18.0 + math.random() * 58.0
-      local y = hillHeight(x, z)
+      local y = terrainHeight and terrainHeight(x, z) or 0
       local ent = SpawnPrefab(k[1], { x = x, y = y, z = z })
       if ent ~= nil then
         local s = 0.9 + math.random() * 0.7
@@ -266,24 +245,47 @@ function spawnRoadBetween(ax, az, bx, bz)
   roadLinks[key] = true
   roadPaths[#roadPaths + 1] = { ax = ax, az = az, bx = bx, bz = bz }
   roadLinkSeq = roadLinkSeq + 1
-  local y = 0.08 + (roadLinkSeq % 6) * 0.0015
   local yaw = dirYaw(dx, dz)
   local ux, uz = dx / len, dz / len
-  local count = math.max(1, math.ceil(len / 10))
-  for i = 0, count - 1 do
-    local d = math.min(len, i * 10 + 5)
-    local ent = SpawnPrefab("rv_road_seg",
-                            { x = ax + ux * d, y = y, z = az + uz * d })
-    if ent ~= nil then
+  -- Roads follow the heightfield: lift each 10 m slab to the sampled height and
+  -- tilt it along the local slope, so a road crossing a knoll rolls with it
+  -- instead of tunnelling through the terrain.
+  local function placeAt(ent, d, lift)
+    local cx, cz = ax + ux * d, az + uz * d
+    local gy = (terrainHeight and terrainHeight(cx, cz)) or 0
+    local pitch, roll = 0, 0
+    if terrainSlope ~= nil then
+      local dhx, dhz = terrainSlope(cx, cz)
+      local dhF = dhx * ux + dhz * uz
+      local dhR = dhx * uz - dhz * ux
+      -- Cap the grade: a 10 m asphalt slab rotated 40 deg reads as a ramp
+      -- flying through the scene. Short segments + a 10 deg cap keep the road
+      -- cut into the hillside like a graded track.
+      pitch = math.max(-0.18, math.min(0.18, -math.atan(dhF)))
+      roll = math.max(-0.18, math.min(0.18, math.atan(dhR)))
+    end
+    SetPosition(ent, { x = cx, y = gy + lift, z = cz })
+    if SetRotationEuler ~= nil then
+      SetRotationEuler(ent, pitch, roll, yaw)
+    else
       SetRotationY(ent, yaw)
+    end
+  end
+  local SEG = 5.0
+  local count = math.max(1, math.ceil(len / SEG))
+  for i = 0, count - 1 do
+    local d = math.min(len, i * SEG + SEG * 0.5)
+    local ent = SpawnPrefab("rv_road_seg", { x = 0, y = -50, z = 0 })
+    if ent ~= nil then
+      SetScale(ent, 7.5, 0.02, SEG + 0.3)
+      placeAt(ent, d, 0.08 + (roadLinkSeq % 6) * 0.0015)
       roadSegments[#roadSegments + 1] = { ent = ent }
     end
   end
   for d = 6, len - 2, 6 do
-    local ent = SpawnPrefab("rv_road_dash",
-                            { x = ax + ux * d, y = y + 0.04, z = az + uz * d })
+    local ent = SpawnPrefab("rv_road_dash", { x = 0, y = -50, z = 0 })
     if ent ~= nil then
-      SetRotationY(ent, yaw)
+      placeAt(ent, d, 0.12 + (roadLinkSeq % 6) * 0.0015)
       roadDashes[#roadDashes + 1] = { ent = ent }
     end
   end
@@ -1006,6 +1008,24 @@ function trySpawnPoi(silent)
     for _, nd in ipairs(NODES) do
       local dx, dz = x - nd.x, z - nd.z
       if dx * dx + dz * dz < 45 * 45 then ok = false break end
+    end
+    if ok and terrainHeight ~= nil then
+      -- Keep new roads off the knolls: a level asphalt ribbon crossing a hill
+      -- would hover/tunnel. Reject a route that meets relief, and never drop a
+      -- building on a slope (the POI shell has a flat floor).
+      local rx, rz = x - anchor.x, z - anchor.z
+      local steps = math.max(1, math.floor(math.sqrt(rx * rx + rz * rz) / 8))
+      for s = 1, steps do
+        local t = s / steps
+        if terrainHeight(anchor.x + rx * t, anchor.z + rz * t) > 0.25 then
+          ok = false
+          break
+        end
+      end
+      local bcx, bcz = x + 6.5, z + 6.5
+      if ok and (terrainHeight(x, z) > 0.4 or terrainHeight(bcx, bcz) > 0.4) then
+        ok = false
+      end
     end
     if ok then
       repeat poiSeq = poiSeq + 1 until nodeById("poi_" .. poiSeq) == nil
