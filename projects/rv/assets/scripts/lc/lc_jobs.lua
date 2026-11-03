@@ -485,6 +485,16 @@ function jobReputation()
   return 1.0 + math.min(0.30, math.floor(n / 5) * 0.02)
 end
 
+-- 信誉称号：让长期跑单有成长感
+function jobReputationRank()
+  local n = jobDelivered or 0
+  if n >= 50 then return "金牌" end
+  if n >= 30 then return "老练" end
+  if n >= 15 then return "可靠" end
+  if n >= 5 then return "熟手" end
+  return "新手"
+end
+
 -- 连续送达：从第 3 单起每单 +2%，上限 +10%；超时/放弃清零
 function jobStreakBonus()
   local s = jobStreak or 0

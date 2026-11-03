@@ -3098,6 +3098,26 @@ function runSelfTest()
        string.format("0=%.2f 10=%.2f 30=%.2f max=%.2f", r0, r10, r30, rMax))
   end
 
+  -- 信誉称号：随完成单数升级
+  do
+    local keep = jobDelivered
+    jobDelivered = 0
+    local a = jobReputationRank()
+    jobDelivered = 5
+    local b = jobReputationRank()
+    jobDelivered = 15
+    local c = jobReputationRank()
+    jobDelivered = 30
+    local d = jobReputationRank()
+    jobDelivered = 50
+    local e = jobReputationRank()
+    jobDelivered = keep
+    ok(r, "job reputation rank",
+       a == "新手" and b == "熟手" and c == "可靠" and d == "老练" and
+       e == "金牌",
+       string.format("%s/%s/%s/%s/%s", a, b, c, d, e))
+  end
+
   -- 连续送达：第 3 单起 +2%，上限 +10%；清零后回到 1.0
   do
     local keep = jobStreak
