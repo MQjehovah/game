@@ -645,6 +645,7 @@ function on_start()
   recomputeStats()
 
   if hasSave then loadLayout() end
+  if not hasSave and startMode == "" then newGameHintT = 12 end
   applyRvTransform()
   -- RV 动态刚体：质量随载重
   rv.mass = math.max(800, 1200 + stats.weight * 0.8)
@@ -1151,6 +1152,10 @@ function on_start()
     nightDriveMin = 300
     setPhase("driving")
     driveView = "cab"
+  elseif startMode == "newgame" then
+    newGameHintT = 12
+    clock = 8 * 60
+    setPhase("parked")
   elseif startMode == "raincab" then
     setWeather("rain")
     setPhase("driving")
@@ -1440,6 +1445,9 @@ function on_update(ent, dt)
     return
   end
   if toast.t > 0 then toast.t = toast.t - dt end
+  if (newGameHintT or 0) > 0 then
+    newGameHintT = math.max(0, newGameHintT - dt)
+  end
   ensureHelpers()
   if ActionPressed("m") then mapOpen = not mapOpen end
   if ActionPressed("i") then invOpen = not invOpen end

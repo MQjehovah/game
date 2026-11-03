@@ -212,6 +212,16 @@ function drawThreatBadge(vw)
   drawTextRight("左键 射击", vw - 14, 230, 13, 0.9, 0.7, 0.55, 1)
 end
 
+-- 首次进入：屏幕底部显示关键按键提示（12 秒后淡出）
+function drawNewGameHint(vw, vh)
+  local t = newGameHintT or 0
+  if t <= 0 then return end
+  local a = math.min(1, t)
+  drawTextCentered("新旅程：P 操作说明 · J 旅行日志 · K 鱼类图鉴 · M 地图",
+                   math.floor(vw * 0.5), 74, 13,
+                   0.86, 0.90, 0.74, 0.9 * a)
+end
+
 -- 步行时房车方位角差（用于屏幕边缘箭头）
 function rvBearingDelta(px, pz, viewYaw)
   local b = dirYaw(rv.x - (px or 0), rv.z - (pz or 0))
@@ -308,6 +318,7 @@ function drawFpHud()
                        1.0, 0.72, 0.42, 0.95)
     end
   end
+  if drawNewGameHint ~= nil then drawNewGameHint(vw, vh) end
 end
 
 -- 快速使用物品：1 水瓶 / 2 罐头 / 3 热饭 / 4 热咖啡 / 5 生食材
@@ -795,6 +806,7 @@ function drawDriveHud()
       drawTextCentered(hint, vw * 0.5, 52, 13, 1.0, 0.72, 0.38, 0.95)
     end
   end
+  if drawNewGameHint ~= nil then drawNewGameHint(vw, vh) end
 end
 
 -- 停靠搜刮叠加：物资箱标记 / 搜获袋 / 感染者
