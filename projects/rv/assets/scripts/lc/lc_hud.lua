@@ -779,7 +779,7 @@ function drawDriveHud()
 
   local hints = {
     "W 油门   S 刹车/倒车   A/D 转向   Shift 手刹",
-    "鼠标 张望   空格 停车",
+    "鼠标 张望   空格 停车   R 车载电台",
     "C " .. (driveView == "cab" and "追逐视角" or "驾驶席视角") .. "   M 世界地图   P 说明",
   }
   for i, h in ipairs(hints) do
@@ -1351,6 +1351,7 @@ local HELP_SECTIONS = {
       "H          远光灯",
       "X          喇叭（吓退附近感染者）",
       "Y          呼叫拖车（4 金属，回营地）",
+      "R          车载电台（引擎声/电台）",
     } },
   { title = "步行 / 营地", lines = {
       "WASD       移动，鼠标张望",
@@ -1363,6 +1364,7 @@ local HELP_SECTIONS = {
       "Q          水塘取浑浊水",
       "1 / 2 / 3  吃 / 喝 / 睡觉",
       "0          放弃当前货运合同",
+      "联机客机：T 添柴 / V 采浆果",
     } },
   { title = "界面", lines = {
       "M          世界地图",
