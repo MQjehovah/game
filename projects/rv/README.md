@@ -722,6 +722,9 @@
 - `coop_refuel.txt`：服务端 3s 把油量降到 20L 并停在营地，日志
   `[coop-refuel] node=camp fuel=60.0 water=120.0 metal=97 cost=0`，
   验证联机也走单机同一套到站补给（营地免费、加油站扣金属）。
+- `coop_service.txt`：服务端 3s 把机油/胎压降到低值并停在加油站，日志
+  `[coop-service] demo oil=true/4 air=true/1 oilLife=100 pressure=2.4`，
+  验证联机加油站也换机油/充气。
 - `coop_repair.txt`：服务端 3s 把引擎打到 40%、给 1 个修理包并现场维修，日志
   `[coop-repair] demo ok=true engine=75 kits=0`，验证联机 R 键维修由服务端权威结算。
 - `coop_fuel.txt`：服务端 3s 把油量降到 20L、给 1 个燃油罐并按 Q 加注，日志

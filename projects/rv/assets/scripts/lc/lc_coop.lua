@@ -1099,6 +1099,29 @@ local function serverUpdate(dt)
     print("[coop-refuel] set fuel=20 at camp")
   end
 
+  -- Test-only co-op gas-station services: low oil/pressure, then service.
+  if coop.serviceDemo and not coop.serviceDemoDone and coop.autoT >= 3.0 then
+    coop.serviceDemoDone = true
+    local nd = nodeById("gasstop")
+    if nd ~= nil then rv.x, rv.z = nd.x, nd.z end
+    oilLife = 10
+    rv.tirePressureCold = { 1.8, 1.8, 1.8, 1.8 }
+    materials.metal = (materials.metal or 0) + 10
+    local oilOk, oilCost = false, 0
+    if serviceOilAtGasstop ~= nil then
+      oilOk, oilCost = serviceOilAtGasstop()
+    end
+    local airOk, airCost = false, 0
+    if serviceTiresAtGasstop ~= nil then
+      airOk, airCost = serviceTiresAtGasstop()
+    end
+    print(string.format(
+      "[coop-service] demo oil=%s/%d air=%s/%d oilLife=%.0f pressure=%.1f metal=%d",
+      tostring(oilOk), oilCost or 0, tostring(airOk), airCost or 0,
+      oilLife or 0, (rv.tirePressureCold or {})[1] or 0, materials.metal or 0))
+    pushState()
+  end
+
   -- Test-only co-op repair: damage the engine, give a kit, repair server-side.
   if coop.repairDemo and not coop.repairDemoDone and coop.autoT >= 3.0 then
     coop.repairDemoDone = true
@@ -1496,19 +1519,43 @@ local function serverUpdate(dt)
   end
 
   -- 合作服务器：停稳在营地/加油站时自动补给（与单机一致：营地免费、
-  -- 加油站按油量缺口扣金属）
+  -- 加油站按油量缺口扣金属；加油站还会换机油/充气）
   coop.refuelCd = (coop.refuelCd or 0) - dt
   if coop.refuelCd <= 0 and math.abs(rv.speed or 0) < 0.4 then
     local stationId = coopStationAtRv and coopStationAtRv() or nil
-    if stationId ~= nil and (fuelMax() - (fuel or 0)) > 0.5 then
+    if stationId ~= nil then
       coop.refuelCd = 3.0
-      local okRefuel, cost = false, 0
-      if refuelAtNode ~= nil then okRefuel, cost = refuelAtNode(stationId) end
-      if okRefuel then
-        if water < waterMax() then water = waterMax() end
-        print(string.format(
-          "[coop-refuel] node=%s fuel=%.1f water=%.1f metal=%d cost=%d",
-          stationId, fuel, water, materials.metal or 0, cost or 0))
+      local did = false
+      if (fuelMax() - (fuel or 0)) > 0.5 then
+        local okRefuel, cost = false, 0
+        if refuelAtNode ~= nil then okRefuel, cost = refuelAtNode(stationId) end
+        if okRefuel then
+          if water < waterMax() then water = waterMax() end
+          print(string.format(
+            "[coop-refuel] node=%s fuel=%.1f water=%.1f metal=%d cost=%d",
+            stationId, fuel, water, materials.metal or 0, cost or 0))
+          did = true
+        end
+      end
+      if stationId == "gasstop" then
+        if serviceOilAtGasstop ~= nil then
+          local oilOk, oilCost = serviceOilAtGasstop()
+          if oilOk and (oilCost or 0) > 0 then
+            print(string.format("[coop-service] oil cost=%d oil=%.0f metal=%d",
+                                oilCost, oilLife or 0, materials.metal or 0))
+            did = true
+          end
+        end
+        if serviceTiresAtGasstop ~= nil then
+          local airOk, airCost = serviceTiresAtGasstop()
+          if airOk and (airCost or 0) > 0 then
+            print(string.format("[coop-service] air cost=%d metal=%d",
+                                airCost, materials.metal or 0))
+            did = true
+          end
+        end
+      end
+      if did then
         coop.saveDirty = true
         pushState()
       end
@@ -2499,6 +2546,7 @@ function coopInitWorld(role)
     coop.lightsDemo = readFlag("coop_lights.txt")
     coop.hornDemo = readFlag("coop_horn.txt")
     coop.refuelDemo = readFlag("coop_refuel.txt")
+    coop.serviceDemo = readFlag("coop_service.txt")
     coop.repairDemo = readFlag("coop_repair.txt")
     coop.fuelDemo = readFlag("coop_fuel.txt")
     coop.workbenchDemo = readFlag("coop_workbench.txt")
@@ -2619,6 +2667,7 @@ function coopInitWorld(role)
     coop.hornDemo = readFlag("coop_horn.txt")
     coop.highDemo = readFlag("coop_highbeam.txt")
     coop.refuelDemo = readFlag("coop_refuel.txt")
+    coop.serviceDemo = readFlag("coop_service.txt")
     coop.repairDemo = readFlag("coop_repair.txt")
     coop.fuelDemo = readFlag("coop_fuel.txt")
     coop.workbenchDemo = readFlag("coop_workbench.txt")
