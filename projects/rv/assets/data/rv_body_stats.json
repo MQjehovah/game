@@ -1,0 +1,10 @@
+{
+  "archLipSegments": 16,
+  "archArcs": 4,
+  "wheelWellSegments": 16,
+  "wheelWellArcs": 4,
+  "roofShoulderStrips": 3,
+  "verts": 17088,
+  "tris": 7976,
+  "prims": 10
+}

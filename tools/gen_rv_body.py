@@ -26,6 +26,7 @@ from rv_geom import bevel_box
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "projects/rv/assets/models/rv"
 PREFAB = ROOT / "projects/rv/assets/prefabs/rv_body.json"
+STATS = ROOT / "projects/rv/assets/data/rv_body_stats.json"
 
 # material indices (0 is the hidden importer-default slot)
 (DEFAULT, BODY, ROOF, TRIM, GLASS, TIRE, HUB, LIGHT, TAIL, DOOR,
@@ -103,6 +104,39 @@ class Mesh:
             self.quad(mat, (cx, cy, cz), p0, p1, (cx, cy, cz), n)
 
 
+ARCH_LIP_SEGMENTS = 16
+ROOF_SHOULDER = [(1.18, 2.02), (1.16, 2.07), (1.11, 2.115), (1.08, 2.14)]
+
+
+def arch_lip(m, sign, cz, seg=ARCH_LIP_SEGMENTS):
+    """Continuous rolled lip swept around the wheel opening (not stepped boxes)."""
+    x0 = sign * (X + 0.006)
+    x1 = sign * (X + 0.055)
+    prev = None
+    for i in range(seg + 1):
+        a = math.pi * i / seg
+        z = cz + math.cos(a) * ARCH_R
+        y = 0.38 + math.sin(a) * ARCH_R
+        cur = ((x0, y, z), (x1, y + 0.015, z))
+        if prev is not None:
+            m.poly(TRIM, [prev[0], cur[0], cur[1], prev[1]],
+                   (sign, 0.0, 0.0))
+        prev = cur
+
+
+def arch_well(m, sign, cz, seg=ARCH_LIP_SEGMENTS):
+    """Semicircular inner wheel-well wall (triangle fan) behind the opening."""
+    x = sign * 1.055
+    r = ARCH_R - 0.03
+    center = (x, 0.38, cz)
+    for i in range(seg):
+        a0 = math.pi * i / seg
+        a1 = math.pi * (i + 1) / seg
+        p0 = (x, 0.38 + math.sin(a0) * r, cz + math.cos(a0) * r)
+        p1 = (x, 0.38 + math.sin(a1) * r, cz + math.cos(a1) * r)
+        m.poly(TRIM, [center, p0, p1], (sign, 0.0, 0.0))
+
+
 def side_wall(m, sign, openings, windows):
     """Build one side wall (+1 right / -1 left) around rectangular openings."""
     outer = sign * X
@@ -136,13 +170,6 @@ def side_wall(m, sign, openings, windows):
             yb = 0.38 + dy
             if yb < y1:
                 wall_box(za, zb, yb, y1)
-                # Two stepped lips read as a rolled wheel-arch edge.
-                m.box(TRIM, sign * (X + 0.01), yb + 0.035, (za + zb) * 0.5,
-                      0.05, 0.07, zb - za + 0.015)
-                m.box(TRIM, sign * (X - 0.035), yb - 0.005, (za + zb) * 0.5,
-                      0.04, 0.05, zb - za + 0.010)
-        # Wheel well behind the arch so the body does not look hollow.
-        m.box(TRIM, sign * 1.06, 0.55, (lo + hi) * 0.5, 0.04, 0.62, hi - lo)
 
     cuts = [(z, 0) for z in [ZB]] + [(z, 1) for z in [ZF]]
     rects = []
@@ -252,8 +279,15 @@ def main():
     # ---- Roof slab + beveled edges ----
     m.box(ROOF, 0, 2.15, 0.45, 2.24, 0.10, 8.95)
     for sign in (-1, 1):
-        m.quad(ROOF, (sign * X, 2.02, ZB + 0.05), (sign * 1.08, 2.10, ZB + 0.05),
-               (sign * 1.08, 2.10, 4.92), (sign * X, 2.02, 4.92), (sign * 0.7, 0.7, 0))
+        # Lofted roof shoulder: three strips round the wall-to-roof transition
+        # instead of one 45-degree chamfer.
+        for j in range(len(ROOF_SHOULDER) - 1):
+            xa, ya = ROOF_SHOULDER[j]
+            xb, yb = ROOF_SHOULDER[j + 1]
+            m.poly(ROOF, [
+                (sign * xa, ya, ZB + 0.05), (sign * xa, ya, 4.92),
+                (sign * xb, yb, 4.92), (sign * xb, yb, ZB + 0.05),
+            ], (sign * 0.55, 0.84, 0.0))
     m.quad(ROOF, (-1.10, 2.10, 4.92), (1.10, 2.10, 4.92),
            (1.14, 2.15, 4.60), (-1.14, 2.15, 4.60), (0, 0.75, 0.66))
     m.quad(ROOF, (-1.14, 2.15, -3.96), (1.14, 2.15, -3.96),
@@ -270,6 +304,10 @@ def main():
     side_wall(m, 1, [(-3.54, -2.76, 0.24, 1.86)], win)
     side_wall(m, -1, [], [(-2.25, -0.35, 0.98, 1.72), (0.25, 2.15, 0.98, 1.72),
                           (-3.55, -2.60, 0.98, 1.72), (3.75, 4.70, 1.05, 1.80)])
+    for sign in (-1, 1):
+        for cz in WHEEL_Z:
+            arch_lip(m, sign, cz)
+            arch_well(m, sign, cz)
 
     # Door frame + handle + hinge plates (right side, around z -3.54..-2.76).
     fx = X + 0.02
@@ -465,8 +503,23 @@ def main():
                      "castShadow": True, "receiveShadow": True},
         },
     }, indent=2) + "\n", encoding="utf-8")
+    verts = sum(len(v[0]) for v in m.groups.values())
+    tris = sum(len(v[2]) // 3 for v in m.groups.values())
+    STATS.parent.mkdir(parents=True, exist_ok=True)
+    STATS.write_text(json.dumps({
+        "archLipSegments": ARCH_LIP_SEGMENTS,
+        "archArcs": 4,
+        "wheelWellSegments": ARCH_LIP_SEGMENTS,
+        "wheelWellArcs": 4,
+        "roofShoulderStrips": len(ROOF_SHOULDER) - 1,
+        "verts": verts,
+        "tris": tris,
+        "prims": len(prims),
+    }, indent=2) + "\n", encoding="utf-8")
     print("rv_body bytes", len(buffer), "prims", len(prims),
-          "verts", sum(len(v[0]) for v in m.groups.values()))
+          "verts", verts, "tris", tris,
+          "archSegments", ARCH_LIP_SEGMENTS,
+          "roofStrips", len(ROOF_SHOULDER) - 1)
 
 
 if __name__ == "__main__":

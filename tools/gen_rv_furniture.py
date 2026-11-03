@@ -20,10 +20,11 @@ import struct
 from pathlib import Path
 
 from rv_surfaces import face_uvs, surface_extras, surface_material
-from rv_geom import bevel_box
+from rv_geom import bevel_box, lathe
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "projects/rv/assets/models/rv"
+STATS = ROOT / "projects/rv/assets/data/rv_furniture_stats.json"
 PREFABS = ROOT / "projects/rv/assets/prefabs"
 
 # material slots (0 = hidden importer default)
@@ -56,6 +57,16 @@ class Mesh:
 
     def box(self, mat, cx, cy, cz, sx, sy, sz, bevel=None):
         bevel_box(self, mat, cx, cy, cz, sx, sy, sz, bevel)
+
+    def quad(self, mat, a, b, c, d, normal=None):
+        if normal is None:
+            u = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
+            v = (d[0] - a[0], d[1] - a[1], d[2] - a[2])
+            n = (u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2],
+                 u[0] * v[1] - u[1] * v[0])
+            ln = math.sqrt(n[0] ** 2 + n[1] ** 2 + n[2] ** 2) or 1.0
+            normal = (n[0] / ln, n[1] / ln, n[2] / ln)
+        self.poly(mat, [a, b, c, d], normal)
 
     def poly(self, mat, verts, normal):
         pos, nrm, idx, uvs = self._group(mat)
@@ -145,22 +156,36 @@ def fridge(m):
         m.box(DARK, 0, 0.14 - i * 0.03, 0.272, 0.30, 0.012, 0.01)
 
 
+SINK_LATHE_SEGMENTS = 28
+
+
 def sink(m):
     m.box(WOOD, 0, 0.40, 0, 0.48, 0.80, 0.48)
     m.box(WOOD2, 0, 0.10, 0.0, 0.44, 0.10, 0.44)
-    m.box(WHITE, 0, 0.83, 0, 0.52, 0.06, 0.52)
-    # basin: four walls + bottom
-    m.box(METAL, 0, 0.755, 0, 0.38, 0.02, 0.36)
-    m.box(METAL, 0, 0.80, 0.17, 0.38, 0.08, 0.02)
-    m.box(METAL, 0, 0.80, -0.17, 0.38, 0.08, 0.02)
-    m.box(METAL, 0.17, 0.80, 0, 0.02, 0.08, 0.34)
-    m.box(METAL, -0.17, 0.80, 0, 0.02, 0.08, 0.34)
-    # faucet + knobs
+    # Counter top with an opening: four planks instead of one slab, so the
+    # lathed bowl below is actually visible.
+    m.box(WHITE, 0, 0.855, 0.245, 0.52, 0.05, 0.06)
+    m.box(WHITE, 0, 0.855, -0.245, 0.52, 0.05, 0.06)
+    m.box(WHITE, 0.245, 0.855, 0, 0.06, 0.05, 0.38)
+    m.box(WHITE, -0.245, 0.855, 0, 0.06, 0.05, 0.38)
+    # Sculpted stainless bowl: a U-shaped profile revolved around Y, squashed a
+    # little in Z, gives a real bowl with rim, wall and bottom in one surface.
+    profile = [
+        (0.075, 0.742), (0.150, 0.750), (0.190, 0.780),
+        (0.205, 0.820), (0.212, 0.858), (0.224, 0.862),
+        (0.224, 0.846), (0.196, 0.816), (0.182, 0.780),
+        (0.140, 0.756), (0.068, 0.748), (0.075, 0.742),
+    ]
+    lathe(m, METAL, 0, 0.0, 0, profile, segments=SINK_LATHE_SEGMENTS,
+          sx=1.0, sz=0.86)
+    m.box(METAL, 0, 0.750, 0, 0.035, 0.012, 0.035)  # drain
+    # curved spout: three short segments approximate a quarter-arc
     m.box(METAL, 0, 0.92, -0.18, 0.04, 0.24, 0.04)
-    m.box(METAL, 0, 1.04, -0.13, 0.04, 0.04, 0.14)
-    m.box(METAL, 0, 1.00, -0.06, 0.035, 0.08, 0.035)
+    m.box(METAL, 0, 1.045, -0.155, 0.04, 0.05, 0.10)
+    m.box(METAL, 0, 1.02, -0.085, 0.036, 0.08, 0.04)
+    m.box(METAL, 0, 0.985, -0.045, 0.030, 0.05, 0.03)
     for sx in (-1, 1):
-        m.box(GREY, sx * 0.11, 0.88, -0.17, 0.05, 0.04, 0.05)
+        m.box(GREY, sx * 0.11, 0.895, -0.17, 0.05, 0.04, 0.05)
     # cabinet door + handle
     m.box(WOOD2, 0, 0.42, 0.245, 0.40, 0.62, 0.02)
     m.box(METAL, 0.14, 0.44, 0.26, 0.03, 0.16, 0.03)
@@ -535,13 +560,22 @@ def write_model(key, node, build):
                      "castShadow": True, "receiveShadow": True},
         },
     }, indent=2) + "\n", encoding="utf-8")
+    verts = sum(len(v[0]) for v in m.groups.values())
+    tris = sum(len(v[2]) // 3 for v in m.groups.values())
     print(key, "bytes", len(buffer), "prims", len(prims),
-          "verts", sum(len(v[0]) for v in m.groups.values()))
+          "verts", verts, "tris", tris)
+    return {"verts": verts, "tris": tris, "prims": len(prims)}
 
 
 def main():
+    stats = {}
     for key, (node, build) in MODELS.items():
-        write_model(key, node, build)
+        stats[key] = write_model(key, node, build)
+    stats["rv_furn_sink"]["latheSegments"] = SINK_LATHE_SEGMENTS
+    stats["rv_furn_sink"]["latheProfilePoints"] = 12
+    STATS.parent.mkdir(parents=True, exist_ok=True)
+    STATS.write_text(json.dumps(stats, indent=2, sort_keys=True) + "\n",
+                     encoding="utf-8")
 
 
 if __name__ == "__main__":

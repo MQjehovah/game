@@ -1,0 +1,104 @@
+{
+  "rv_furn_bathroom": {
+    "prims": 7,
+    "tris": 572,
+    "verts": 1224
+  },
+  "rv_furn_battery": {
+    "prims": 6,
+    "tris": 456,
+    "verts": 960
+  },
+  "rv_furn_bed_double": {
+    "prims": 6,
+    "tris": 716,
+    "verts": 1560
+  },
+  "rv_furn_bed_single": {
+    "prims": 6,
+    "tris": 628,
+    "verts": 1368
+  },
+  "rv_furn_coffee": {
+    "prims": 8,
+    "tris": 284,
+    "verts": 600
+  },
+  "rv_furn_fridge": {
+    "prims": 5,
+    "tris": 196,
+    "verts": 408
+  },
+  "rv_furn_generator": {
+    "prims": 6,
+    "tris": 572,
+    "verts": 1224
+  },
+  "rv_furn_gun_rack": {
+    "prims": 7,
+    "tris": 740,
+    "verts": 1608
+  },
+  "rv_furn_heater": {
+    "prims": 5,
+    "tris": 388,
+    "verts": 816
+  },
+  "rv_furn_med_cabinet": {
+    "prims": 8,
+    "tris": 404,
+    "verts": 864
+  },
+  "rv_furn_plant": {
+    "prims": 6,
+    "tris": 752,
+    "verts": 1632
+  },
+  "rv_furn_roof_vent": {
+    "prims": 5,
+    "tris": 240,
+    "verts": 504
+  },
+  "rv_furn_sink": {
+    "latheProfilePoints": 12,
+    "latheSegments": 28,
+    "prims": 6,
+    "tris": 1000,
+    "verts": 2048
+  },
+  "rv_furn_solar": {
+    "prims": 6,
+    "tris": 344,
+    "verts": 720
+  },
+  "rv_furn_storage": {
+    "prims": 6,
+    "tris": 368,
+    "verts": 768
+  },
+  "rv_furn_stove": {
+    "prims": 6,
+    "tris": 336,
+    "verts": 696
+  },
+  "rv_furn_turret": {
+    "prims": 6,
+    "tris": 556,
+    "verts": 1200
+  },
+  "rv_furn_tv": {
+    "prims": 8,
+    "tris": 364,
+    "verts": 768
+  },
+  "rv_furn_water_tank": {
+    "prims": 8,
+    "tris": 404,
+    "verts": 864
+  },
+  "rv_furn_workbench": {
+    "prims": 6,
+    "tris": 528,
+    "verts": 1128
+  }
+}

@@ -755,27 +755,34 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `game_state`/`game_world`/`game_crates` 下行；进出房车用 `board`/`exit` 命令，
   状态 `in/st/door` 驱动第一/第三人称、角色显隐；车体右侧切出真实门洞，独立
   `rv_door.gltf` 门网格绕后缘铰链旋转；`tools/gen_rv_body.py` 生成高精度车体：
-  倒角车顶/门槛、内凹侧窗 + 窗框、20 段前后轮拱（双层轮唇）+ 轮拱内衬、
-  前后保险杠/防擦条、车顶行李架/空调/爬梯/遮阳篷盒、后视镜/灯组/格栅/排气管，
-  以及多段式仪表台、方向盘、驾驶席（座垫/靠背/侧翼/头枕/滑轨）和两侧吊柜 +
+  倒角车顶/门槛、内凹侧窗 + 窗框、**沿圆周扫掠的连续圆角轮拱唇边**（每轮 16 段、
+  共 4 条）+ 半圆轮腔挡板、**3 段 loft 圆角肩线**（1.18/2.02 → 1.16/2.07 →
+  1.11/2.115 → 1.08/2.14）、前后保险杠/防擦条、车顶行李架/空调/爬梯/遮阳篷盒、
+  后视镜/灯组/格栅/排气管，以及多段式仪表台、方向盘、驾驶席和两侧吊柜 +
   驾驶室顶架；门洞（`z=-3.54..-2.76, y=0.24..1.86`）、座椅坐标与物理碰撞盒保持不变。
   所有盒体经 `tools/rv_geom.bevel_box()` 倒角：6 个内缩面 + 12 条 45° 棱边条 +
-  8 个角三角（薄片/小件自动回退为普通盒），车体顶点数 8600 → 26888。
+  8 个角三角（薄片/小件自动回退为普通盒）。生成器同时写出
+  `assets/data/rv_body_stats.json`（archLipSegments=16、archArcs=4、
+  roofShoulderStrips=3、17,088 顶点 / 7,976 三角）。
   `tools/gen_rv_furniture.py` 生成全部 20 类可摆放家具 `rv_furn_bed_single/bed_double/
   stove/fridge/sink/workbench/storage/tv/bathroom/med_cabinet/gun_rack/heater/
   water_tank/battery/generator/turret/solar/roof_vent/coffee/plant`（多部件：
   木框床架/床垫/被子/枕头、烤箱门/玻璃/旋钮/双灶头、冰箱双门/把手/散热格栅、
-  水槽柜/台盆/龙头、工作台/挂板工具/台钳/工具箱、木箱板条/金属包角/提手/标签、
+  **旋成水槽盆**（`rv_geom.lathe()` 把 12 点 U 形剖面绕 Y 轴旋成 28 段椭圆盆，
+  台面四块围板留出开口）/ 龙头、工作台/挂板工具/台钳/工具箱、木箱板条/金属包角/提手/标签、
   电视柜/电视/屏幕/天线、卫浴底盆/马桶/洗手盆/镜子/花洒、玻璃门药柜/药盒/红十字、
   双步枪武器架/弹药箱、暖器格栅/散热片/旋钮、阶梯水箱/加注口/绑带/液位窗/阀门、
   电池双壳体/极柱/压条/线缆、发电机框架/红色油箱/控制面板/排气管/格栅、
   炮塔底板/立柱/双枪管/护盾/弹药箱、太阳能边框/蓝色电池片/栅线/支架、
   通风扇法兰/防护网/顶盖/摇柄、咖啡机水箱/冲煮头/滴水盘/杯子/蒸汽棒、
   种植箱土壤/幼苗/果实/支架），同样经 `bevel_box()` 倒角（家具顶点数约
-  360–480 → 600–1600），预制体 `rv_bed_*`/`rv_tv`/`rv_water_tank`/`rv_solar`
-  等改为引用这些模型，网格槽位/层/`use` 交互钩子不变；`start_mode=furnview` /
+  360–480 → 600–1800；水槽因旋成盆体为 2,048 顶点），预制体
+  `rv_bed_*`/`rv_tv`/`rv_water_tank`/`rv_solar`
+  等改为引用这些模型，网格槽位/层/`use` 交互钩子不变；生成器写出
+  `assets/data/rv_furniture_stats.json`（sink: latheSegments=28、
+  latheProfilePoints=12、2,048 顶点）。`start_mode=furnview` /
   `furnall` / `utilall` / `utilclose` / `utilroof` 提供车内与车顶检查机位，
-  `start_mode=texclose` / `texbody` 提供贴图与倒角近景，
+  `sinkview` 提供旋成盆体近景，`texclose` / `texbody` 提供贴图与倒角近景，
   `coop_cook.txt` 自动跑一次 `cookRecipe("meal")` 验证灶台交互。
 - **表面细节贴图**（`projects/rv`）：`tools/gen_rv_surfaces.py` 为 12 种表面各生成
   3 张 256×256 贴图：底色细节、由高度场 Sobel 得到的切线空间法线、
@@ -899,7 +906,7 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `terrain ground follow` / `terrain heightfield` / `terrain knoll` /
   `terrain extended grid` / `terrain flat corridor` / `rv terrain lod` /
   `rv terrain lod sse` / `rv terrain lod stream` /
-  `glass voronoi cells` / `glass seed token` /
+  `glass voronoi cells` / `glass seed token` / `rv sculpted geometry` /
   `rv slope tilt` /
   `rv tilted interior` /
   `rv four wheel contact` / `rv wheel articulation` / `rv wheel entities` /
@@ -914,7 +921,7 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `rv pose prediction` / `rv vegetation wind` / `rv wheel rolling` /
   `rv attitude roundtrip` /
   `rv yaw attitude roundtrip`，
-  总计 **65/65 PASS**。
+  总计 **66/66 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

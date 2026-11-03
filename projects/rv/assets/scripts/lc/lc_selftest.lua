@@ -204,6 +204,29 @@ function runSelfTest()
                        terrainHeight(106, -66), terrainHeight(137, -2)))
     end
     if ReadText ~= nil and Json ~= nil then
+      -- Sculpted geometry: the RV shell uses swept wheel-arch lips plus a
+      -- three-strip lofted roof shoulder instead of chamfered boxes, and the
+      -- sink basin is a revolved U-profile (two U loops + rim).
+      local bodyStats = Json.Parse(ReadText("assets/data/rv_body_stats.json") or "")
+      local furnStats = Json.Parse(ReadText("assets/data/rv_furniture_stats.json") or "")
+      local sink = type(furnStats) == "table" and furnStats["rv_furn_sink"] or nil
+      ok(r, "rv sculpted geometry",
+         type(bodyStats) == "table" and
+         (bodyStats.archLipSegments or 0) >= 12 and
+         (bodyStats.archArcs or 0) == 4 and
+         (bodyStats.roofShoulderStrips or 0) >= 3 and
+         (bodyStats.verts or 0) > 15000 and
+         type(sink) == "table" and (sink.latheSegments or 0) >= 24 and
+         (sink.verts or 0) > 1500,
+         string.format("arch=%d/%d roof=%d bodyV=%d lathe=%d sinkV=%d",
+                       bodyStats and (bodyStats.archLipSegments or 0) or 0,
+                       bodyStats and (bodyStats.archArcs or 0) or 0,
+                       bodyStats and (bodyStats.roofShoulderStrips or 0) or 0,
+                       bodyStats and (bodyStats.verts or 0) or 0,
+                       sink and (sink.latheSegments or 0) or 0,
+                       sink and (sink.verts or 0) or 0))
+    end
+    if ReadText ~= nil and Json ~= nil then
       -- Visible terrain is 16 chunk groups, each with three prefabs (4 m,
       -- 8 m, 12 m) and exactly one visible level chosen by distance.
       local function gltfVerts(txt)

@@ -382,6 +382,10 @@ function on_start()
       local gnd = nodeById and nodeById("ruin")
       if gnd ~= nil then breakPoiWindows(gnd, "test") end
     end
+    if startMode == "sinkview" then
+      -- Test-only: the sculpted lathed sink basin in front of the camera.
+      SpawnPrefab("rv_furn_sink", { x = 5.0, y = 0.0, z = 1.8 })
+    end
     -- Test-only: start in the outside chase camera (autopilot screenshots).
     if startMode == "chase" or startMode == "tiretest" or
        startMode == "northdrive" then
@@ -599,6 +603,11 @@ function on_start()
     px, pz = -0.28, 1.90
     pyaw = math.pi
   end
+  if startMode == "sinkview" then
+    -- Test-only close-up of the revolved sink basin.
+    px, pz = 5.0, 3.4
+    pyaw = math.pi
+  end
   if startMode == "texclose" then
     -- Test-only close-up of the workbench (wood/pegboard normal maps).
     px, pz = -0.35, 1.00
@@ -736,6 +745,7 @@ function on_start()
   elseif startMode == "look_down" then player.pitch = -0.9
   elseif startMode == "look_up" then player.pitch = 0.7
   elseif startMode == "utilclose" then player.pitch = -0.34
+  elseif startMode == "sinkview" then player.pitch = -0.35
   elseif startMode == "texclose" then player.pitch = -0.28
   elseif startMode == "texbody" then player.pitch = 0.05
   end

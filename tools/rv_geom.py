@@ -63,6 +63,28 @@ def _norm(v):
     return (v[0] / ln, v[1] / ln, v[2] / ln)
 
 
+def lathe(m, mat, cx, cy, cz, profile, segments=24, sx=1.0, sz=1.0):
+    """Revolve a (radius, y) profile around the Y axis (optionally elliptical).
+
+    `profile` is an open polyline; consecutive points become quad strips so a
+    U-shaped profile produces both the outer wall and the inner bowl. Used for
+    the sculpted sink basin instead of a stack of boxes.
+    """
+    import math as _math
+    rings = []
+    for i in range(segments):
+        a = 2.0 * _math.pi * i / segments
+        ca, sa = _math.cos(a), _math.sin(a)
+        rings.append([(cx + r * ca * sx, cy + y, cz + r * sa * sz)
+                      for (r, y) in profile])
+    for i in range(segments):
+        r0 = rings[i]
+        r1 = rings[(i + 1) % segments]
+        for k in range(len(profile) - 1):
+            m.quad(mat, r0[k], r0[k + 1], r1[k + 1], r1[k])
+    return segments
+
+
 def bevel_box(m, mat, cx, cy, cz, sx, sy, sz, bevel=None):
     """Add a chamfered box; falls back to a plain box for thin parts."""
     h = [sx * 0.5, sy * 0.5, sz * 0.5]
