@@ -578,6 +578,36 @@ function runSelfTest()
                        tostring(tokId), tokSeed, tokCount,
                        tostring(oldId), oldSeed, oldCount))
     end
+    if tireCombinedForce ~= nil and tireLoadMuScale ~= nil then
+      -- Friction ellipse: pure longitudinal demand stays under the circle;
+      -- adding lateral demand scales both axes so the resultant is capped.
+      local fx, fy, util, muEff = tireCombinedForce(
+          0.9, 4000, 0.5, 0.0, 300, 1 / 60, 0.12, 0.75)
+      local fx2, fy2 = tireCombinedForce(
+          0.9, 4000, 0.5, 6.0, 300, 1 / 60, 0.12, 0.75)
+      local cap = muEff * 4000
+      local res = math.sqrt(fx2 * fx2 + fy2 * fy2)
+      local muLight = tireLoadMuScale(1500)
+      local muHeavy = tireLoadMuScale(6000)
+      ok(r, "rv tire combined slip",
+         math.abs(fy) < 0.01 and fx > 0 and util < 1.0 and
+         math.abs(fx2) < math.abs(fx) and math.abs(fy2) > 500 and
+         res <= cap + 0.5 and muLight > muHeavy,
+         string.format("fx=%.0f fx2=%.0f fy2=%.0f res=%.0f cap=%.0f mu=%.2f/%.2f",
+                       fx, math.abs(fx2), math.abs(fy2), res, cap,
+                       muLight, muHeavy))
+    end
+    if tireTreadStep ~= nil then
+      local ci, co, bi, bo = 22.0, 22.0, 22.0, 22.0
+      for _ = 1, 120 do
+        ci, co = tireTreadStep(ci, co, 8.0, 0.3, 6.0, 4000, 1 / 60, 22)
+        bi, bo = tireTreadStep(bi, bo, 8.0, 6.0, 0.1, 4000, 1 / 60, 22)
+      end
+      ok(r, "rv tire tread split",
+         co > ci + 1.0 and bi > bo + 1.0 and co > 22 and bi > 22,
+         string.format("corner in/out=%.0f/%.0f brake in/out=%.0f/%.0f",
+                       ci, co, bi, bo))
+    end
     if ackermannAngles ~= nil then
       local l, rr = ackermannAngles(0.5, 5.84, 2.52)
       local l2, r2 = ackermannAngles(-0.5, 5.84, 2.52)

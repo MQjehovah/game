@@ -859,17 +859,23 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   并施加在**接地点**而非轮心，同一冲量既推进车体、又给车轮反向力矩，
   所以起步会打滑（`slip≈0.12`）、随后收敛到 `slip≈0.01` 的纯滚动，
   刹车会抱死；`rv.wheelSpinI` 由车轮角速度积分。
-  轮胎侧向冲量（`tireGripImpulse`）与纵向力（`tireForceCurve`，在
-  `|slip|=peak` 达 μ·N、之后回落到 `sat·μ·N`）直接作用在车轮刚体上。
+  轮胎纵向力（`tireForceCurve`，在 `|slip|=peak` 达 μ·N、之后回落到 `sat·μ·N`）
+  与侧向力现在由 **`tireCombinedForce()` 联合求解**：先算纵向/侧向需求，
+  再按 `√((fx/μN)²+(fy/μN)²)` 统一缩放，使合力落在摩擦椭圆内；
+  `tireLoadMuScale(load)` 让 μ 随载荷略降（1500N→1.06、6000N→0.93）。
+  两股力都施加在接地点。
   `SURFACES` 定义 6 种路面材质：沥青 0.98、混凝土 0.92、碎石 0.80、
   土坡 0.72、草地 0.60、泥地 0.42；`surfaceInfo(x,z)` 按道路板/路肩/土坡/
-  水塘/POI 铺装/草甸分区。**每个车轮有独立的温度与磨损**：
-  `tireStep(temp, speed, slipSpeed, load, dt, ambient)` 用该轮的
-  滑移功率（滑移速度 × 法向载荷 + 少量滚动生热）加热、按该轮车速迎风冷却
-  （`0.15 + 0.02·v`，上限 150°C）；`tireWearStep()` 只磨该轮。
-  `tireMuScale()` 对每个接地点单独降 μ（冷胎 <45°C、过热 >95°C、磨损）；
+  水塘/POI 铺装/草甸分区。**每个车轮有独立的温度/磨损，胎面还分内/外两段**：
+  `tireTreadStep(tIn, tOut, speed, slipLong, slipLat, load, dt, ambient)`
+  用纵向滑移加热内侧、侧向滑移加热外侧，按该轮车速迎风冷却
+  （`0.15 + 0.02·v`，上限 150°C）；`tireWearStep()` 磨该轮
+  （纵向 + 一半侧向滑移）。
+  `tireMuScale()` 用内外平均温度对每个接地点单独降 μ
+  （冷胎 <45°C、过热 >95°C、磨损）；
   `parts.tires` 取四轮平均（修理时整体重置）。HUD 显示
-  `胎温 前左/前右/后左/后右°C`，`tire_log.txt` 输出 `T=(...)/W=(...)`。
+  `胎温 前左/前右/后左/后右°C`，`tire_log.txt` 输出
+  `T=(...)/W=(...)/trRL=(内/外)`。
   自由滚动的前轮也会从自身滑移获得纵向力（前轴系数 0.8），
   因此会正常被地面带到滚动转速；实测沥青 `T=(35/35/61/61)`，
   草地打滑 `T=(33/33/117/140)`、后轮磨损到 98.9/97.4%。
@@ -924,13 +930,13 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `rv surface table` / `rv ackermann steering` / `rv steering assist` /
   `rv steering self-center` / `rv slip traction` /
   `rv wheel slip ratio` / `rv tire force curve` / `rv tire temperature` /
-  `rv tire per wheel` /
+  `rv tire per wheel` / `rv tire combined slip` / `rv tire tread split` /
   `rv wheel body binding` /
   `rv wheel bodies` / `rv wheel cylinder rolling` / `rv wheel prediction` /
   `rv pose prediction` / `rv vegetation wind` / `rv wheel rolling` /
   `rv attitude roundtrip` /
   `rv yaw attitude roundtrip`，
-  总计 **66/66 PASS**。
+  总计 **68/68 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

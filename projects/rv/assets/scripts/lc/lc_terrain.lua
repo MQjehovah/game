@@ -473,6 +473,55 @@ function tireWearStep(wear, slipSpeed, dt, wearRate)
   return w
 end
 
+-- Load sensitivity: a real tire loses a little normalized grip as the normal
+-- load grows (and gains some when lightly loaded). Exposed for the self-test.
+function tireLoadMuScale(load)
+  local n = math.max(0, load or 0)
+  local s = 1.0 - 0.000028 * (n - 3500)
+  if s < 0.78 then s = 0.78 end
+  if s > 1.12 then s = 1.12 end
+  return s
+end
+
+-- Combined-slip friction ellipse. Longitudinal demand comes from the slip
+-- curve, lateral demand from the contact side velocity; both are scaled
+-- together so the resultant never exceeds mu_eff * N. Returns the coupled
+-- forces (N), the utilization (1 = at the limit) and the load-scaled mu.
+function tireCombinedForce(mu, normalForce, slip, latV, wheelMass, dt, peak, sat)
+  local n = math.max(0, normalForce or 0)
+  local muEff = (mu or 0.9) * tireLoadMuScale(n)
+  local cap = math.max(1.0, muEff * n)
+  local fx = tireForceCurve(muEff, n, slip, peak, sat)
+  local step = math.min(dt or 0.016, 0.033)
+  local fy = -latV * (wheelMass or 300) * math.min(1.0, step * 8.0) / step
+  local mag = math.sqrt((fx / cap) ^ 2 + (fy / cap) ^ 2)
+  local scale = 1.0
+  if mag > 1.0 then scale = 1.0 / mag end
+  return fx * scale, fy * scale, mag, muEff
+end
+
+-- Per-tread thermal step: the inner tread is heated by longitudinal (drive /
+-- brake) slip, the outer one by lateral (cornering) slip; both cool with
+-- airflow at the wheel speed. Returns inner, outer.
+function tireTreadStep(tInner, tOuter, speed, slipLong, slipLat, load, dt, ambient)
+  local n = math.max(0, load or 0)
+  local v = math.abs(speed or 0)
+  local step = dt or 0.016
+  local amb = ambient or 22
+  local pIn = math.min(5000, math.abs(slipLong or 0) * n + v * n * 0.012)
+  local pOut = math.min(5000, math.abs(slipLat or 0) * n + v * n * 0.008)
+  local ti = (tInner or amb) + pIn * 0.008 * step
+  local to = (tOuter or amb) + pOut * 0.008 * step
+  local cool = (0.15 + 0.02 * v) * step
+  ti = ti - (ti - amb) * cool
+  to = to - (to - amb) * cool
+  if ti < amb then ti = amb end
+  if to < amb then to = amb end
+  if ti > 150 then ti = 150 end
+  if to > 150 then to = 150 end
+  return ti, to
+end
+
 -- Longitudinal tire force from a slip ratio (saturating, so it peaks at the
 -- friction limit). Exposed for the self-test and kept for older callers.
 function slipTraction(mu, normalForce, slip)
@@ -756,7 +805,8 @@ function updateRvPhysics(dt)
   -- Per-wheel tire state: each wheel has its own temperature/wear and surface.
   rv.tireTemps = rv.tireTemps or { 22, 22, 22, 22 }
   rv.tireWear = rv.tireWear or { 100, 100, 100, 100 }
-  local wheelV, wheelSlipSpd, wheelLoad, wheelSurf = {}, {}, {}, {}
+  rv.tireTreads = rv.tireTreads or { { 22, 22 }, { 22, 22 }, { 22, 22 }, { 22, 22 } }
+  local wheelV, wheelSlipSpd, wheelLatSpd, wheelLoad, wheelSurf = {}, {}, {}, {}, {}
   local heatPower, slipSum, slipSpeedSum, slipCount = 0, 0, 0, 0
   local muLast, surfLast = 0.9, "grass"
   if useBodies and PhysicsActivate ~= nil then
@@ -833,12 +883,6 @@ function updateRvPhysics(dt)
     local lrx, lrz = -math.cos(wyaw), math.sin(wyaw)
     local latV = vp and (vp.x * lrx + vp.z * lrz) or
                  (vx * lrx + vz * lrz)
-    local grip = tireGripImpulse(latV, nForce, mass / 4, step, mu)
-    if math.abs(grip) > 0.001 then
-      PhysicsApplyImpulse(targetBody,
-                          { x = lrx * grip, y = 0, z = lrz * grip },
-                          point)
-    end
 
     local vLong = vp and (vp.x * fwdX + vp.z * fwdZ) or
                   (vx * fwdX + vz * fwdZ)
@@ -893,6 +937,7 @@ function updateRvPhysics(dt)
     local slipSpeed = math.abs(slip) * math.abs(vLong)
     wheelV[i] = math.abs(vLong)
     wheelSlipSpd[i] = slipSpeed
+    wheelLatSpd[i] = math.abs(latV)
     wheelLoad[i] = nForce
     wheelSurf[i] = surfDef
     if not w.front then
@@ -908,15 +953,20 @@ function updateRvPhysics(dt)
     -- slightly less authority so the rear still leads under braking.
     local factor = 1.0
     if w.front then factor = braking and 1.0 or 0.8 end
-    if factor > 0 then
-      local impL = tireForceCurve(mu, nForce, slip, surfDef.peak,
-                                  surfDef.sat) * factor * step
-      if math.abs(impL) > 0.001 then
-        PhysicsApplyImpulse(targetBody,
-                            { x = fwdX * impL, y = 0, z = fwdZ * impL },
-                            applyPoint)
-      end
+    -- Combined slip: friction ellipse couples longitudinal and lateral force
+    -- (load-sensitive mu), both applied at the contact patch.
+    local fx, fy, util, muEff = tireCombinedForce(
+        mu, nForce, slip, latV, mass / 4, step, surfDef.peak, surfDef.sat)
+    fx = fx * factor
+    local impL = fx * step
+    local impLat = fy * step
+    if math.abs(impL) > 0.001 or math.abs(impLat) > 0.001 then
+      PhysicsApplyImpulse(targetBody, {
+        x = fwdX * impL + lrx * impLat, y = 0,
+        z = fwdZ * impL + lrz * impLat,
+      }, applyPoint)
     end
+    muLast = muEff or mu
 
     if useBodies then
       rv.wheelSpinI = rv.wheelSpinI or {}
@@ -933,11 +983,16 @@ function updateRvPhysics(dt)
     local tempSum = 0
     for i = 1, 4 do
       local surfDef = wheelSurf[i] or SURFACES.grass
-      rv.tireTemps[i] = tireStep(rv.tireTemps[i] or 22, wheelV[i] or 0,
-                                 wheelSlipSpd[i] or 0, wheelLoad[i] or 0,
-                                 step, 22)
+      local tr = rv.tireTreads[i]
+      local ti, to = tireTreadStep(tr[1], tr[2], wheelV[i] or 0,
+                                   wheelSlipSpd[i] or 0,
+                                   wheelLatSpd[i] or 0,
+                                   wheelLoad[i] or 0, step, 22)
+      tr[1], tr[2] = ti, to
+      rv.tireTemps[i] = (ti + to) * 0.5
       rv.tireWear[i] = tireWearStep(rv.tireWear[i] or 100,
-                                    wheelSlipSpd[i] or 0, step,
+                                    (wheelSlipSpd[i] or 0) +
+                                    (wheelLatSpd[i] or 0) * 0.5, step,
                                     surfDef.wear)
       tempSum = tempSum + rv.tireTemps[i]
     end
@@ -969,10 +1024,12 @@ function updateRvPhysics(dt)
       local vf3 = vx * fwdX + vz * fwdZ
       local temps = rv.tireTemps or { 22, 22, 22, 22 }
       local wears = rv.tireWear or { 100, 100, 100, 100 }
-      print(string.format("[tire] surf=%s mu=%.2f temp=%.0f T=(%.0f/%.0f/%.0f/%.0f) W=(%.1f/%.1f/%.1f/%.1f) cmd=%.1f vf=%.1f omega=%.1f slip=%.2f",
+      local tr3 = rv.tireTreads and rv.tireTreads[3] or { 22, 22 }
+      print(string.format("[tire] surf=%s mu=%.2f temp=%.0f T=(%.0f/%.0f/%.0f/%.0f) W=(%.1f/%.1f/%.1f/%.1f) trRL=(%.0f/%.0f) cmd=%.1f vf=%.1f omega=%.1f slip=%.2f",
         surfLast, muLast, rv.tireTemp or 22,
         temps[1], temps[2], temps[3], temps[4],
         wears[1], wears[2], wears[3], wears[4],
+        tr3[1], tr3[2],
         targetSpeed, vf3, om3, slipAvg))
     end
   end
