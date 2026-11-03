@@ -483,17 +483,86 @@ function tireLoadMuScale(load)
   return s
 end
 
--- Combined-slip friction ellipse. Longitudinal demand comes from the slip
--- curve, lateral demand from the contact side velocity; both are scaled
--- together so the resultant never exceeds mu_eff * N. Returns the coupled
--- forces (N), the utilization (1 = at the limit) and the load-scaled mu.
-function tireCombinedForce(mu, normalForce, slip, latV, wheelMass, dt, peak, sat)
+-- Per-wheel tire pressure. Cold inflation 2.4 bar; the hot pressure follows
+-- the ideal-gas-ish rise with tread temperature. Low/high pressure changes
+-- both peak grip and where the slip curve peaks. Exposed for the self-test.
+function tirePressureAt(temp, cold)
+  local p = (cold or 2.4) * (1.0 + 0.0037 * ((temp or 22) - 20))
+  if p < 1.2 then p = 1.2 end
+  if p > 3.6 then p = 3.6 end
+  return p
+end
+
+function tirePressureMuScale(p)
+  local r = (p or 2.4) / 2.4
+  local d = r - 1.0
+  local s = 1.0 - 0.55 * d * d
+  if s < 0.72 then s = 0.72 end
+  if s > 1.0 then s = 1.0 end
+  return s
+end
+
+function tirePressurePeakScale(p)
+  local r = (p or 2.4) / 2.4
+  return 1.0 + 0.35 * (1.0 - r)
+end
+
+-- Pacejka-style magic formula, normalised so the peak force equals D:
+--   F = D * sin(C * atan(B*s - E*(B*s - atan(B*s))))
+-- B sets the slip at which the peak occurs, C the shape, E the fall-off.
+function tirePacejka(D, slip, B, C, E)
+  local bs = (B or 12.0) * (slip or 0)
+  return (D or 0) * math.sin((C or 1.4) *
+    math.atan(bs - (E or 0.97) * (bs - math.atan(bs))))
+end
+
+-- Longitudinal magic formula: peak slip ~0.12 at nominal pressure, scaling
+-- with pressure. Returns force (N) and the effective mu.
+function tirePacejkaLong(mu, normalForce, slip, pressure)
   local n = math.max(0, normalForce or 0)
-  local muEff = (mu or 0.9) * tireLoadMuScale(n)
+  local p = pressure or 2.4
+  local muEff = (mu or 0.9) * tirePressureMuScale(p)
+  local peakSlip = 0.12 * tirePressurePeakScale(p)
+  local B = 2.08 / math.max(0.02, peakSlip)
+  local f = tirePacejka(muEff * n, slip, B, 1.4, 0.0)
+  -- Real tires settle a little after the peak; keep that fall-off separate so
+  -- the magic-formula peak still lands exactly on `peakSlip`.
+  local a = math.abs(slip or 0)
+  if a > peakSlip then
+    local over = math.min(1.0, (a - peakSlip) / (peakSlip * 4.0))
+    f = f * (1.0 - 0.15 * over)
+  end
+  return f, muEff
+end
+
+-- Lateral magic formula on the slip angle (radians). Peak around 0.10 rad.
+function tirePacejkaLat(muEff, normalForce, slipAngle)
+  local n = math.max(0, normalForce or 0)
+  local peak = 0.10
+  local B = 2.62 / peak
+  local f = tirePacejka((muEff or 0.9) * n * 0.95, slipAngle, B, 1.3, 0.0)
+  local a = math.abs(slipAngle or 0)
+  if a > peak then
+    local over = math.min(1.0, (a - peak) / (peak * 4.0))
+    f = f * (1.0 - 0.15 * over)
+  end
+  return f
+end
+
+-- Combined-slip friction ellipse. Longitudinal demand uses the Pacejka
+-- magic formula, lateral demand uses the slip angle through the same model;
+-- both are scaled together so the resultant never exceeds mu_eff * N.
+-- Returns fx, fy (N), utilization and the effective mu.
+function tireCombinedForce(mu, normalForce, slip, latV, wheelMass, dt, peak, sat,
+                           pressure, vLong)
+  local n = math.max(0, normalForce or 0)
+  local p = pressure or 2.4
+  local muEff = (mu or 0.9) * tireLoadMuScale(n) * tirePressureMuScale(p)
   local cap = math.max(1.0, muEff * n)
-  local fx = tireForceCurve(muEff, n, slip, peak, sat)
-  local step = math.min(dt or 0.016, 0.033)
-  local fy = -latV * (wheelMass or 300) * math.min(1.0, step * 8.0) / step
+  local fx = tirePacejkaLong(mu, n, slip, p)
+  local fwd = math.max(1.0, math.abs(vLong or 8.0))
+  local alpha = math.atan((latV or 0) / fwd)
+  local fy = -tirePacejkaLat(muEff, n, alpha)
   local mag = math.sqrt((fx / cap) ^ 2 + (fy / cap) ^ 2)
   local scale = 1.0
   if mag > 1.0 then scale = 1.0 / mag end
@@ -806,6 +875,8 @@ function updateRvPhysics(dt)
   rv.tireTemps = rv.tireTemps or { 22, 22, 22, 22 }
   rv.tireWear = rv.tireWear or { 100, 100, 100, 100 }
   rv.tireTreads = rv.tireTreads or { { 22, 22 }, { 22, 22 }, { 22, 22 }, { 22, 22 } }
+  rv.tirePressureCold = rv.tirePressureCold or { 2.4, 2.4, 2.4, 2.4 }
+  rv.tirePressure = rv.tirePressure or { 2.4, 2.4, 2.4, 2.4 }
   local wheelV, wheelSlipSpd, wheelLatSpd, wheelLoad, wheelSurf = {}, {}, {}, {}, {}
   local heatPower, slipSum, slipSpeedSum, slipCount = 0, 0, 0, 0
   local muLast, surfLast = 0.9, "grass"
@@ -955,8 +1026,12 @@ function updateRvPhysics(dt)
     if w.front then factor = braking and 1.0 or 0.8 end
     -- Combined slip: friction ellipse couples longitudinal and lateral force
     -- (load-sensitive mu), both applied at the contact patch.
+    local press = tirePressureAt(rv.tireTemps[i] or 22,
+                                 rv.tirePressureCold[i] or 2.4)
+    rv.tirePressure[i] = press
     local fx, fy, util, muEff = tireCombinedForce(
-        mu, nForce, slip, latV, mass / 4, step, surfDef.peak, surfDef.sat)
+        mu, nForce, slip, latV, mass / 4, step, surfDef.peak, surfDef.sat,
+        press, vLong)
     fx = fx * factor
     local impL = fx * step
     local impLat = fy * step
@@ -1025,9 +1100,11 @@ function updateRvPhysics(dt)
       local temps = rv.tireTemps or { 22, 22, 22, 22 }
       local wears = rv.tireWear or { 100, 100, 100, 100 }
       local tr3 = rv.tireTreads and rv.tireTreads[3] or { 22, 22 }
-      print(string.format("[tire] surf=%s mu=%.2f temp=%.0f T=(%.0f/%.0f/%.0f/%.0f) W=(%.1f/%.1f/%.1f/%.1f) trRL=(%.0f/%.0f) cmd=%.1f vf=%.1f omega=%.1f slip=%.2f",
+      local pr = rv.tirePressure or { 2.4, 2.4, 2.4, 2.4 }
+      print(string.format("[tire] surf=%s mu=%.2f temp=%.0f T=(%.0f/%.0f/%.0f/%.0f) P=(%.2f/%.2f/%.2f/%.2f) W=(%.1f/%.1f/%.1f/%.1f) trRL=(%.0f/%.0f) cmd=%.1f vf=%.1f omega=%.1f slip=%.2f",
         surfLast, muLast, rv.tireTemp or 22,
         temps[1], temps[2], temps[3], temps[4],
+        pr[1], pr[2], pr[3], pr[4],
         wears[1], wears[2], wears[3], wears[4],
         tr3[1], tr3[2],
         targetSpeed, vf3, om3, slipAvg))

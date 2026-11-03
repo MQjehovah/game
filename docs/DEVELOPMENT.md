@@ -859,8 +859,15 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   并施加在**接地点**而非轮心，同一冲量既推进车体、又给车轮反向力矩，
   所以起步会打滑（`slip≈0.12`）、随后收敛到 `slip≈0.01` 的纯滚动，
   刹车会抱死；`rv.wheelSpinI` 由车轮角速度积分。
-  轮胎纵向力（`tireForceCurve`，在 `|slip|=peak` 达 μ·N、之后回落到 `sat·μ·N`）
-  与侧向力现在由 **`tireCombinedForce()` 联合求解**：先算纵向/侧向需求，
+  纵向/侧向力改用 **Pacejka 魔术公式**：
+  `F = D·sin(C·atan(B·s − E·(B·s − atan(B·s))))`（`tirePacejka()`），
+  纵向峰值在 `slip≈0.12`、之后按 15% 平台回落；侧向以滑移角
+  （`atan(latV/max(1,|v|))`）为输入、峰值约 0.10rad。
+  每轮还有独立胎压：`rv.tirePressureCold` 冷压 2.4bar，
+  热压按 `p = p0·(1+0.0037·(T−20))` 随胎温上升；
+  `tirePressureMuScale()` 在 2.4bar 最优、偏离时降 μ（1.4bar→0.90），
+  `tirePressurePeakScale()` 让低压时峰值滑移后移。
+  两股力由 **`tireCombinedForce()` 联合求解**：先算纵向/侧向需求，
   再按 `√((fx/μN)²+(fy/μN)²)` 统一缩放，使合力落在摩擦椭圆内；
   `tireLoadMuScale(load)` 让 μ 随载荷略降（1500N→1.06、6000N→0.93）。
   两股力都施加在接地点。
@@ -930,13 +937,14 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `rv surface table` / `rv ackermann steering` / `rv steering assist` /
   `rv steering self-center` / `rv slip traction` /
   `rv wheel slip ratio` / `rv tire force curve` / `rv tire temperature` /
-  `rv tire per wheel` / `rv tire combined slip` / `rv tire tread split` /
+  `rv tire per wheel` / `rv tire combined slip` / `rv tire pacejka` /
+  `rv tire pressure` / `rv tire tread split` /
   `rv wheel body binding` /
   `rv wheel bodies` / `rv wheel cylinder rolling` / `rv wheel prediction` /
   `rv pose prediction` / `rv vegetation wind` / `rv wheel rolling` /
   `rv attitude roundtrip` /
   `rv yaw attitude roundtrip`，
-  总计 **68/68 PASS**。
+  总计 **70/70 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），

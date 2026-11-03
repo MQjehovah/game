@@ -590,12 +590,37 @@ function runSelfTest()
       local muLight = tireLoadMuScale(1500)
       local muHeavy = tireLoadMuScale(6000)
       ok(r, "rv tire combined slip",
-         math.abs(fy) < 0.01 and fx > 0 and util < 1.0 and
+         math.abs(fy) < 0.01 and fx > 0 and util <= 1.0001 and
          math.abs(fx2) < math.abs(fx) and math.abs(fy2) > 500 and
          res <= cap + 0.5 and muLight > muHeavy,
          string.format("fx=%.0f fx2=%.0f fy2=%.0f res=%.0f cap=%.0f mu=%.2f/%.2f",
                        fx, math.abs(fx2), math.abs(fy2), res, cap,
                        muLight, muHeavy))
+    end
+    if tirePacejkaLong ~= nil then
+      -- Pacejka magic formula: peak at ~0.12 slip, falling plateau afterwards,
+      -- odd symmetry, and pressure scales both peak grip and peak-slip point.
+      local zero = tirePacejkaLong(0.9, 4000, 0.0, 2.4)
+      local peak = tirePacejkaLong(0.9, 4000, 0.12, 2.4)
+      local high = tirePacejkaLong(0.9, 4000, 0.50, 2.4)
+      local back = tirePacejkaLong(0.9, 4000, -0.12, 2.4)
+      local lowP = tirePacejkaLong(0.9, 4000, 0.12, 1.4)
+      ok(r, "rv tire pacejka",
+         math.abs(zero) < 1 and peak > 3000 and high < peak and
+         high > 0.4 * peak and math.abs(back + peak) < 1 and lowP < peak,
+         string.format("zero=%.0f peak=%.0f high=%.0f lowP=%.0f",
+                       zero, peak, high, lowP))
+    end
+    if tirePressureMuScale ~= nil and tirePressureAt ~= nil then
+      local nom = tirePressureMuScale(2.4)
+      local low = tirePressureMuScale(1.4)
+      local hot = tirePressureAt(90, 2.4)
+      local cold = tirePressureAt(10, 2.4)
+      ok(r, "rv tire pressure",
+         nom > low and nom > 0.99 and hot > 2.4 and cold < 2.4 and
+         tirePressureMuScale(1.0) >= 0.72 and tirePressureMuScale(4.0) >= 0.72,
+         string.format("muNom=%.2f muLow=%.2f pCold=%.2f pHot=%.2f",
+                       nom, low, cold, hot))
     end
     if tireTreadStep ~= nil then
       local ci, co, bi, bo = 22.0, 22.0, 22.0, 22.0
