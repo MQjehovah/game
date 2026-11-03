@@ -169,6 +169,7 @@ function saveLayout(silent)
       rawAge = rawFoodAge or 0,
       milestones = milestones,
       radioMastFixed = radioMastFixed and true or false,
+      relayDone = relayDone and true or false,
       journal = journal,
       daily = dailyGoal and {
         id = dailyGoal.id, name = dailyGoal.name, target = dailyGoal.target,
@@ -372,6 +373,7 @@ function loadLayout()
       end
     end
     radioMastFixed = data.progress.radioMastFixed == true
+    relayDone = data.progress.relayDone == true
     if type(data.progress.journal) == "table" then
       journal = {}
       for _, e in ipairs(data.progress.journal) do
