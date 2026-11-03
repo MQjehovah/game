@@ -69,6 +69,7 @@ campProps = {}                -- 营地陈设（遮阳棚/木桌/物资箱/营�
 roadWires = {}                -- 电线杆之间的电线
 roadShoulders = {}            -- 主路两侧的土肩
 roadDebris = {}               -- 主路两侧的废弃车/石块
+roadDebrisColliders = 0       -- 已添加的静态碰撞盒数量
 hayBales = {}                 -- 农场谷仓外的干草捆
 poiSigns = {}                 -- POI 门头招牌
 poiSignsLit = nil

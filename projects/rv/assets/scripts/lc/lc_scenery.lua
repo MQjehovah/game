@@ -337,6 +337,13 @@ function spawnRoadDebris()
         SetScale(e, s, s, s)
         SetRotationY(e, math.random() * math.pi * 2)
         roadDebris[#roadDebris + 1] = { ent = e, x = x, z = z }
+        -- 路肩外的废弃车/石块是实体的：给一个静态碰撞盒（不挡主路）
+        if PhysicsAddBox ~= nil then
+          PhysicsAddBox({ x = x, y = ((terrainHeight and terrainHeight(x, z)) or 0) + 0.55 * s,
+                          z = z },
+                        { x = 0.62 * s, y = 0.55 * s, z = 0.62 * s }, false, {})
+          roadDebrisColliders = (roadDebrisColliders or 0) + 1
+        end
       end
     end
   end

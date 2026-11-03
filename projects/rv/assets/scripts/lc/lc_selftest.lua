@@ -1297,10 +1297,11 @@ function runSelfTest()
        string.format("t=0.50 alpha=%.2f", a))
   end
 
-  -- 主路两侧废弃车/石块
+  -- 主路两侧废弃车/石块（带静态碰撞）
   do
     local n = #roadDebris
-    ok(r, "roadside debris", n >= 4, string.format("debris=%d", n))
+    ok(r, "roadside debris", n >= 4 and (roadDebrisColliders or 0) >= 4,
+       string.format("debris=%d colliders=%d", n, roadDebrisColliders or 0))
   end
 
   -- 远光灯：切换后按高亮 prefab 重建两盏灯
