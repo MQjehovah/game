@@ -1070,6 +1070,24 @@ function runSelfTest()
        string.format("night=%d day=%d", nightGain, dayGain))
   end
 
+  -- 雨天行驶：易碎货缓慢受潮掉货况
+  do
+    local sw, sp = weather, phase
+    jobRefreshOffers("gasstop")
+    jobAccept(1)
+    job.stops, job.stopIndex = nil, 1
+    job.fragile = true
+    job.condition = 1.0
+    atNode = nil
+    weather, phase = "rain", "driving"
+    updateJobs(10)
+    local wet = job.condition or 1
+    weather, phase = sw, sp
+    jobAbandon()
+    ok(r, "rain damages fragile cargo", wet < 1.0 and wet > 0.90,
+       string.format("condition=%.3f", wet))
+  end
+
   -- 易碎货：撞击掉货况翻倍（0.10 vs 0.05 per m/s）
   do
     jobRefreshOffers("gasstop")

@@ -489,6 +489,15 @@ function updateJobs(dt)
       jobExpire()
       return
     end
+    -- 雨天行驶：易碎货缓慢受潮掉货况
+    if job.fragile and weather == "rain" and phase == "driving" then
+      job.condition = math.max(0, (job.condition or 1) - 0.006 * (dt or 0))
+      if not job.rainWarned and job.condition < 0.85 then
+        job.rainWarned = true
+        toast.text = "雨水正在打湿易碎货——尽快送达，或先找地方避雨"
+        toast.t = 3.4
+      end
+    end
     jobPlaceCargo()
     -- 停在目的地（setPhase 已把 atNode 设成节点 id）即结算/推进下一站
     if job.stage == "carry" and phase == "parked" and atNode == job.destId then
