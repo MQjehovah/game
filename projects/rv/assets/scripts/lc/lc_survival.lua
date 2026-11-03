@@ -353,6 +353,50 @@ function refuelAtNode(id)
   return true, cost, string.format("加油 %dL 花费 %d 金属", math.floor(need + 0.5), cost)
 end
 
+-- 拖车：野外抛锚时花 4 金属把房车拉回营地（不修车、不补油）
+TOW_COST = { metal = 4 }
+
+function canCallTow()
+  if math.sqrt((rv.x or 0) ^ 2 + (rv.z or 0) ^ 2) < 8 then
+    return false, "已经在营地附近"
+  end
+  if phase ~= "driving" and not (nearRv ~= nil and nearRv()) then
+    return false, "要靠近房车才能叫拖车"
+  end
+  if (materials.metal or 0) < (TOW_COST.metal or 4) then
+    return false, string.format("拖车需要 %d 金属（现有 %d）",
+                                TOW_COST.metal or 4, materials.metal or 0)
+  end
+  return true
+end
+
+function callTow()
+  local ok, why = canCallTow()
+  if not ok then
+    toast.text = why or "现在不能叫拖车"
+    toast.t = 2.6
+    return false
+  end
+  materials.metal = (materials.metal or 0) - (TOW_COST.metal or 4)
+  rv.x, rv.z, rv.yaw = 0, 0, 0
+  rv.speed = 0
+  rv.groundY = (terrainHeight and terrainHeight(0, 0)) or 0
+  if rvBody ~= nil and PhysicsSetPosition ~= nil then
+    PhysicsSetPosition(rvBody, { x = 0, y = 0.9 + rv.groundY, z = 0 })
+    if PhysicsSetVelocity ~= nil then
+      PhysicsSetVelocity(rvBody, { x = 0, y = 0, z = 0 })
+    end
+  end
+  if applyRvTransform ~= nil then applyRvTransform() end
+  if PlaySfx then PlaySfx("click") end
+  toast.text = "拖车把房车拉回了营地（-4 金属）— 按空格停靠补给"
+  toast.t = 4.0
+  if addJournal ~= nil then
+    addJournal("呼叫拖车回到营地（-4 金属）", "fail")
+  end
+  return true
+end
+
 -- 最近的加油点（用于低油量提示）
 function nearestFuelStop(x, z)
   local nd = (nodeById ~= nil) and nodeById("gasstop") or nil

@@ -1424,6 +1424,7 @@ function on_update(ent, dt)
       setPhase("parked")
     end
     if ActionPressed("x") and honk ~= nil then honk() end
+    if ActionPressed("y") and callTow ~= nil then callTow() end
     updateDrive(dt)
     if updateWheelDust ~= nil then updateWheelDust(dt) end
     updateCamera(dt)

@@ -2574,6 +2574,31 @@ function runSelfTest()
                      tostring(has("clinic", "repairkit"))))
   end
 
+  -- 拖车：野外花 4 金属回营地；金属不足/已在营地时拒绝
+  do
+    local sm = materials.metal or 0
+    local sx, sz, syaw, ssp = rv.x, rv.z, rv.yaw, rv.speed
+    local sphase = phase
+    phase = "driving"
+    rv.x, rv.z, rv.speed = 120, 120, 0
+    materials.metal = 10
+    local okTow = callTow()
+    local moved = math.abs(rv.x) < 0.01 and math.abs(rv.z) < 0.01
+    local charged = (materials.metal or 0) == 6
+    rv.x, rv.z = 120, 120
+    materials.metal = 0
+    local poor = callTow()
+    local stayed = math.abs(rv.x - 120) < 0.01 and math.abs(rv.z - 120) < 0.01
+    materials.metal = sm
+    rv.x, rv.z, rv.yaw, rv.speed = sx, sz, syaw, ssp
+    phase = sphase
+    ok(r, "emergency tow", okTow and moved and charged and
+       (poor == false) and stayed,
+       string.format("ok=%s moved=%s charged=%s poor=%s stayed=%s",
+                     tostring(okTow), tostring(moved), tostring(charged),
+                     tostring(poor), tostring(stayed)))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock
