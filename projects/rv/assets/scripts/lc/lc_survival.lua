@@ -237,6 +237,7 @@ end
 -- 生食材腐败速度：通电冰箱显著延缓
 function rawFoodAging(gm, fridgePowered)
   local mul = fridgePowered and (1 / (SURVIVAL.fridgeSpoilMul or 3)) or 1
+  if weather == "snow" then mul = mul * 0.5 end
   return (gm or 0) * mul
 end
 

@@ -2054,6 +2054,18 @@ function runSelfTest()
                      tostring(spoiled)))
   end
 
+  -- 雪天低温减缓腐败
+  do
+    local sw = weather
+    weather = "clear"
+    local warm = rawFoodAging(100, false)
+    weather = "snow"
+    local cold = rawFoodAging(100, false)
+    weather = sw
+    ok(r, "snow preserves food", cold < warm and cold > 0,
+       string.format("clear=%.0f snow=%.0f", warm, cold))
+  end
+
   -- 每日目标：进度与完成奖励
   do
     dailyGoal = dailyKeep
