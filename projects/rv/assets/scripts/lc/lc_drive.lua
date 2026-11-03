@@ -495,6 +495,20 @@ function tireSquealActive(latG, speed)
   return (latG or 0) > 0.55 and math.abs(speed or 0) > 4.0
 end
 
+-- 雨雪天侧风：车速够快时才有明显阵风
+function windActive(weatherValue, speed)
+  if weatherValue ~= "rain" and weatherValue ~= "snow" then return false end
+  return math.abs(speed or 0) >= 3.0
+end
+
+-- 侧风扰动（叠加到转向输入，幅度受限）：雪天比雨天更强
+function windSteerAmount(weatherValue, speed, t)
+  if not windActive(weatherValue, speed) then return 0 end
+  local base = (weatherValue == "snow") and 0.045 or 0.030
+  local gust = math.sin((t or 0) * 0.7) * 0.6 + math.sin((t or 0) * 0.23) * 0.4
+  return base * gust
+end
+
 -- 定速巡航油门：低于目标给油，接近/超过目标松油
 function cruiseThrottle(speed, target)
   if target == nil or target <= 0 then return 0 end
@@ -569,6 +583,9 @@ function updateDrive(dt)
   if not autoPilot and not rv.steerDemo and nightSteerWander ~= nil then
     rv.wanderT = (rv.wanderT or 0) + (dt or 0)
     steer = steer + nightSteerWander(nightDriveMin or 0, rv.wanderT)
+    -- 雨雪天侧风阵风：需要轻微反打方向
+    rv.windT = (rv.windT or 0) + (dt or 0)
+    steer = steer + windSteerAmount(weather, rv.speed, rv.windT)
     steer = math.max(-1, math.min(1, steer))
   end
 

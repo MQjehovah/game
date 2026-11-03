@@ -1838,6 +1838,25 @@ function runSelfTest()
                      tostring(fast), tostring(slow)))
   end
 
+  -- 侧风：雨雪天高速才有，晴天/低速没有，幅度受限
+  do
+    local clear = windActive("clear", 8)
+    local rainSlow = windActive("rain", 1.5)
+    local rainFast = windActive("rain", 8)
+    local snowFast = windActive("snow", 8)
+    local maxv = 0
+    for i = 0, 40 do
+      local v = math.abs(windSteerAmount("snow", 8, i * 0.3))
+      if v > maxv then maxv = v end
+    end
+    ok(r, "crosswind",
+       clear == false and rainSlow == false and rainFast and snowFast and
+       maxv > 0 and maxv <= 0.05,
+       string.format("clear=%s slow=%s rain=%s snow=%s max=%.3f",
+                     tostring(clear), tostring(rainSlow), tostring(rainFast),
+                     tostring(snowFast), maxv))
+  end
+
   -- 定速巡航油门：低于目标给油，接近/超过目标松油
   do
     local below = cruiseThrottle(3.0, 6.0)
