@@ -314,7 +314,40 @@ function updateVehicleLights(driving)
 end
 
 -- ===========================================================================
--- 夜间步行手电：一盏跟随视角的聚光灯，让夜里下车探索/搜刮看得见。
+-- 受损冒烟：车体耐久低 / 引擎磨损高时，从车头引擎舱冒灰烟。
+-- 返回每秒烟团数（自检/调参用）。
+-- ===========================================================================
+function rvSmokeRate(durValue, engineValue)
+  local d = durValue or 100
+  local e = engineValue or 100
+  local rate = 0
+  if d < 40 then rate = 4 end
+  if d < 20 then rate = 8 end
+  if e < 25 then rate = rate + 3 end
+  return rate
+end
+
+function updateRvSmoke(dt)
+  local rate = rvSmokeRate(dur, parts and parts.engine or 100)
+  if rate <= 0 then rvSmokeAcc = 0 return end
+  rvSmokeAcc = (rvSmokeAcc or 0) + dt * rate
+  while rvSmokeAcc >= 1 do
+    rvSmokeAcc = rvSmokeAcc - 1
+    local wx, wz = rotOf(0, 3.2)
+    EmitParticles({
+      pos = { x = wx + (math.random() - 0.5) * 0.5,
+              y = (rv.groundY or 0) + 1.35 + math.random() * 0.2,
+              z = wz + (math.random() - 0.5) * 0.5 },
+      count = 3, speedMin = 0.3, speedMax = 0.8,
+      vel = { x = 0, y = 1.2, z = 0 },
+      lifeMin = 1.3, lifeMax = 2.4,
+      sizeStart = 0.50, sizeEnd = 2.10,
+      color = { r = 0.20, g = 0.20, b = 0.21, a = 0.45 },
+      colorEnd = { r = 0.32, g = 0.32, b = 0.34, a = 0.0 },
+      additive = false, gravity = -0.2,
+    })
+  end
+end
 -- 白天或回到车内自动移除，不占聚光槽。
 -- ===========================================================================
 function setFlashlight(on)

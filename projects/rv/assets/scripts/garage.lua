@@ -615,7 +615,7 @@ function on_start()
   if startMode == "side" or startMode == "side_night" then
     px, pz, pyaw = 6.2, 0.0, -math.pi * 0.5
   end
-  if startMode == "rvfront" then
+  if startMode == "rvfront" or startMode == "smoketest" then
     -- Test-only front three-quarter view of the RV.
     px, pz = 2.6, 9.2
     pyaw = dirYaw(-2.6, -9.2)
@@ -912,6 +912,9 @@ function on_start()
   elseif startMode == "jobaway" then
     jobRefreshOffers("gasstop")
     jobAccept(1)
+  elseif startMode == "smoketest" then
+    dur = 25
+    parts.engine = 15
   elseif startMode == "drive" or startMode == "night_drive" or autoPilot or rv.steerDemo then
     setPhase("driving")
   elseif startMode == "utilroof" then
@@ -1115,6 +1118,7 @@ function on_update(ent, dt)
   if updateVehicleLights ~= nil then updateVehicleLights() end
   if updateTaillights ~= nil then updateTaillights() end
   if updateCampfireLight ~= nil then updateCampfireLight(dt) end
+  if updateRvSmoke ~= nil then updateRvSmoke(dt) end
   if jobResult ~= nil then
     jobResult.t = jobResult.t - dt
     if jobResult.t <= 0 then jobResult = nil end

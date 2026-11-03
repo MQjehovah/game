@@ -2210,6 +2210,7 @@ function coopUpdate(dt)
   end
   if updateTaillights ~= nil then updateTaillights() end
   if updateCampfireLight ~= nil then updateCampfireLight(dt) end
+  if updateRvSmoke ~= nil then updateRvSmoke(dt) end
   -- 合作客户端：夜间步行时根据本地位置/视角维护手电
   if not coop.isServer and coop.localPos ~= nil and
      updateCoopFlashlight ~= nil then

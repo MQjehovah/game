@@ -1187,6 +1187,16 @@ function runSelfTest()
        string.format("ahead=%.3f behind=%.3f", ahead, behind))
   end
 
+  -- 受损冒烟速率：车体越低越浓，引擎磨损再叠一层
+  do
+    local r100 = rvSmokeRate(100, 100)
+    local r30 = rvSmokeRate(30, 100)
+    local r10 = rvSmokeRate(10, 100)
+    local rEng = rvSmokeRate(100, 20)
+    ok(r, "rv damage smoke", r100 == 0 and r30 == 4 and r10 == 8 and rEng == 3,
+       string.format("100=%d 30=%d 10=%d engine=%d", r100, r30, r10, rEng))
+  end
+
   -- 存读档：行程/探索/货运单数
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
