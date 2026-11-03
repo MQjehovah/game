@@ -2342,6 +2342,17 @@ function runSelfTest()
        string.format("day=%.2f night=%.2f", day, night))
   end
 
+  -- 流星：14s 周期内有 0.8s 可见窗口
+  do
+    local p0, a0 = shootingStar(0)
+    local p1, a1 = shootingStar(0.4)
+    local p2, a2 = shootingStar(5.0)
+    ok(r, "shooting stars",
+       p0 ~= nil and a1 > 0 and a1 <= 0.85 and p2 == nil,
+       string.format("t0=%s t.4=%.2f clear=%s", tostring(p0 ~= nil),
+                     a1, tostring(p2 == nil)))
+  end
+
   -- 白天太阳弧线：正午最高、早晚更低
   do
     local xm, ym = sunArc(6 * 60)

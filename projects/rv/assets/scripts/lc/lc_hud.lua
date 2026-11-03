@@ -1027,6 +1027,16 @@ function starAlpha()
 end
 
 -- 夜空：确定性星点 + 月亮（画在夜幕之后，避免被蓝色遮罩压掉）
+-- 流星：每 14s 出现一次，持续 0.8s（返回进度和透明度；不在窗口返回 nil）
+function shootingStar(t)
+  local period = 14.0
+  local localT = (t or 0) % period
+  if localT > 0.8 then return nil end
+  local p = localT / 0.8
+  local a = math.sin(math.pi * p) * 0.85
+  return p, a
+end
+
 function drawNightSky(vw, vh)
   local sa = starAlpha()
   if sa <= 0.01 then return end
@@ -1046,6 +1056,14 @@ function drawNightSky(vw, vh)
   DrawCircle(mx, my, 20, 1, 0.72, 0.78, 0.92, sa * 0.16, true)
   DrawCircle(mx, my, 12, 2, 0.94, 0.95, 0.88, sa * 0.85, true)
   DrawCircle(mx + 4, my - 3, 10, 1, 0.02, 0.04, 0.10, sa * 0.35, true)
+  -- 流星：偶尔划过一道短线
+  local sp, sAlpha = shootingStar(weatherT or 0)
+  if sp ~= nil then
+    local x0 = vw * (0.16 + 0.48 * sp)
+    local y0 = vh * (0.10 + 0.16 * sp)
+    DrawLine(x0, y0, x0 - 54, y0 - 16, 2, 1.0, 1.0, 1.0, sAlpha * sa)
+    DrawLine(x0, y0, x0 - 20, y0 - 6, 1, 1.0, 1.0, 1.0, sAlpha * sa * 0.7)
+  end
 end
 
 -- 太阳弧线：返回屏幕比例坐标（06:00 东边、12:00 最高、18:00 西边）
