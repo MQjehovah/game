@@ -152,6 +152,53 @@ function updateEngineTemp(dt, ratio)
   end
 end
 
+-- 爆胎风险：轮胎磨损/胎压过低时逐渐升高（/s）
+function blowoutRisk(tires, pressure)
+  local t = tires or 100
+  local p = pressure or 2.4
+  local risk = 0
+  if t < (VEH.blowoutTire or 18) then
+    risk = risk + ((VEH.blowoutTire or 18) - t) * 0.004
+  end
+  if p < (VEH.blowoutPressure or 1.8) then
+    risk = risk + ((VEH.blowoutPressure or 1.8) - p) * 0.08
+  end
+  return math.min(0.05, risk)
+end
+
+function clearBlowout()
+  rv.blowout = false
+  rv.blowoutWarned = false
+end
+
+function updateBlowout(dt)
+  if rv.blowout then return end
+  local pMin = 2.4
+  for i = 1, 4 do
+    pMin = math.min(pMin, (rv.tirePressureCold or {})[i] or 2.4)
+  end
+  local risk = blowoutRisk(parts and parts.tires or 100, pMin)
+  if risk > 0 and math.random() < risk * (dt or 0) then
+    rv.blowout = true
+    if not rv.blowoutWarned then
+      rv.blowoutWarned = true
+      toast.text = "爆胎了！靠边停车，到工作台修轮胎（修理包或材料）"
+      toast.t = 5.0
+    end
+    if PlaySfx then PlaySfx("hurt") end
+    EmitParticles({
+      pos = { x = rv.x, y = (rv.groundY or 0) + 0.4, z = rv.z },
+      count = 18, speedMin = 0.8, speedMax = 2.6,
+      vel = { x = 0, y = 0.8, z = 0 },
+      lifeMin = 0.4, lifeMax = 0.9,
+      sizeStart = 0.18, sizeEnd = 0.9,
+      color = { r = 0.30, g = 0.30, b = 0.31, a = 0.55 },
+      colorEnd = { r = 0.30, g = 0.30, b = 0.31, a = 0.0 },
+      additive = false, gravity = 0.3,
+    })
+  end
+end
+
 function updateDrive(dt)
   local throttle = (ActionDown("w") and 1 or 0) - (ActionDown("s") and 1 or 0)
   -- Positive yaw turns toward -X, which is screen-right when facing +Z, so
@@ -292,6 +339,12 @@ function updateDrive(dt)
   if rv.engineHot then
     maxSp = maxSp * 0.65
     parts.engine = math.max(0, (parts.engine or 100) - 0.6 * dt)
+  end
+  -- 爆胎：轮胎磨平/胎压过低时随机发生，恢复前只能低速挪
+  updateBlowout(dt)
+  if rv.blowout then
+    maxSp = math.min(maxSp, 2.2)
+    acc = acc * 0.45
   end
   if fuel <= VEH.tank * 0.2 and not fuelWarned then
     fuelWarned = true

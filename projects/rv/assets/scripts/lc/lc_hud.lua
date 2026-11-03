@@ -657,9 +657,11 @@ function drawDriveHud()
       pAvg = sum / 4
     end
     local tr, tg, tb = 0.74, 0.74, 0.70
-    if hottest > 110 then tr, tg, tb = 0.95, 0.45, 0.30
+    if rv.blowout then tr, tg, tb = 1.0, 0.35, 0.28
+    elseif hottest > 110 then tr, tg, tb = 0.95, 0.45, 0.30
     elseif hottest > 85 then tr, tg, tb = 0.95, 0.78, 0.35 end
-    DrawText(string.format("胎温 %.0f°C · 胎压 %.1fbar", hottest, pAvg),
+    DrawText(string.format("胎温 %.0f°C · 胎压 %.1fbar%s", hottest, pAvg,
+             rv.blowout and "  爆胎!" or ""),
              px + 14, py + 158, 11, tr, tg, tb, 1)
   end
   -- 水温：过热变红，提示松油门散热

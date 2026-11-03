@@ -1845,6 +1845,21 @@ function runSelfTest()
        string.format("0=%.2f 10=%.2f 30=%.2f max=%.2f", r0, r10, r30, rMax))
   end
 
+  -- 爆胎风险：磨平/低压才有风险，修理后清除爆胎状态
+  do
+    local rOk = blowoutRisk(100, 2.4)
+    local rTire = blowoutRisk(10, 2.4)
+    local rPress = blowoutRisk(100, 1.4)
+    local keep = rv.blowout
+    rv.blowout = true
+    clearBlowout()
+    local cleared = rv.blowout == false
+    rv.blowout = keep
+    ok(r, "tire blowout", rOk == 0 and rTire > 0 and rPress > 0 and cleared,
+       string.format("ok=%.3f tire=%.3f press=%.3f cleared=%s",
+                     rOk, rTire, rPress, tostring(cleared)))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock
