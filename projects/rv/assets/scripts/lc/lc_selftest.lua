@@ -908,12 +908,12 @@ function runSelfTest()
   ok(r, "job accept loads cargo",
      offerOk and payOk and accepted and job ~= nil and
      weightWithCargo >= (job.weight or 0) and jobCargoWeight() > cargo0 and
-     #jobCargoEnts > 0,
-     string.format("offers=%d dest=%s cargo=%s x%d %.0fkg total=%.0fkg",
+     #jobCargoEnts > 0 and (rv.loadFxT or 0) > 0,
+     string.format("offers=%d dest=%s cargo=%s x%d %.0fkg total=%.0fkg fx=%.1f",
                    #jobOffers + 1, usedOffer and usedOffer.destId or "?",
                    usedOffer and usedOffer.cargo or "?",
                    usedOffer and usedOffer.crates or 0,
-                   job and job.weight or 0, weightWithCargo))
+                   job and job.weight or 0, weightWithCargo, rv.loadFxT or 0))
 
   -- 到达目的地：停靠 -> 自动结算材料/燃料 -> 货重卸下
   local dest = job and job.destId

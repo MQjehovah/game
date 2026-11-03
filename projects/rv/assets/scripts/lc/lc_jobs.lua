@@ -183,6 +183,25 @@ function jobOpenBoard()
   jobUI = true
 end
 
+-- 装货反馈：车顶尘屑 + 浮字（单机；联机以 HUD 状态为准）
+function jobLoadFx()
+  if coopRole ~= nil then return end
+  rv.loadFxT = 0.6
+  local wx, wz = rotOf(0.4, 0.4)
+  EmitParticles({
+    pos = { x = wx, y = (rv.groundY or 0) + 2.45, z = wz },
+    count = 12, speedMin = 0.4, speedMax = 1.6,
+    vel = { x = 0, y = 0.45, z = 0 },
+    lifeMin = 0.4, lifeMax = 0.9,
+    sizeStart = 0.18, sizeEnd = 0.7,
+    color = { r = 0.64, g = 0.59, b = 0.49, a = 0.5 },
+    colorEnd = { r = 0.64, g = 0.59, b = 0.49, a = 0.0 },
+    additive = false, gravity = 0.5,
+  })
+  SpawnFloatText(wx, 2.95, wz, "装货 " .. (job.crates or 1) .. " 箱",
+                 false, 1.4, 1.0, 0.88, 0.4)
+end
+
 function jobAccept(idx)
   local offer = jobOffers[idx]
   if offer == nil then return false end
@@ -203,6 +222,7 @@ function jobAccept(idx)
   jobUI = false
   jobOffers = {}
   jobSpawnCargo()
+  if jobLoadFx ~= nil then jobLoadFx() end
   recomputeStats()
   toast.text = string.format("接单：%s x%d → %s（%.0fm）", job.cargo, job.crates,
                              job.destName, job.distance)
