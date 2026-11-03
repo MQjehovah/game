@@ -3119,6 +3119,18 @@ function runSelfTest()
                      road, gravel, dirt, mud))
   end
 
+  -- 急转弯/打滑额外磨胎
+  do
+    local calm = slipTireWear(0.4, 8)
+    local fast = slipTireWear(1.2, 8)
+    local slow = slipTireWear(1.2, 2)
+    local cap = slipTireWear(100, 8)
+    ok(r, "slip tire wear",
+       calm == 0 and fast > 0 and slow == 0 and cap <= 0.6,
+       string.format("calm=%.2f fast=%.2f slow=%.2f cap=%.2f",
+                     calm, fast, slow, cap))
+  end
+
   -- 太阳能：夜间不出力、白天满发
   do
     local sc, sw = clock, weather

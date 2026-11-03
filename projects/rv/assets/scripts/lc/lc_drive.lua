@@ -339,6 +339,12 @@ function tireWearScale(loadRatio)
   return 1.0 + math.min(1.2, over * 0.8)
 end
 
+-- 急转弯/打滑会额外磨胎（%/s）
+function slipTireWear(latG, speed)
+  if (latG or 0) < 0.6 or math.abs(speed or 0) < 3 then return 0 end
+  return math.min(0.6, ((latG or 0) - 0.6) * 0.5)
+end
+
 -- 路面越粗糙，轮胎磨损越快
 function surfaceTireWearScale(name)
   if name == "mud" then return 1.35 end
@@ -1206,6 +1212,11 @@ function updateDrive(dt)
     while dyaw < -math.pi do dyaw = dyaw + 2 * math.pi end
     rv.latG = math.abs(dyaw / dt) * math.abs(rv.speed or 0) / 9.81
     rv.latGSet = true
+    -- 急转弯/打滑额外磨胎
+    local slipWear = slipTireWear(rv.latG, rv.speed)
+    if slipWear > 0 then
+      parts.tires = math.max(0, (parts.tires or 100) - slipWear * dt)
+    end
     rv.squealCd = math.max(0, (rv.squealCd or 0) - dt)
     if rv.squealCd <= 0 and tireSquealActive(rv.latG, rv.speed) then
       rv.squealCd = 0.7
