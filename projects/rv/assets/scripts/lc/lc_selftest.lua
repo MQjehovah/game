@@ -930,6 +930,17 @@ function runSelfTest()
      string.format("weight %.0f->%.0f", carried, stats.weight))
   atNode = nil
 
+  -- 公路轮廓桩：沿路肩生成、避开营地/建筑
+  do
+    local n = #roadMarkers
+    local bad = 0
+    for _, m in ipairs(roadMarkers) do
+      if m.x * m.x + m.z * m.z < 12 * 12 then bad = bad + 1 end
+    end
+    ok(r, "roadside delineators", n >= 16 and bad == 0,
+       string.format("posts=%d nearCamp=%d", n, bad))
+  end
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")

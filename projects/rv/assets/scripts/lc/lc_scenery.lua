@@ -292,6 +292,47 @@ function spawnRoadsidePoles()
   spawnPolesAlong(0, 60, 0, 220, -1)
 end
 
+-- 公路轮廓桩：沿路肩每 18m 一根奶油色反光桩，白天给道路节奏、
+-- 夜里靠自发光勾出弯道，纯装饰不参与碰撞。
+function spawnRoadMarkers()
+  roadMarkers = {}
+  for _, p in ipairs(roadPaths) do
+    local dx, dz = p.bx - p.ax, p.bz - p.az
+    local len = math.sqrt(dx * dx + dz * dz)
+    if len >= 24 then
+      local ux, uz = dx / len, dz / len
+      local rx, rz = uz, -ux
+      local yaw = dirYaw(dx, dz)
+      local startD = 10
+      for d = startD, len - 6, 18 do
+        for _, side in ipairs({ -1, 1 }) do
+          local x = p.ax + ux * d + rx * 4.55 * side
+          local z = p.az + uz * d + rz * 4.55 * side
+          -- 已有电线杆/地点建筑的位置不再插桩，避免穿模
+          local clear = true
+          if x * x + z * z < 12 * 12 then clear = false end
+          for _, nd in ipairs(NODES) do
+            local ndx, ndz = nd.x - x, nd.z - z
+            if ndx * ndx + ndz * ndz < 6.5 * 6.5 then clear = false break end
+            local cx, cz = poiCenter(nd)
+            local cdx, cdz = cx - x, cz - z
+            if cdx * cdx + cdz * cdz < 7.5 * 7.5 then clear = false break end
+          end
+          if clear then
+            local gy = (terrainHeight and terrainHeight(x, z)) or 0
+            local e = SpawnPrefab("rv_delineator", { x = x, y = gy + 0.42, z = z })
+            if e ~= nil then
+              SetScale(e, 0.14, 0.84, 0.14)
+              SetRotationY(e, yaw)
+              roadMarkers[#roadMarkers + 1] = { ent = e, x = x, z = z }
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
 function preGeneratePois(count)
   for _ = 1, (count or 6) do
     local before = #NODES

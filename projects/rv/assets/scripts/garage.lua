@@ -336,6 +336,7 @@ function on_start()
   -- 有存档时由 loadLayout 恢复已发现地点，避免每次启动又随机生成一批
   if not hasSave then preGeneratePois(6) end
   spawnRoadsidePoles()
+  spawnRoadMarkers()
   LC.flow.load("assets/flow/raid_wave.flow.json")
   LC.flow.load("assets/flow/stop_cycle.flow.json")
   LC.flow.load("assets/flow/drive_event.flow.json")
@@ -593,6 +594,11 @@ function on_start()
     -- Test-only: stand at the camp contract board.
     px, pz = 4.0, -5.8
     pyaw = dirYaw(2.6, 2.8)
+  end
+  if startMode == "roadside" then
+    -- Test-only: look down the main road past the reflective delineators.
+    px, pz = 5.6, -18.0
+    pyaw = dirYaw(-1.4, 12.0)
   end
   if startMode == "furnview" then
     -- Test-only interior view down the furniture wall.
