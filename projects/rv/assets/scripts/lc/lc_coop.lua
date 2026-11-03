@@ -2561,6 +2561,29 @@ local function drawBar(x, y, w, label, frac, r, g, b)
   DrawText(string.format("%.0f", frac * 100), x + 78 + w, y, 11, 0.85, 0.85, 0.78, 1)
 end
 
+-- 队友名字标签：把远端角色位置投影到屏幕，在头顶画 Pn 名字
+function coopDrawNameTags(vw, vh)
+  if coop.isServer or WorldToScreen == nil then return end
+  local lx = (coop.localPos and coop.localPos.x) or 0
+  local lz = (coop.localPos and coop.localPos.z) or 0
+  for i = 1, MAX_SLOTS do
+    local s = coop.slots[i]
+    if s.joined and i ~= coop.mySlot then
+      local dx, dz = (s.x or 0) - lx, (s.z or 0) - lz
+      if dx * dx + dz * dz < 55 * 55 then
+        local sp = WorldToScreen(s.x or 0, (s.gy or 0) + 1.9, s.z or 0)
+        if sp ~= nil and sp.x ~= nil and sp.y ~= nil then
+          local label = string.format("P%d %s", i, tostring(s.name or ""))
+          local w = #label * 6.5
+          DrawRect(sp.x - w * 0.5 - 6, sp.y - 3, w + 12, 20,
+                   0.04, 0.05, 0.06, 0.55)
+          DrawText(label, sp.x - w * 0.5, sp.y, 12, 0.92, 0.94, 0.88, 0.95)
+        end
+      end
+    end
+  end
+end
+
 function coopDrawHud()
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
@@ -2702,6 +2725,7 @@ function coopDrawHud()
   if not coop.isServer then
     if drawCompass ~= nil then drawCompass(vw) end
     if drawMinimap ~= nil then drawMinimap(vw, vh) end
+    if coopDrawNameTags ~= nil then coopDrawNameTags(vw, vh) end
   end
 end
 
