@@ -1143,6 +1143,24 @@ function runSelfTest()
     ok(r, "main road shoulders", n >= 30, string.format("shoulders=%d", n))
   end
 
+  -- 存读档：行程/探索/货运单数
+  do
+    tripDistance, tripFuel, jobDelivered = 3210, 88, 7
+    visitedPois["ruin"] = true
+    local saved0 = saveLayout()
+    tripDistance, tripFuel, jobDelivered = 0, 0, 0
+    visitedPois = {}
+    visitedCount = 0
+    loadLayout()
+    ok(r, "save progress stats",
+       saved0 ~= false and math.abs((tripDistance or 0) - 3210) < 1 and
+       math.abs((tripFuel or 0) - 88) < 1 and jobDelivered == 7 and
+       visitedPois["ruin"] == true,
+       string.format("trip=%.0f fuel=%.0f jobs=%d ruin=%s",
+                     tripDistance or 0, tripFuel or 0, jobDelivered,
+                     tostring(visitedPois["ruin"])))
+  end
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")

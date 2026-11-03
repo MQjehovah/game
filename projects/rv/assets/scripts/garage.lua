@@ -123,6 +123,18 @@ function saveLayout()
     inventory = inv, water = water,
     day = day, clock = clock, modules = rows, pois = generatedPois,
   }
+  do
+    local visitedList = {}
+    for id, seen in pairs(visitedPois) do
+      if seen then visitedList[#visitedList + 1] = id end
+    end
+    data.progress = {
+      tripDistance = tripDistance or 0,
+      tripFuel = tripFuel or 0,
+      jobs = jobDelivered or 0,
+      visited = visitedList,
+    }
+  end
   if coopRole == "server" and coopSaveExtra ~= nil then
     local extra = coopSaveExtra()
     if extra ~= nil then data.coop = extra end
@@ -250,6 +262,21 @@ function loadLayout()
     needs.thirst = tonumber(data.survival.thirst) or needs.thirst
     needs.energy = tonumber(data.survival.energy) or needs.energy
     needs.hygiene = tonumber(data.survival.hygiene) or needs.hygiene
+  end
+  if type(data.progress) == "table" then
+    tripDistance = tonumber(data.progress.tripDistance) or tripDistance
+    tripFuel = tonumber(data.progress.tripFuel) or tripFuel
+    jobDelivered = math.floor(tonumber(data.progress.jobs) or jobDelivered)
+    if type(data.progress.visited) == "table" then
+      visitedPois = {}
+      visitedCount = 0
+      for _, id in ipairs(data.progress.visited) do
+        if type(id) == "string" and id ~= "" then
+          visitedPois[id] = true
+          visitedCount = visitedCount + 1
+        end
+      end
+    end
   end
   if type(data.inventory) == "table" then
     inv = {}
