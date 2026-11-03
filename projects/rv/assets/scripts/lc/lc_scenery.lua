@@ -1281,6 +1281,27 @@ function spawnCampProps()
   end
   prop("rv_camp_wood", tx, ty + 0.44, tz - 0.92, 1.70, 0.07, 0.28)
   prop("rv_camp_wood", tx, ty + 0.44, tz + 0.92, 1.70, 0.07, 0.28)
+  -- 两把面向桌子的木椅（座面 + 靠背 + 四条腿）
+  for _, c in ipairs({ { 3.55, 5.0, math.pi * 0.5 },
+                       { 5.45, 5.0, -math.pi * 0.5 } }) do
+    local cx, cz, yaw = c[1], c[2], c[3]
+    local cy = gy(cx, cz)
+    prop("rv_camp_wood", cx, cy + 0.46, cz, 0.42, 0.07, 0.42, yaw)
+    local bx = cx - math.sin(yaw) * 0.20
+    local bz = cz - math.cos(yaw) * 0.20
+    prop("rv_camp_wood", bx, cy + 0.68, bz, 0.42, 0.42, 0.07, yaw)
+    for _, off in ipairs({ { -0.15, -0.15 }, { 0.15, -0.15 },
+                           { -0.15, 0.15 }, { 0.15, 0.15 } }) do
+      local lx = off[1] * math.cos(yaw) + off[2] * math.sin(yaw)
+      local lz = -off[1] * math.sin(yaw) + off[2] * math.cos(yaw)
+      prop("rv_camp_wood", cx + lx, cy + 0.23, cz + lz, 0.07, 0.46, 0.07, yaw)
+    end
+  end
+  -- 篝火旁的小柴堆
+  for i = 1, 3 do
+    local lx, lz = 0.45 + i * 0.18, 2.85 + (i % 2) * 0.14
+    prop("rv_camp_wood", lx, gy(lx, lz) + 0.10, lz, 0.55, 0.13, 0.15, i * 0.5)
+  end
   -- 物资箱 / 油桶
   prop("rv_loot_crate", 6.5, gy(6.5, 2.4) + 0.30, 2.4, 0.60, 0.60, 0.60, 0.40)
   prop("rv_loot_crate", 6.9, gy(6.9, 3.2) + 0.24, 3.2, 0.48, 0.48, 0.48, 1.10)
