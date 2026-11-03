@@ -31,10 +31,16 @@ function initWeather()
 end
 
 function setWeather(id)
+  local wasRain = (weather == "rain")
   weather = id or "clear"
   weatherT = 0
   weatherNext = weatherDuration()
   weatherNextId = rollWeather()
+  -- 雨停后的白天出现短暂彩虹
+  if wasRain and (weather == "clear" or weather == "cloudy") and
+     not (isNight ~= nil and isNight()) then
+    rainbowT = 10
+  end
   if recomputeStats then recomputeStats() end  -- 太阳能随天气变化
   if toast and WEATHER_NAMES[weather] then
     toast.text = "天气：" .. WEATHER_NAMES[weather]
@@ -91,6 +97,9 @@ end
 
 function updateWeather(dt)
   weatherT = weatherT + dt * SURVIVAL.timeScale
+  if rainbowT ~= nil and rainbowT > 0 then
+    rainbowT = math.max(0, rainbowT - dt)
+  end
   if lightningT ~= nil and lightningT > 0 then
     lightningT = math.max(0, lightningT - dt)
   end

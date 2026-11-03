@@ -133,6 +133,7 @@ rawSpoilWarned = false
 ponds = {}
 campfire = nil
 weather, weatherT, weatherNext = "clear", 0, 15
+rainbowT = 0                  -- 雨停后彩虹剩余时间（秒）
 
 -- 途中事件
 nextEventT = 20

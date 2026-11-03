@@ -1102,6 +1102,11 @@ function on_start()
     triggerLightning()
     setPhase("driving")
     driveView = "chase"
+  elseif startMode == "rainbow" then
+    setWeather("clear")
+    clock = 10 * 60
+    rainbowT = 10
+    setPhase("parked")
   elseif startMode == "raincab" then
     setWeather("rain")
     setPhase("driving")
@@ -1602,6 +1607,7 @@ function on_render()
     if coopRole ~= "server" then
       -- 客户端也要有雨幕/闪电/夜幕/星空，否则联机夜晚和雨天会明显“少一层”
       if drawDaySky ~= nil then drawDaySky() end
+      if drawRainbow ~= nil then drawRainbow() end
       drawWeatherOverlay()
       drawNightOverlay()
       coopDrawHud()
@@ -1609,6 +1615,7 @@ function on_render()
     return
   end
   if drawDaySky ~= nil then drawDaySky() end
+  if drawRainbow ~= nil then drawRainbow() end
   drawWeatherOverlay()
   drawNightOverlay()
   if phase == "driving" then

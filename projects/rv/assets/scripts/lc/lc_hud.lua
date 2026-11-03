@@ -1055,6 +1055,40 @@ function drawDaySky()
   end
 end
 
+-- 雨停后的彩虹：白天可见，随时间淡出
+function rainbowAlpha()
+  local t = rainbowT or 0
+  if t <= 0 then return 0 end
+  local day = 1 - ((nightAmount and nightAmount()) or 0)
+  return math.min(1, t / 2) * day * 0.5
+end
+
+function drawRainbow()
+  local a = rainbowAlpha()
+  if a <= 0.01 then return end
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local cx, cy = vw * 0.30, vh * 1.12
+  local bands = {
+    { 1.00, 0.35, 0.30 }, { 1.00, 0.68, 0.30 }, { 0.98, 0.90, 0.35 },
+    { 0.38, 0.86, 0.48 }, { 0.38, 0.68, 0.96 }, { 0.56, 0.46, 0.92 },
+  }
+  for bi, c in ipairs(bands) do
+    local r = vh * 0.72 - bi * 6
+    local prevX, prevY = nil, nil
+    for i = 0, 40 do
+      local ang = math.pi + (i / 40) * math.pi
+      local x = cx + math.cos(ang) * r
+      local y = cy + math.sin(ang) * r
+      if prevX ~= nil then
+        DrawLine(prevX, prevY, x, y, 4, c[1], c[2], c[3], a)
+      end
+      prevX, prevY = x, y
+    end
+  end
+end
+
 function drawNightOverlay()
   local a = nightAmount()
   if a <= 0.01 then return end

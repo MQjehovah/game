@@ -2658,6 +2658,26 @@ function runSelfTest()
        string.format("ok=%s quiet=%s", tostring(okSave), tostring(quiet)))
   end
 
+  -- 雨停后彩虹：白天触发，夜晚不触发
+  do
+    local sw, st, sn, sf = weather, weatherT, weatherNext, weatherNextId
+    local sc, sr = clock, rainbowT
+    local kt, kv = toast.text, toast.t
+    clock = 10 * 60
+    weather, rainbowT = "rain", 0
+    setWeather("clear")
+    local dayOn = (rainbowT or 0) > 0 and rainbowAlpha() > 0
+    weather, rainbowT = "rain", 0
+    clock = 23 * 60
+    setWeather("clear")
+    local nightOff = (rainbowT or 0) == 0
+    weather, weatherT, weatherNext, weatherNextId = sw, st, sn, sf
+    clock, rainbowT = sc, sr
+    toast.text, toast.t = kt, kv
+    ok(r, "rainbow after rain", dayOn and nightOff,
+       string.format("day=%s night=%s", tostring(dayOn), tostring(nightOff)))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock
