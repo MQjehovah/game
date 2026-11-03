@@ -549,6 +549,7 @@ local function pushState()
     goal = goalOut,
     relay = relayDone and 2 or ((radioMastFixed and 1) or 0),
     fire = campfireOn and 1 or 0,
+    fireFuel = math.floor(campfireFuelMin or 0),
   })
 end
 
@@ -1681,6 +1682,9 @@ local function applyState(s)
   if s.fire ~= nil and setCampfireLit ~= nil then
     local lit = (s.fire == 1 or s.fire == true)
     if lit ~= campfireOn then setCampfireLit(lit) end
+  end
+  if s.fireFuel ~= nil and setCampfireFuel ~= nil then
+    setCampfireFuel(s.fireFuel)
   end
   if s.high ~= nil then
     local hb = (s.high == 1 or s.high == true)

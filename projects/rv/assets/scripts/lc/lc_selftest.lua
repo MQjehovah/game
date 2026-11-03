@@ -1741,6 +1741,18 @@ function runSelfTest()
        string.format("off=%s on=%s", tostring(off), tostring(on)))
   end
 
+  -- 篝火剩余燃料同步：按服务器值设置并夹紧到 0
+  do
+    local keep = campfireFuelMin
+    setCampfireFuel(123)
+    local set = math.abs((campfireFuelMin or 0) - 123) < 1e-6
+    setCampfireFuel(-5)
+    local clamped = (campfireFuelMin or -1) == 0
+    campfireFuelMin = keep
+    ok(r, "campfire fuel sync", set and clamped,
+       string.format("set=%s clamp=%s", tostring(set), tostring(clamped)))
+  end
+
   -- 篝火也能把生食材烤成热饭
   do
     local keepOn = campfireOn

@@ -1987,6 +1987,11 @@ function updateCampfireSmoke(dt)
   end
 end
 
+-- 统一设置篝火剩余燃料（联机客机按服务器值同步）
+function setCampfireFuel(v)
+  campfireFuelMin = math.max(0, tonumber(v) or 0)
+end
+
 -- 统一设置篝火点燃/熄灭（单机、服务器与客机同步共用）
 function setCampfireLit(on)
   campfireOn = on and true or false
