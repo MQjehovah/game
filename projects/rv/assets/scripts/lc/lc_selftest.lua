@@ -1530,6 +1530,15 @@ function runSelfTest()
                      tostring(day), tostring(night)))
   end
 
+  -- 电力不足时舒适加成失效
+  do
+    local on = comfortWithPower(20, 10, -1, 1)
+    local off = comfortWithPower(20, 10, -1, 0)
+    local gen = comfortWithPower(20, 10, 1, 0)
+    ok(r, "powered comfort", on == 20 and off == 10 and gen == 20,
+       string.format("stored=%d empty=%d gen=%d", on, off, gen))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

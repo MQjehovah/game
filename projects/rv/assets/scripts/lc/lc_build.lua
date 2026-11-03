@@ -232,7 +232,7 @@ end
 
 function recomputeStats()
   local s = { powerGen = 0, powerDraw = 0, battery = 0, waterStore = 0, waterDraw = 0,
-              weight = 0, comfort = 0, count = 0, storage = 0 }
+              weight = 0, comfort = 0, count = 0, storage = 0, powerComfort = 0 }
   for _, inst in pairs(instances) do
     local c = inst.cat
     local active = inst.on ~= false
@@ -248,6 +248,9 @@ function recomputeStats()
       end
       s.powerGen   = s.powerGen   + gen
       s.powerDraw  = s.powerDraw  + (c.powerDraw  or 0)
+      if (c.powerDraw or 0) > 0 and (c.comfort or 0) > 0 then
+        s.powerComfort = s.powerComfort + (c.comfort or 0)
+      end
     end
     s.battery    = s.battery    + (c.battery    or 0)
     s.waterStore = s.waterStore + (c.waterStore or 0)
@@ -259,5 +262,17 @@ function recomputeStats()
   end
   -- 顺路货运：货物重量直接压到整备质量上（超载 -> 加速/极速下降、油耗上升）
   if jobCargoWeight ~= nil then s.weight = s.weight + (jobCargoWeight() or 0) end
+  -- 电力不足时，电暖器/娱乐柜/通风扇的舒适加成失效
+  s.comfort = comfortWithPower(s.comfort, s.powerComfort,
+                               (s.powerGen or 0) - (s.powerDraw or 0),
+                               batteryCharge or 0)
   stats = s
+end
+
+-- 纯函数：电力可用则保留舒适加成，否则扣掉依赖电力的部分
+function comfortWithPower(comfort, powerComfort, net, charge)
+  if powerAvailable ~= nil and not powerAvailable(net, charge) then
+    return comfort - (powerComfort or 0)
+  end
+  return comfort
 end
