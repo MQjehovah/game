@@ -124,6 +124,21 @@ function runSelfTest()
        string.format("lv %d->%d bonus=%.2f size=%dcm", lv0, newLv, bonus, size))
   end
 
+  -- 水箱升级：容量 +30L/级
+  do
+    local lv0 = upgrades.water or 0
+    local max0 = waterMax()
+    materials.metal = (materials.metal or 0) + 8
+    materials.cloth = (materials.cloth or 0) + 8
+    if lv0 < 3 then upgradeWater() end
+    local max1 = waterMax()
+    local newLv = upgrades.water or 0
+    local upOk = newLv == lv0 + 1 and max1 == max0 + 30
+    upgrades.water = lv0
+    ok(r, "water tank upgrade", upOk,
+       string.format("capacity %d->%d lv %d->%d", max0, max1, lv0, newLv))
+  end
+
   -- 工作台制作修理包：金属 2 + 布料 1
   do
     local m0, c0, k0 = materials.metal or 0, materials.cloth or 0,

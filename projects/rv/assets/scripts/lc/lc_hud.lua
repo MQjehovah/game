@@ -133,11 +133,11 @@ function drawRvStatus(x, y, w)
   DrawRect(x + 10, yy + 17, (w - 20) * math.max(0, dur / VEH.durMax), 4,
            dur < 40 and 0.9 or 0.45, dur < 40 and 0.25 or 0.78, 0.35, 1)
   yy = yy + 28
-  DrawText(string.format("净水  %d / %d L", math.floor(water), SURVIVAL.waterMax),
+  DrawText(string.format("净水  %d / %d L", math.floor(water), waterMax()),
            x + 10, yy, 13, water < 15 and 1 or 0.86, water < 15 and 0.4 or 0.84,
            water < 15 and 0.3 or 0.78, 1)
   DrawRect(x + 10, yy + 17, w - 20, 4, 0.12, 0.12, 0.13, 0.9)
-  DrawRect(x + 10, yy + 17, (w - 20) * math.max(0, water / SURVIVAL.waterMax), 4,
+  DrawRect(x + 10, yy + 17, (w - 20) * math.max(0, water / waterMax()), 4,
            0.32, 0.62, 0.90, 1)
   yy = yy + 28
   local net = (stats.powerGen or 0) - (stats.powerDraw or 0)
@@ -390,9 +390,9 @@ function drawBuildHud()
     netPower < 0)
   rowY = rowY + 34
   drawStatBar(10 + pad, rowY, innerW, "水",
-    string.format("%d / %d L%s", math.floor(water), SURVIVAL.waterMax,
+    string.format("%d / %d L%s", math.floor(water), waterMax(),
                   s.waterDraw > 0 and string.format(" (耗%d/h)", s.waterDraw) or ""),
-    water / SURVIVAL.waterMax, water < 15)
+    water / waterMax(), water < 15)
   rowY = rowY + 34
   drawStatBar(10 + pad, rowY, innerW, "载重",
     string.format("%.0f / %d kg", s.weight, weightMax()),
@@ -797,7 +797,7 @@ function drawStationMenu()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
   local isStove = (stationUI.kind == "stove")
-  local rows = isStove and #RECIPES or (#REPAIR_PARTS + 4)
+  local rows = isStove and #RECIPES or (#REPAIR_PARTS + 5)
   local pw = 540
   local ph = 108 + rows * 58
   local px = math.floor((vw - pw) * 0.5)
@@ -933,7 +933,26 @@ function drawStationMenu()
                     ok and 0.85 or 1, ok and 0.82 or 0.35, ok and 0.72 or 0.28)
       yy = yy + 58
     end
-    drawTextCentered("按 1/2/3/4 维修 / 5 货架 / 6 鱼竿 / 7 修理包 / 8 篷布    E 关闭",
+    -- 水箱升级（第 9 项）
+    do
+      local lv = (upgrades and upgrades.water) or 0
+      local maxed = lv >= 3
+      local cost = { metal = 2 + lv, cloth = 2 + lv }
+      local ok = (not maxed) and canAfford(cost)
+      DrawRect(px + 16, yy - 4, pw - 32, 52, ok and 0.10 or 0.12,
+               ok and 0.12 or 0.08, ok and 0.09 or 0.08, 0.7)
+      DrawText("[9]", px + 26, yy, 16, ok and 0.95 or 0.5, ok and 0.85 or 0.5, 0.55, 1)
+      DrawText("水箱", px + 66, yy, 16, ok and 0.96 or 0.6, ok and 0.92 or 0.6, 0.82, 1)
+      DrawText(string.format("Lv%d · 容量 %dL", lv, waterMax()),
+               px + 66, yy + 21, 12, 0.80, 0.80, 0.74, 1)
+      local rightText = maxed and "满级 Lv3" or
+        ("升级 Lv" .. lv .. "->" .. (lv + 1) .. "  " .. costText(cost))
+      drawTextRight(rightText, px + pw - 24, yy + 8, 12,
+                    (ok or maxed) and 0.85 or 1, (ok or maxed) and 0.82 or 0.35,
+                    (ok or maxed) and 0.72 or 0.28)
+      yy = yy + 58
+    end
+    drawTextCentered("按 1-4 维修 / 5 货架 / 6 鱼竿 / 7 修理包 / 8 篷布 / 9 水箱    E 关闭",
                      vw * 0.5, py + ph - 30, 13, 0.75, 0.75, 0.68, 1)
   end
 end

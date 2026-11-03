@@ -51,7 +51,7 @@ function setPhase(m)
                      .. " — E 搜物资箱"
         if atNode == "gasstop" or atNode == "camp" then
           fuel = VEH.tank
-          water = SURVIVAL.waterMax
+          water = waterMax()
           fuelWarned = false
           toast.text = toast.text .. " · ⛽ 油/水已补满"
         end
@@ -367,7 +367,7 @@ function loadLayout()
       if ITEMS[k] then inv[k] = tonumber(v) or 0 end
     end
   end
-  water = math.min(SURVIVAL.waterMax, tonumber(data.water) or water)
+  water = math.min(waterMax(), tonumber(data.water) or water)
   day = tonumber(data.day) or day
   clock = tonumber(data.clock) or clock
   if onFoot and player.active then
@@ -1439,6 +1439,7 @@ function on_update(ent, dt)
       if ActionPressed("6") and upgradeRod ~= nil then upgradeRod() end
       if ActionPressed("7") and craftRepairKit ~= nil then craftRepairKit() end
       if ActionPressed("8") and craftTarp ~= nil then craftTarp() end
+      if ActionPressed("9") and upgradeWater ~= nil then upgradeWater() end
     end
     updateCamera(dt)
     return

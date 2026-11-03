@@ -9,7 +9,7 @@ function initSurvival()
   day = 1
   water = 80
   parts = { engine = 100, tires = 100, battery = 100 }
-  upgrades = { engine = 0, tires = 0, cargo = 0, rod = 0 }
+  upgrades = { engine = 0, tires = 0, cargo = 0, rod = 0, water = 0 }
   lastWarn = {}
   hurtT = 0
   if dailyGoal == nil and rollDailyGoal ~= nil then rollDailyGoal() end
@@ -289,7 +289,7 @@ function useWater(amount)
 end
 
 function addWater(amount)
-  water = math.max(0, math.min(SURVIVAL.waterMax, water + amount))
+  water = math.max(0, math.min(waterMax(), water + amount))
 end
 
 -- 燃油罐：靠近房车按 E 加注（10L，受油箱上限约束）
@@ -464,8 +464,8 @@ function updateSurvival(dt)
   elseif needs.hygiene > 40 then lastWarn.hygiene = false end
 
   -- 雨天接水
-  if weather == "rain" and water < SURVIVAL.waterMax then
-    water = math.min(SURVIVAL.waterMax, water + 0.04 * gm)
+  if weather == "rain" and water < waterMax() then
+    water = math.min(waterMax(), water + 0.04 * gm)
   end
 
   -- 生食材腐败：通电冰箱显著延缓；放坏后整批清空
@@ -755,6 +755,35 @@ function upgradeCargo()
   return true
 end
 
+-- 水箱容量：基础 120L + 每级 30L
+function waterMax()
+  return SURVIVAL.waterMax + (upgrades.water or 0) * (SURVIVAL.waterPerLevel or 30)
+end
+
+function upgradeWater()
+  upgrades.water = upgrades.water or 0
+  if upgrades.water >= 3 then
+    toast.text = "水箱已经满级"
+    toast.t = 1.8
+    return false
+  end
+  local lv = upgrades.water
+  local cost = { metal = 2 + lv, cloth = 2 + lv }
+  if not canAfford(cost) then
+    toast.text = "升级材料不足：" .. costText(cost)
+    toast.t = 2.2
+    return false
+  end
+  payCost(cost)
+  upgrades.water = lv + 1
+  water = math.min(waterMax(), (water or 0) + 30)
+  if PlaySfx then PlaySfx("repair") end
+  toast.text = string.format("水箱升级到 Lv%d — 容量 %dL",
+                             upgrades.water, waterMax())
+  toast.t = 2.6
+  return true
+end
+
 function workbenchTarget()
   local best = { id = "body", name = "车体", value = dur }
   if (parts.engine or 100) < best.value then
@@ -905,10 +934,10 @@ function stationPrompt(inst)
     if needs.health >= 100 then return "包扎", "生命已满", false end
     return "包扎", "布料 x1，生命 +20", (materials.cloth or 0) >= 1
   elseif use == "tank" then
-    if hasItem("water", 1) and water < SURVIVAL.waterMax then
+    if hasItem("water", 1) and water < waterMax() then
       return "倒入净水", "瓶装水 x1 → 水箱 +30L", true
     end
-    return "净水箱", string.format("%d / %d L", math.floor(water), SURVIVAL.waterMax), false
+    return "净水箱", string.format("%d / %d L", math.floor(water), waterMax()), false
   elseif use == "plant" then
     local verb, detail, ok = plantPrompt(inst)
     return verb, detail, ok
@@ -1019,13 +1048,13 @@ function useStation(inst)
     end
     toast.t = 2.4
   elseif use == "tank" then
-    if hasItem("water", 1) and water < SURVIVAL.waterMax then
+    if hasItem("water", 1) and water < waterMax() then
       takeItem("water", 1)
       addWater(30)
       if PlaySfx then PlaySfx("drink") end
       toast.text = string.format("倒入净水 — 水箱 %d L", math.floor(water))
     else
-      toast.text = string.format("水箱 %d / %d L", math.floor(water), SURVIVAL.waterMax)
+      toast.text = string.format("水箱 %d / %d L", math.floor(water), waterMax())
     end
     toast.t = 2.4
   elseif use == "plant" then

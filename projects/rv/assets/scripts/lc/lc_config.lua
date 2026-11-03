@@ -51,6 +51,7 @@ SURVIVAL = {
   nightStart = 20 * 60,
   nightEnd = 6 * 60,
   waterMax = 120,
+  waterPerLevel = 30,          -- 水箱每级 +30L
   drink = 30,
   bathWater = 3.0,
   cookWater = 0.5,
