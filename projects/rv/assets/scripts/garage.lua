@@ -1636,6 +1636,12 @@ function on_update(ent, dt)
     toast.text = "取了 2 份浑浊水 — 到篝火按 E 煮沸"
     toast.t = 2.8
   end
+  -- 湖边鱼笼（Z）：放置 / 收取
+  if nearAction ~= nil and nearAction.kind == "fish" and ActionPressed("z") and
+     togglePondTrapAt ~= nil then
+    togglePondTrapAt(nearAction.x, nearAction.z)
+    updateInteraction()
+  end
 
   local vp = GetViewportSize()
   local cx = (vp and vp.w or 1280) * 0.5

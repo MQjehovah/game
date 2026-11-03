@@ -101,7 +101,8 @@ function updateInteraction()
     if d < 4.8 then
       local dot = forwardDot(dx, dz, d)
       if dot > 0.12 then
-        local verb, detail = "钓鱼", "E 抛竿（5-9 秒） / Q 取浑水"
+        local verb, detail = "钓鱼", "E 抛竿（5-9 秒） / Q 取浑水 / " ..
+                              (pondTrapStatusText and pondTrapStatusText() or "Z 放鱼笼")
         if fishingBite then
           verb, detail = "收线！", "E 收线（咬钩窗口）"
         elseif fishingT > 0 then

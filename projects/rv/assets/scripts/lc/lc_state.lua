@@ -150,6 +150,7 @@ fishingBait = false
 fishingDock = false           -- 本次抛竿是否在栈桥上
 fishingBite = false           -- 是否处于“咬钩”窗口
 fishingBiteT = 0              -- 咬钩窗口剩余秒数
+pondTrap = nil                -- 湖边鱼笼 {x,z,t,ready}
 fishingSplashCount = 0        -- 水花特效次数（自检用）
 fishingBobber = nil           -- 钓鱼浮漂实体
 fishingBobberT = 0            -- 浮漂上下浮动计时

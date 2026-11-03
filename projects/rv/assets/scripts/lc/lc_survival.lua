@@ -670,6 +670,7 @@ function updateSurvival(dt)
   local gm = dt * SURVIVAL.timeScale
   advanceGameMinutes(gm)
   if updateRadioBroadcast ~= nil then updateRadioBroadcast(gm) end
+  if updatePondTrap ~= nil then updatePondTrap(gm) end
 
   needs.hunger = math.max(0, needs.hunger - SURVIVAL.hungerRate * gm)
   needs.thirst = math.max(0, needs.thirst - SURVIVAL.thirstRate * gm)
@@ -874,6 +875,56 @@ function spawnFishingBobber()
     fishingBobber = e
     fishingBobberBase = { x = x, y = y, z = z }
     fishingBobberT = 0
+  end
+end
+
+-- 湖边鱼笼：放置后约 60 游戏分钟有收获，回来收取 2 条生鱼
+POND_TRAP_COST = { metal = 2, wood = 1 }
+POND_TRAP_MINUTES = 60
+
+function pondTrapStatusText()
+  if pondTrap == nil then
+    return string.format("Z 放鱼笼（金属%d 木材%d）",
+                         POND_TRAP_COST.metal, POND_TRAP_COST.wood)
+  end
+  if pondTrap.ready then return "Z 收鱼笼（生鱼 x2）" end
+  return string.format("鱼笼捕鱼中（约 %.0f 分钟）", pondTrap.t or 0)
+end
+
+function togglePondTrapAt(px, pz)
+  if pondTrap == nil then
+    if not canAfford(POND_TRAP_COST) then
+      toast.text = "鱼笼材料不足：" .. costText(POND_TRAP_COST)
+      toast.t = 2.6
+      return false
+    end
+    payCost(POND_TRAP_COST)
+    pondTrap = { x = px or 0, z = pz or 0, t = POND_TRAP_MINUTES,
+                 ready = false }
+    if PlaySfx then PlaySfx("pickup") end
+    toast.text = "放好鱼笼——约 60 游戏分钟后回来收"
+    toast.t = 3.0
+    return true
+  end
+  if not pondTrap.ready then
+    toast.text = string.format("鱼笼还没捕到鱼（约 %.0f 分钟）", pondTrap.t or 0)
+    toast.t = 2.4
+    return false
+  end
+  pondTrap = nil
+  addItem("rawfish", 2)
+  if PlaySfx then PlaySfx("pickup") end
+  toast.text = "收鱼笼：生鱼 x2"
+  toast.t = 2.6
+  return true
+end
+
+function updatePondTrap(gm)
+  if pondTrap == nil or pondTrap.ready then return end
+  pondTrap.t = (pondTrap.t or 0) - (gm or 0)
+  if pondTrap.t <= 0 then
+    pondTrap.t = 0
+    pondTrap.ready = true
   end
 end
 

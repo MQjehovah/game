@@ -2050,6 +2050,36 @@ function runSelfTest()
                      tostring(cleared)))
   end
 
+  -- 湖边鱼笼：放置消耗材料，计时后收取生鱼
+  do
+    local keepTrap = pondTrap
+    local sm, sw = materials.metal or 0, materials.wood or 0
+    local kr = inv.rawfish or 0
+    local kt, kv = toast.text, toast.t
+    pondTrap = nil
+    materials.metal, materials.wood = 5, 3
+    local placed = togglePondTrapAt(-52, 30)
+    local setting = pondTrap ~= nil and pondTrap.ready == false and
+                    math.abs((pondTrap.t or 0) - POND_TRAP_MINUTES) < 1e-6
+    updatePondTrap(POND_TRAP_MINUTES + 1)
+    local ready = pondTrap ~= nil and pondTrap.ready == true
+    local collected = togglePondTrapAt(-52, 30)
+    local gained = (inv.rawfish or 0) == kr + 2
+    local cleared = pondTrap == nil
+    materials.metal, materials.wood = 0, 0
+    local poor = togglePondTrapAt(-52, 30)
+    pondTrap = keepTrap
+    materials.metal, materials.wood = sm, sw
+    inv.rawfish = kr > 0 and kr or nil
+    toast.text, toast.t = kt, kv
+    ok(r, "pond trap",
+       placed and setting and ready and collected and gained and cleared and
+       poor == false,
+       string.format("place=%s set=%s ready=%s got=%s poor=%s",
+                     tostring(placed), tostring(setting), tostring(ready),
+                     tostring(gained), tostring(poor)))
+  end
+
   -- 各鱼种最大尺寸/条数记录
   do
     local keepR, keepC = fishRecords, fishCounts
