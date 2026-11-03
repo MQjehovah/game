@@ -1337,6 +1337,16 @@ function recordFish(name, size, n)
       addJournal(string.format("钓鱼新纪录：%s %.0fcm", name, size), "fish")
     end
   end
+  if (bestFish or 0) >= 60 and not bigFishRewardDone then
+    bigFishRewardDone = true
+    materials.metal = (materials.metal or 0) + 5
+    addItem("bait", 2)
+    toast.text = string.format("钓到 %.0fcm 大鱼！奖励 金属+5 鱼饵+2", bestFish)
+    toast.t = 4.5
+    if addJournal ~= nil then
+      addJournal(string.format("钓到 %.0fcm 大鱼（金属+5 鱼饵+2）", bestFish), "goal")
+    end
+  end
   if checkFishCollection ~= nil then checkFishCollection() end
   return speciesRecord, overall
 end

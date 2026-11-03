@@ -4442,6 +4442,34 @@ function runSelfTest()
                      tostring(rewarded), tostring(again)))
   end
 
+  -- 60cm 大鱼奖励：一次性，给金属+5 鱼饵+2
+  do
+    local keepBest, keepBestName, keepCaught = bestFish, bestFishName, fishCaught
+    local keepRecords, keepCounts = fishRecords, fishCounts
+    local keepDone, keepMetal = bigFishRewardDone, materials.metal or 0
+    local keepBait, keepGoal = inv.bait or 0, dailyGoal
+    local kt, kv = toast.text, toast.t
+    bestFish, bestFishName, fishCaught = 0, nil, 0
+    fishRecords, fishCounts = {}, {}
+    bigFishRewardDone, dailyGoal = false, nil
+    materials.metal = 0
+    inv.bait = nil
+    recordFish("鲶鱼", 65, 1)
+    local rewarded = (materials.metal or 0) == 5 and (inv.bait or 0) == 2
+    local done = bigFishRewardDone == true
+    recordFish("鲶鱼", 70, 1)
+    local once = (materials.metal or 0) == 5 and (inv.bait or 0) == 2
+    bestFish, bestFishName, fishCaught = keepBest, keepBestName, keepCaught
+    fishRecords, fishCounts = keepRecords, keepCounts
+    bigFishRewardDone, dailyGoal = keepDone, keepGoal
+    materials.metal = keepMetal
+    inv.bait = keepBait > 0 and keepBait or nil
+    toast.text, toast.t = kt, kv
+    ok(r, "big fish reward", rewarded and done and once,
+       string.format("reward=%s done=%s once=%s", tostring(rewarded),
+                     tostring(done), tostring(once)))
+  end
+
   -- 跑遍所有固定地点：一次性奖励，且不会重复领取
   do
     local keepVisited = visitedPois

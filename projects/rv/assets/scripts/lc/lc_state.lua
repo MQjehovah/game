@@ -152,6 +152,7 @@ bestFishName = nil            -- 最大纪录对应的鱼种
 fishRecords = {}              -- 各鱼种最大尺寸 cm
 fishCounts = {}               -- 各鱼种累计条数
 fishCollectionDone = false    -- 是否已集齐全部鱼种并领奖
+bigFishRewardDone = false     -- 是否已领取 60cm 大鱼奖励
 exploreAllDone = false        -- 是否已跑遍所有固定地点并领奖
 newGameHintT = 0              -- 首次进入的操作提示剩余时间（秒）
 autoSaveFlashT = 0            -- 自动存档提示剩余时间（秒）
