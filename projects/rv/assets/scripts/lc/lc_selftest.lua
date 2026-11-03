@@ -3316,6 +3316,17 @@ function runSelfTest()
                      tostring(recycled), after))
   end
 
+  -- 积雪斑块局部更滑：位置判定
+  do
+    local keep = snowPatches
+    snowPatches = { { x = 0, z = 0 } }
+    local hit = onSnowPatch(1.0, 1.0, 2.0)
+    local miss = onSnowPatch(10, 10, 2.0)
+    snowPatches = keep
+    ok(r, "snow patch slip", hit == true and miss == false,
+       string.format("hit=%s miss=%s", tostring(hit), tostring(miss)))
+  end
+
   -- 农场风车：4 片叶片且会旋转
   do
     local blades = windmill and #(windmill.blades or {}) or 0

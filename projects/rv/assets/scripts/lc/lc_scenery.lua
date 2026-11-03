@@ -2019,6 +2019,16 @@ function updateSnowPatches(dt)
   end
 end
 
+-- 是否压在积雪斑块上（雪地局部更滑）
+function onSnowPatch(x, z, radius)
+  local r2 = (radius or 2.0) * (radius or 2.0)
+  for _, p in ipairs(snowPatches or {}) do
+    local dx, dz = (x or 0) - p.x, (z or 0) - p.z
+    if dx * dx + dz * dz <= r2 then return true end
+  end
+  return false
+end
+
 -- 篝火噼啪声：靠近火堆时每隔 2.2–3.6s 播一次 3D 音效
 function campfireCrackleInterval()
   return 2.2 + math.random() * 1.4

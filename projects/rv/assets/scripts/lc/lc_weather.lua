@@ -132,6 +132,10 @@ function weatherGripScale()
      chainsOn ~= false then
     base = math.min(0.95, base + 0.14)
   end
+  -- 压在积雪斑块上：局部更滑
+  if base < 1.0 and onSnowPatch ~= nil and onSnowPatch(rv.x, rv.z, 2.2) then
+    base = math.max(0.55, base - 0.08)
+  end
   return base
 end
 
