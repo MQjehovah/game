@@ -1955,6 +1955,19 @@ function runSelfTest()
                      tostring(f1), tostring(switched), tostring(f2)))
   end
 
+  -- 里程里程碑：2km 一次性发奖，且下一里程碑提示包含里程
+  do
+    local keep = milestones
+    milestones = {}
+    local f0 = fuel
+    checkMilestones("distance", 2000)
+    local awarded = fuel >= f0
+    local hint = milestoneHint()
+    local hintOk = hint:find("km", 1, true) ~= nil
+    milestones = keep
+    ok(r, "distance milestone", awarded and hintOk, hint)
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

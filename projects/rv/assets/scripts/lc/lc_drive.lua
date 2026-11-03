@@ -451,6 +451,7 @@ function updateDrive(dt)
   if meters > 0 then
     tripDistance = (tripDistance or 0) + meters
     if addDailyProgress ~= nil then addDailyProgress("distance", meters) end
+    if checkMilestones ~= nil then checkMilestones("distance", tripDistance) end
     if rv.tirePressureCold ~= nil then
       for i = 1, 4 do
         rv.tirePressureCold[i] = pressureAfterMeters(rv.tirePressureCold[i], meters)

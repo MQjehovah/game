@@ -155,6 +155,11 @@ MILESTONES = {
     { n = 10, reward = { electronics = 2, fuel = 20 } },
     { n = 20, reward = { metal = 8, electronics = 4, fuel = 30 } },
   },
+  distance = {   -- 单位：米
+    { n = 2000,  reward = { metal = 2, fuel = 8 } },
+    { n = 10000, reward = { cloth = 2, fuel = 12 } },
+    { n = 30000, reward = { electronics = 2, metal = 3, fuel = 20 } },
+  },
 }
 
 -- 营地板以物易物：把多余的搜刮物资换成燃油/金属，给后期材料一个出口

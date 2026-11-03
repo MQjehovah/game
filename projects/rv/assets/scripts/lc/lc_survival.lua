@@ -180,9 +180,12 @@ function checkMilestones(kind, value)
           got[#got + 1] = (MAT_NAMES[k] or k) .. "+" .. v
         end
       end
-      toast.text = string.format("里程碑：%s %d · %s", 
-                                 kind == "explore" and "探索" or "货运",
-                                 m.n, table.concat(got, " "))
+      local label = (kind == "explore" and "探索")
+                 or (kind == "distance" and "里程") or "货运"
+      local shown = (kind == "distance") and string.format("%.1fkm", m.n / 1000)
+                 or tostring(m.n)
+      toast.text = string.format("里程碑：%s %s · %s", label, shown,
+                                 table.concat(got, " "))
       toast.t = 5.0
       if PlaySfx then PlaySfx("pickup") end
     end
@@ -208,6 +211,11 @@ function milestoneHint()
   local j = nextMilestone("jobs", jobDelivered or 0)
   if j ~= nil then
     parts[#parts + 1] = string.format("货运 %d/%d", jobDelivered or 0, j.n)
+  end
+  local d = nextMilestone("distance", tripDistance or 0)
+  if d ~= nil then
+    parts[#parts + 1] = string.format("里程 %.1f/%.1fkm",
+                                      (tripDistance or 0) / 1000, d.n / 1000)
   end
   return table.concat(parts, "   ")
 end
