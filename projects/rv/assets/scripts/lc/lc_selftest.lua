@@ -981,6 +981,23 @@ function runSelfTest()
        string.format("props=%d awning=%d", n, awning))
   end
 
+  -- 刹车/倒车尾灯：自发光网格显隐切换
+  do
+    rv.brakeTest = true
+    updateTaillights()
+    local onLit = rv.brakeLit
+    rv.brakeTest = nil
+    rv.braking = false
+    local savedSpeed = rv.speed or 0
+    rv.speed = 1.0
+    updateTaillights()
+    local offLit = rv.brakeLit
+    rv.speed = savedSpeed
+    ok(r, "rv brake lights", onLit == true and offLit == false and #rvTaillights == 2,
+       string.format("lamps=%d on=%s off=%s", #rvTaillights,
+                     tostring(onLit), tostring(offLit)))
+  end
+
   -- 存读档
   local saved = saveLayout()
   ok(r, "save layout", saved ~= false, "saves/layout.json")

@@ -162,8 +162,10 @@ function updateDrive(dt)
   end
 
   if throttle > 0 then
+    rv.braking = false
     rv.speed = math.min(maxSp, rv.speed + acc * dt)
   elseif throttle < 0 then
+    rv.braking = true
     if rv.speed > 0.05 then
       rv.speed = math.max(0.0, rv.speed - DRIVE.brake * dt)
     else

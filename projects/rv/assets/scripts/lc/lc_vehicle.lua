@@ -199,6 +199,40 @@ function applyRvTransform()
 end
 
 -- ===========================================================================
+-- 刹车/倒车尾灯：车尾两块红色自发光，刹车或倒车时点亮。
+-- 常驻实体（只是自发光网格，不占灯光槽），SetVisible 切换。
+-- ===========================================================================
+local TAILLIGHTS = {
+  { -0.66, 1.02, -4.02 },
+  {  0.66, 1.02, -4.02 },
+}
+
+function spawnRvTaillights()
+  if rvParts == nil or #rvTaillights > 0 then return end
+  for _, t in ipairs(TAILLIGHTS) do
+    local e = SpawnPrefab("rv_taillight", { x = rv.x, y = -60, z = rv.z })
+    if e ~= nil then
+      SetScale(e, 0.36, 0.15, 0.05)
+      local part = { ent = e, name = "taillight", lx = t[1], ly = t[2], lz = t[3] }
+      rvParts[#rvParts + 1] = part
+      rvTaillights[#rvTaillights + 1] = e
+      setTilted(e, part.lx, part.ly, part.lz, 0)
+      SetVisible(e, false)
+    end
+  end
+  rv.brakeLit = false
+end
+
+function updateTaillights()
+  if #rvTaillights == 0 then return end
+  local braking = (rv.brakeTest == true) or (rv.braking == true) or
+                  ((rv.speed or 0) < -0.05)
+  if braking == rv.brakeLit then return end
+  rv.brakeLit = braking
+  for _, e in ipairs(rvTaillights) do SetVisible(e, braking) end
+end
+
+-- ===========================================================================
 -- 夜间前大灯：两盏聚光灯挂在车头，随车身旋转；白天/熄火时整个实体移除，
 -- 避免占用引擎有限的点光/聚光槽，也避免白天出现两道亮斑。
 -- ===========================================================================

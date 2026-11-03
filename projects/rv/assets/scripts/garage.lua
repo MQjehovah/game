@@ -308,6 +308,7 @@ function on_start()
   camEnt = FindNamedEntity("Main Camera")
   groundEnt = FindNamedEntity("Ground")
   collectRvParts()
+  if spawnRvTaillights ~= nil then spawnRvTaillights() end
   spawnRvShell()
   spawnRvWheels()
   spawnInterior()
@@ -586,7 +587,7 @@ function on_start()
     px, pz = 2.6, 9.2
     pyaw = dirYaw(-2.6, -9.2)
   end
-  if startMode == "rvrear" then
+  if startMode == "rvrear" or startMode == "brakeview" then
     -- Test-only rear three-quarter view of the RV (curved rear cap).
     px, pz = 2.8, -9.0
     pyaw = dirYaw(-2.8, 5.4)
@@ -825,6 +826,8 @@ function on_start()
     jobRefreshOffers("gasstop")
     jobAccept(1)
     mapOpen = true
+  elseif startMode == "brakeview" then
+    rv.brakeTest = true
   elseif startMode == "drive" or startMode == "night_drive" or autoPilot or rv.steerDemo then
     setPhase("driving")
   elseif startMode == "utilroof" then
@@ -1026,6 +1029,7 @@ function on_update(ent, dt)
   if updateTerrainLod ~= nil then updateTerrainLod(dt) end
   if updateJobs ~= nil then updateJobs(dt) end
   if updateVehicleLights ~= nil then updateVehicleLights() end
+  if updateTaillights ~= nil then updateTaillights() end
   if coopRole ~= nil then
     coopUpdate(dt)
     if updatePoiWindows then updatePoiWindows(dt) end
