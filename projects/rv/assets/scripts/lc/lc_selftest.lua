@@ -4795,6 +4795,16 @@ function runSelfTest()
        string.format("snow=%.2f rain=%.2f clear=%.2f", snow, rain, clear))
   end
 
+  -- 雪地脚步用 step_snow，其它天气用 step
+  do
+    local snow = footstepSfx("snow")
+    local rain = footstepSfx("rain")
+    local clear = footstepSfx("clear")
+    ok(r, "snow footsteps",
+       snow == "step_snow" and rain == "step" and clear == "step",
+       string.format("snow=%s rain=%s clear=%s", snow, rain, clear))
+  end
+
   -- 防滑链：雨雪天提高抓地，且不会被 useItem 消耗
   do
     local sw = weather

@@ -123,6 +123,12 @@ function walkSpeedScale(weatherValue)
   return 1.0
 end
 
+-- 雪地脚步用踩雪声，其它天气用普通脚步
+function footstepSfx(weatherValue)
+  if weatherValue == "snow" then return "step_snow" end
+  return "step"
+end
+
 function updatePlayer(dt)
   if not onFoot or player.ent == nil then return end
 
@@ -169,7 +175,7 @@ function updatePlayer(dt)
     player.stepT = (player.stepT or 0) - dt
     if player.stepT <= 0 then
       player.stepT = sprint and 0.30 or 0.46
-      if PlaySfx then PlaySfx("step") end
+      if PlaySfx then PlaySfx(footstepSfx(weather)) end
     end
   else
     player.stepT = 0
