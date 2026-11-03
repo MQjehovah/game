@@ -21,6 +21,7 @@ from pathlib import Path
 
 from rv_surfaces import (face_uvs, surface_emissive, surface_extras,
                          surface_material)
+from rv_geom import bevel_box
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "projects/rv/assets/models/rv"
@@ -47,19 +48,18 @@ class Mesh:
     def _group(self, mat):
         return self.groups.setdefault(mat, ([], [], [], []))
 
-    def box(self, mat, cx, cy, cz, sx, sy, sz):
-        hx, hy, hz = sx * 0.5, sy * 0.5, sz * 0.5
-        x0, x1 = cx - hx, cx + hx
-        y0, y1 = cy - hy, cy + hy
-        z0, z1 = cz - hz, cz + hz
-        for n, quad in (
-                ((0, 0, 1), [(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]),
-                ((0, 0, -1), [(x1, y0, z0), (x0, y0, z0), (x0, y1, z0), (x1, y1, z0)]),
-                ((1, 0, 0), [(x1, y0, z1), (x1, y0, z0), (x1, y1, z0), (x1, y1, z1)]),
-                ((-1, 0, 0), [(x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0)]),
-                ((0, 1, 0), [(x0, y1, z1), (x1, y1, z1), (x1, y1, z0), (x0, y1, z0)]),
-                ((0, -1, 0), [(x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1)])):
-            self.quad(mat, quad[0], quad[1], quad[2], quad[3], n)
+    def box(self, mat, cx, cy, cz, sx, sy, sz, bevel=None):
+        bevel_box(self, mat, cx, cy, cz, sx, sy, sz, bevel)
+
+    def poly(self, mat, verts, normal):
+        pos, nrm, idx, uvs = self._group(mat)
+        base = len(pos)
+        for q in verts:
+            pos.append(q)
+            nrm.append(normal)
+        uvs.extend(face_uvs(verts, normal))
+        for i in range(1, len(verts) - 1):
+            idx.extend([base, base + i, base + i + 1])
 
     def quad(self, mat, a, b, c, d, normal=None):
         """Add a quad, flipping the winding so its normal matches `normal`."""
@@ -127,7 +127,7 @@ def side_wall(m, sign, openings, windows):
             wall_box(z0, lo, y0, y1)
         if hi < z1 - 1e-4:
             wall_box(hi, z1, y0, y1)
-        seg = 12
+        seg = 20
         for i in range(seg):
             za = lo + (hi - lo) * i / seg
             zb = lo + (hi - lo) * (i + 1) / seg
@@ -136,8 +136,11 @@ def side_wall(m, sign, openings, windows):
             yb = 0.38 + dy
             if yb < y1:
                 wall_box(za, zb, yb, y1)
-                m.box(TRIM, sign * (X + 0.01), (yb + y1) * 0.5 - 0.01, (za + zb) * 0.5,
-                      0.05, 0.07, zb - za)
+                # Two stepped lips read as a rolled wheel-arch edge.
+                m.box(TRIM, sign * (X + 0.01), yb + 0.035, (za + zb) * 0.5,
+                      0.05, 0.07, zb - za + 0.015)
+                m.box(TRIM, sign * (X - 0.035), yb - 0.005, (za + zb) * 0.5,
+                      0.04, 0.05, zb - za + 0.010)
         # Wheel well behind the arch so the body does not look hollow.
         m.box(TRIM, sign * 1.06, 0.55, (lo + hi) * 0.5, 0.04, 0.62, hi - lo)
 

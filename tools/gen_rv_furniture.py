@@ -20,6 +20,7 @@ import struct
 from pathlib import Path
 
 from rv_surfaces import face_uvs, surface_extras, surface_material
+from rv_geom import bevel_box
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "projects/rv/assets/models/rv"
@@ -53,27 +54,18 @@ class Mesh:
     def _group(self, mat):
         return self.groups.setdefault(mat, ([], [], [], []))
 
-    def box(self, mat, cx, cy, cz, sx, sy, sz):
-        hx, hy, hz = sx * 0.5, sy * 0.5, sz * 0.5
-        x0, x1 = cx - hx, cx + hx
-        y0, y1 = cy - hy, cy + hy
-        z0, z1 = cz - hz, cz + hz
-        faces = [
-            ((0, 0, 1), [(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]),
-            ((0, 0, -1), [(x1, y0, z0), (x0, y0, z0), (x0, y1, z0), (x1, y1, z0)]),
-            ((1, 0, 0), [(x1, y0, z1), (x1, y0, z0), (x1, y1, z0), (x1, y1, z1)]),
-            ((-1, 0, 0), [(x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0)]),
-            ((0, 1, 0), [(x0, y1, z1), (x1, y1, z1), (x1, y1, z0), (x0, y1, z0)]),
-            ((0, -1, 0), [(x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1)]),
-        ]
-        positions, normals, indices, uvs = self._group(mat)
-        for n, quad in faces:
-            base = len(positions)
-            for q in quad:
-                positions.append(q)
-                normals.append(n)
-            uvs.extend(face_uvs(quad, n))
-            indices.extend([base, base + 1, base + 2, base, base + 2, base + 3])
+    def box(self, mat, cx, cy, cz, sx, sy, sz, bevel=None):
+        bevel_box(self, mat, cx, cy, cz, sx, sy, sz, bevel)
+
+    def poly(self, mat, verts, normal):
+        pos, nrm, idx, uvs = self._group(mat)
+        base = len(pos)
+        for q in verts:
+            pos.append(q)
+            nrm.append(normal)
+        uvs.extend(face_uvs(verts, normal))
+        for i in range(1, len(verts) - 1):
+            idx.extend([base, base + i, base + i + 1])
 
     def ring(self, mat, cx, cy, cz, r0, r1, seg=12):
         """Flat annulus on the XZ plane (normal +Y)."""
