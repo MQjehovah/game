@@ -1138,7 +1138,7 @@ function drawJobPanel()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
   local rows = math.max(1, #jobOffers)
-  local pw, ph = 620, 158 + rows * 62 + 30
+  local pw, ph = 620, 158 + rows * 62 + 132
   local px = math.floor((vw - pw) * 0.5)
   local py = math.floor((vh - ph) * 0.5)
   DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.93)
@@ -1182,7 +1182,22 @@ function drawJobPanel()
              px + 64, yy + 28, 12, 0.78, 0.82, 0.76, 1)
     yy = yy + 62
   end
-  DrawText("1-3 接单   0 放弃当前合同   E 关闭", px + 20, py + ph - 26, 12,
-           0.70, 0.72, 0.66, 1)
+  -- 以物易物：把多余物资换成燃油/金属
+  if TRADES ~= nil then
+    DrawText("以物易物", px + 20, yy + 4, 14, 0.90, 0.84, 0.66, 1)
+    yy = yy + 26
+    for i, t in ipairs(TRADES) do
+      local ok2 = (tradeAvailable == nil) or tradeAvailable(t)
+      DrawRect(px + 16, yy - 4, pw - 32, 26,
+               ok2 and 0.08 or 0.11, 0.09, 0.06, 0.7)
+      DrawText("[" .. (i + 3) .. "]", px + 26, yy, 14,
+               ok2 and 0.95 or 0.55, ok2 and 0.85 or 0.55, 0.55, 1)
+      DrawText(t.name, px + 66, yy, 13,
+               ok2 and 0.90 or 0.60, ok2 and 0.88 or 0.62, 0.78, 1)
+      yy = yy + 30
+    end
+  end
+  DrawText("1-3 接单   0 放弃   4-6 以物易物   E 关闭", px + 20,
+           py + ph - 26, 12, 0.70, 0.72, 0.66, 1)
 end
 

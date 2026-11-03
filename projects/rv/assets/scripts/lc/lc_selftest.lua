@@ -1720,6 +1720,22 @@ function runSelfTest()
                      inv.fuelcan or 0))
   end
 
+  -- 营地板以物易物：布料→金属、电子件→燃油罐、金属→燃料
+  do
+    local sMetal = materials.metal or 0
+    materials.cloth = (materials.cloth or 0) + 3
+    local traded = doTrade(1)
+    local metalUp = (materials.metal or 0) == sMetal + 2
+    materials.electronics = (materials.electronics or 0) + 2
+    local cans0 = inv.fuelcan or 0
+    local traded2 = doTrade(2)
+    local canUp = (inv.fuelcan or 0) == cans0 + 1
+    ok(r, "camp barter", traded and metalUp and traded2 and canUp,
+       string.format("cloth->metal=%s elec->can=%s metal=%d cans=%d",
+                     tostring(metalUp), tostring(canUp),
+                     materials.metal or 0, inv.fuelcan or 0))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

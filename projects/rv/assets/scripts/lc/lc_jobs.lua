@@ -199,6 +199,48 @@ function jobPayText(pay)
   return table.concat(parts, " ")
 end
 
+-- 以物易物：材料够不够
+function tradeAvailable(t)
+  if t == nil then return false end
+  for mat, n in pairs(t.cost or {}) do
+    if (materials[mat] or 0) < n then return false end
+  end
+  return true
+end
+
+function doTrade(idx)
+  local t = TRADES and TRADES[idx]
+  if t == nil then return false end
+  if not tradeAvailable(t) then
+    toast.text = "材料不足：" .. t.name
+    toast.t = 2.2
+    return false
+  end
+  for mat, n in pairs(t.cost or {}) do
+    materials[mat] = (materials[mat] or 0) - n
+  end
+  local got = {}
+  for k, v in pairs(t.give or {}) do
+    if k == "fuel" then
+      local before = fuel or 0
+      fuel = math.min(VEH.tank, before + v)
+      got[#got + 1] = string.format("燃料+%dL", math.floor(fuel - before + 0.5))
+    elseif k == "item" then
+      local id = t.give.item
+      local n = t.give.n or 1
+      addItem(id, n)
+      got[#got + 1] = itemName(id) .. "+" .. n
+    else
+      materials[k] = (materials[k] or 0) + v
+      got[#got + 1] = (MAT_NAMES[k] or k) .. "+" .. v
+    end
+  end
+  toast.text = "交易：" .. t.name .. "  →  " .. table.concat(got, " ")
+  toast.t = 3.0
+  if PlaySfx then PlaySfx("pickup") end
+  return true
+end
+
 function jobOpenBoard()
   jobRefreshOffers()
   jobUI = true

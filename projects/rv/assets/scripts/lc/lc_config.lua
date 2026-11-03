@@ -139,6 +139,16 @@ STOP = {
   crates = 6, threatMax = 3, evacTime = 15, searchThreat = 1,
   keepRatio = 1.0, pickRadius = 30,
 }
+-- 营地板以物易物：把多余的搜刮物资换成燃油/金属，给后期材料一个出口
+TRADES = {
+  { id = "cloth_metal", name = "布料 x3 → 金属 x2",
+    cost = { cloth = 3 }, give = { metal = 2 } },
+  { id = "elec_can",    name = "电子件 x2 → 燃油罐 x1",
+    cost = { electronics = 2 }, give = { item = "fuelcan", n = 1 } },
+  { id = "metal_fuel",  name = "金属 x4 → 燃料 +12L",
+    cost = { metal = 4 }, give = { fuel = 12 } },
+}
+
 -- 每日目标（随天数刷新；完成给少量燃料/材料）
 DAILY_GOALS = {
   { id = "jobs",     name = "完成 2 单货运",       target = 2,   reward = { metal = 2, fuel = 8 } },

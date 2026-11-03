@@ -1382,6 +1382,9 @@ function on_update(ent, dt)
       if ActionPressed(tostring(i)) then jobAccept(i) end
     end
     if ActionPressed("0") then jobAbandon() end
+    if ActionPressed("4") and doTrade ~= nil then doTrade(1) end
+    if ActionPressed("5") and doTrade ~= nil then doTrade(2) end
+    if ActionPressed("6") and doTrade ~= nil then doTrade(3) end
     updateCamera(dt)
     return
   end
