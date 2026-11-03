@@ -1554,6 +1554,19 @@ function runSelfTest()
        string.format("stored=%d empty=%d gen=%d", on, off, gen))
   end
 
+  -- 生食材腐败：冰箱通电时保鲜更久
+  do
+    local noFridge = rawFoodAging(100, false)
+    local fridge = rawFoodAging(100, true)
+    addItem("rawfood", 2)
+    rawFoodAge = (SURVIVAL.rawSpoilMinutes or 2880) + 1
+    updateSurvival(0.01)
+    local spoiled = (inv.rawfood or 0) == 0 and (rawFoodAge or 1) == 0
+    ok(r, "raw food spoilage", noFridge > fridge and fridge > 0 and spoiled,
+       string.format("aging %.0f vs %.1f spoiled=%s", noFridge, fridge,
+                     tostring(spoiled)))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

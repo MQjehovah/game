@@ -55,6 +55,8 @@ SURVIVAL = {
   cookWater = 0.5,
   coffeeWater = 0.3,
   plantMinutes = 240,          -- 现实约 80 秒成熟
+  rawSpoilMinutes = 2880,      -- 生食材 2 游戏天后腐败
+  fridgeSpoilMul = 3,          -- 通电冰箱把腐败速度降到 1/3
   playerDamageCd = 1.5,
 }
 

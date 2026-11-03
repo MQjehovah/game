@@ -123,6 +123,16 @@ end
 function addItem(id, n)
   if ITEMS[id] == nil then return end
   inv[id] = (inv[id] or 0) + (n or 1)
+  if id == "rawfood" or id == "rawfish" then
+    rawFoodAge = 0
+    rawSpoilWarned = false
+  end
+end
+
+-- 生食材腐败速度：通电冰箱显著延缓
+function rawFoodAging(gm, fridgePowered)
+  local mul = fridgePowered and (1 / (SURVIVAL.fridgeSpoilMul or 3)) or 1
+  return (gm or 0) * mul
 end
 
 function itemCount(id)
@@ -298,6 +308,26 @@ function updateSurvival(dt)
   -- 雨天接水
   if weather == "rain" and water < SURVIVAL.waterMax then
     water = math.min(SURVIVAL.waterMax, water + 0.04 * gm)
+  end
+
+  -- 生食材腐败：通电冰箱显著延缓；放坏后整批清空
+  local rawCount = (inv.rawfood or 0) + (inv.rawfish or 0)
+  if rawCount > 0 then
+    local fridgeOn = hasModule("fridge") ~= nil and powerOk()
+    rawFoodAge = (rawFoodAge or 0) + rawFoodAging(gm, fridgeOn)
+    local limit = SURVIVAL.rawSpoilMinutes or 2880
+    if rawFoodAge >= limit then
+      inv.rawfood, inv.rawfish = nil, nil
+      rawFoodAge, rawSpoilWarned = 0, false
+      toast.text = "生食材放坏了——下次及时做饭，或放进通电的冰箱"
+      toast.t = 4.0
+    elseif rawFoodAge > limit * 0.75 and not rawSpoilWarned then
+      rawSpoilWarned = true
+      toast.text = "生食材快坏了——去灶台做饭，或放冰箱"
+      toast.t = 3.2
+    end
+  else
+    rawFoodAge, rawSpoilWarned = 0, false
   end
 
   updatePlants(dt)
