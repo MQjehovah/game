@@ -645,6 +645,13 @@ function campfireRestAvailable()
   return dx * dx + dz * dz < 3.4 * 3.4
 end
 
+-- 站在点燃的篝火旁（4m 内）会持续保暖，不限时段/地点
+function campfireWarmthNear(px, pz, fireX, fireZ, lit)
+  if not lit or fireX == nil or fireZ == nil then return false end
+  local dx, dz = (px or 0) - fireX, (pz or 0) - fireZ
+  return dx * dx + dz * dz < 4.0 * 4.0
+end
+
 -- 卫生对睡眠恢复的影响：干净时 100%，脏到 0 只剩 60%
 function hygieneEnergyFactor(h)
   local v = math.max(0, math.min(100, h or 0)) / 100
@@ -966,6 +973,12 @@ function updateSurvival(dt)
     needs.energy = math.min(100, needs.energy +
       (SURVIVAL.campfireRest or 0.10) * gm)
     warmthMin = campfireWarmthMinutes(warmthMin)
+  end
+  -- 任何时段站在点燃的篝火旁都会持续保暖
+  if onFoot and not buildMode and campfire ~= nil and
+     campfireWarmthNear(player.x, player.z, campfire.x, campfire.z,
+                        campfireOn ~= false) then
+    warmthMin = math.max(warmthMin or 0, 20)
   end
 
   if needs.hunger <= 0 or needs.thirst <= 0 then

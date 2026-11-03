@@ -4471,6 +4471,17 @@ function runSelfTest()
        string.format("health=%.0f camp=%s", gotHealth, tostring(campOk)))
   end
 
+  -- 站在点燃的篝火旁持续保暖：4m 内且点燃
+  do
+    local near = campfireWarmthNear(0, 0, 2, 2, true)
+    local far = campfireWarmthNear(0, 0, 10, 10, true)
+    local out = campfireWarmthNear(0, 0, 2, 2, false)
+    ok(r, "campfire warmth near",
+       near == true and far == false and out == false,
+       string.format("near=%s far=%s out=%s", tostring(near),
+                     tostring(far), tostring(out)))
+  end
+
   -- 营地篝火燃着时睡觉：额外保暖并提高体力恢复
   do
     local sd, sc, sa = day, clock, atNode
