@@ -1219,6 +1219,15 @@ function on_start()
     if c ~= nil then rv.x, rv.z = c.x, c.z end
     mapOpen = true
     setPhase("parked")
+  elseif startMode == "notemap" then
+    -- Test-only: reveal all note nodes so the map shows the note markers.
+    for _, def in ipairs(LORE_NOTES or {}) do
+      visitedPois[def.node] = true
+    end
+    local n = loreNotes and loreNotes[1] or nil
+    if n ~= nil then rv.x, rv.z = n.x, n.z end
+    mapOpen = true
+    setPhase("parked")
   elseif startMode == "raincab" then
     setWeather("rain")
     setPhase("driving")

@@ -689,6 +689,23 @@ function drawMinimap(vw, vh)
       end
     end
   end
+  -- 未读路牌笔记：已探索地点才标出
+  for _, n in ipairs(loreNotes or {}) do
+    if loreNoteMapVisible ~= nil and loreNoteMapVisible(n) then
+      local dx, dz = n.x - rv.x, n.z - rv.z
+      local d = math.sqrt(dx * dx + dz * dz)
+      local px2, py2
+      if d <= range then
+        px2, py2 = cx + dx * scale, cy - dz * scale
+      elseif d > 0.01 then
+        px2 = cx + dx / d * (size * 0.5 - 10)
+        py2 = cy - dz / d * (size * 0.5 - 10)
+      end
+      if px2 ~= nil then
+        DrawCircle(px2, py2, 2.5, 1.5, 0.95, 0.95, 0.88, 0.95, true)
+      end
+    end
+  end
   DrawLine(cx, cy, cx + math.sin(rv.yaw) * 10,
            cy - math.cos(rv.yaw) * 10, 2, 1.0, 0.85, 0.35, 1)
   DrawCircle(cx, cy, 3, 2, 1.0, 0.85, 0.35, 1, true)
@@ -1612,6 +1629,14 @@ function drawMapHud()
       local cx2, cy2 = mapXY(c.x, c.z)
       DrawCircle(cx2, cy2, 5, 1.5, 0.92, 0.72, 0.36, 0.95, false)
       drawTextCentered("补给箱", cx2, cy2 + 12, 10, 0.86, 0.72, 0.46, 1)
+    end
+  end
+  -- 未读路牌笔记：已探索地点才标出
+  for _, n in ipairs(loreNotes or {}) do
+    if loreNoteMapVisible ~= nil and loreNoteMapVisible(n) then
+      local nx2, ny2 = mapXY(n.x, n.z)
+      DrawCircle(nx2, ny2, 4, 1.5, 0.95, 0.95, 0.88, 0.95, true)
+      drawTextCentered("笔记", nx2, ny2 + 12, 10, 0.90, 0.90, 0.82, 1)
     end
   end
   DrawText("● 房车    ● 地点（越红越危险）  ? 未探索    — 公路    ◎ 货运目标",

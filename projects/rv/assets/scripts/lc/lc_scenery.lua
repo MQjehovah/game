@@ -2101,7 +2101,8 @@ function spawnLoreNotes()
         SetScale(e, 0.24, 0.03, 0.32)
         SetRotationY(e, i * 0.6)
         loreNotes[#loreNotes + 1] = {
-          ent = e, x = x, z = z, id = def.id, title = def.title }
+          ent = e, x = x, z = z, id = def.id, title = def.title,
+          node = def.node }
       end
     end
   end
@@ -2127,6 +2128,12 @@ function nearestLoreNote(x, z, maxDist)
     end
   end
   return best
+end
+
+-- 未读笔记是否标在地图上：需要该地点已经探索过
+function loreNoteMapVisible(note)
+  if note == nil or notesFound[note.id] then return false end
+  return visitedPois ~= nil and visitedPois[note.node] == true
 end
 
 function updateCampfireAudio(dt)

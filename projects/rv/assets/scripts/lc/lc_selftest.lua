@@ -4149,6 +4149,27 @@ function runSelfTest()
                      tostring(again)))
   end
 
+  -- 地图标记：只有已探索地点的未读笔记才显示
+  do
+    local n = loreNotes and loreNotes[1] or nil
+    local keepFound, keepVisited = notesFound, visitedPois
+    local shown, hiddenRead, hiddenUnvisited = false, false, false
+    if n ~= nil and n.node ~= nil then
+      notesFound, visitedPois = {}, { [n.node] = true }
+      shown = loreNoteMapVisible(n) == true
+      notesFound[n.id] = true
+      hiddenRead = loreNoteMapVisible(n) == false
+      notesFound = {}
+      visitedPois = {}
+      hiddenUnvisited = loreNoteMapVisible(n) == false
+    end
+    notesFound, visitedPois = keepFound, keepVisited
+    ok(r, "lore note map",
+       n ~= nil and shown and hiddenRead and hiddenUnvisited,
+       string.format("shown=%s read=%s unvisited=%s", tostring(shown),
+                     tostring(hiddenRead), tostring(hiddenUnvisited)))
+  end
+
   -- 地点特色掉落：数据完整，且物品都在 ITEMS 里
   do
     local function has(id, item)
