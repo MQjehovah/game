@@ -562,6 +562,8 @@ function drawMinimap(vw, vh)
         px2 = cx + dx / d * (size * 0.5 - 10)
         py2 = cy - dz / d * (size * 0.5 - 10)
       end
+      -- 从小地图中心（房车）到目标的路线线
+      DrawLine(cx, cy, px2, py2, 2, 0.92, 0.78, 0.36, 0.55)
       DrawCircle(px2, py2, 6, 1.5, 1.0, 0.80, 0.30, 1, false)
     end
   end
