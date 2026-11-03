@@ -364,6 +364,15 @@ function on_start()
     -- Test-only: print surface/grip/temperature while driving.
     local tl = ReadText("tire_log.txt")
     rv.tireLog = (tl ~= nil and tl ~= "")
+    -- Test-only: steering sweep demo (assist + self-centering) and log.
+    local sd = ReadText("steer_demo.txt")
+    if sd ~= nil and sd ~= "" then
+      rv.steerDemo = true
+      rv.steerLog = true
+      driveView = "chase"
+    end
+    local sl = ReadText("steer_log.txt")
+    if sl ~= nil and sl ~= "" then rv.steerLog = true end
   end
   ensureHelpers()
   initSurvival()
@@ -667,7 +676,7 @@ function on_start()
     trySpawnPoi()
     trySpawnPoi()
     mapOpen = true
-  elseif startMode == "drive" or startMode == "night_drive" or autoPilot then
+  elseif startMode == "drive" or startMode == "night_drive" or autoPilot or rv.steerDemo then
     setPhase("driving")
   elseif startMode == "utilroof" then
     -- Roof furniture is invisible from the ground; drive in chase view.
@@ -896,6 +905,7 @@ function on_update(ent, dt)
     if startMode == "chase" or startMode == "tiretest" then
       driveView = "chase"
     end
+    if rv.steerDemo then driveView = "chase" end
     if ActionPressed("c") then
       driveView = (driveView == "cab") and "chase" or "cab"
     end

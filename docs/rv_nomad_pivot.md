@@ -140,7 +140,10 @@
   纵向力曲线在 `|slip| = peak` 处达到 μ·N，之后回落到 `sat·μ·N`。
   `tireMuScale()` + 单点胎温（车速升温、滑移额外加热、冷/过热降 μ）
   与 `parts.tires` 磨损一起影响抓地；HUD 显示 `胎温 xx°C`。
-  纵向在后轮牵引、四轮制动。A/D 只给前轮转角（±0.5rad），
+  纵向在后轮牵引、四轮制动。A/D 只给前轮转角，`updateSteeringCommand()` 按
+  3.5 rad/s 逼近输入，松开后按 `steeringReturnRate()`（随车速与当前角增大）回正；
+  `steeringMaxAngle()` 把最大转角随车速从 ±0.55rad（静止）收窄到 ±0.30rad（≥10m/s），
+  合作服务器驾驶输入走同一条曲线。
   `ackermannAngles()` 让内侧前轮（0.55rad）比外侧（0.45rad）转得更多；
   偏航由轮胎横向力矩积分得到（5% 角速度阻尼），每帧用
   `rvYawPitchRollFromQuat()` 从车体四元数读回 yaw/pitch/roll；

@@ -150,6 +150,14 @@ function updateWheelMotion(dt)
   if rv.wheelSpin > math.pi * 2 or rv.wheelSpin < -math.pi * 2 then
     rv.wheelSpin = rv.wheelSpin % (math.pi * 2)
   end
+  if rv.steerLog then
+    rv.__steerN = (rv.__steerN or 0) + 1
+    if rv.__steerN % 15 == 1 then
+      print(string.format("[steer] cmd=%.2f vis=%.2f max=%.2f yaw=%.2f v=%.1f",
+        rv.steerCmd or 0, rv.steerVis or 0,
+        steeringMaxAngle(rv.speed or 0), rv.yaw, rv.speed or 0))
+    end
+  end
 end
 
 -- Per-wheel suspension + body attitude. Each contact samples terrainHeight at
@@ -485,6 +493,43 @@ function ackermannAngles(steer, wheelbase, track)
   local outer = math.atan(L / (r + half))
   if s > 0 then return inner, outer end
   return -outer, -inner
+end
+
+-- Speed-sensitive steering assist: full lock when parking, less lock at road
+-- speed so the RV does not twitch. Exposed for the self-test.
+function steeringMaxAngle(speed)
+  local s = math.abs(speed or 0)
+  local f = math.min(1.0, math.max(0.0, (s - 2.0) / 8.0))
+  return 0.55 - 0.25 * f -- 0.55 rad at rest, 0.30 rad at >=10 m/s
+end
+
+-- Self-centering rate (rad/s) for a released wheel: grows with speed and with
+-- the current angle, so parking is light and a fast lane change snaps back.
+function steeringReturnRate(speed, angle)
+  local s = math.min(1.0, math.max(0.0, (math.abs(speed or 0) - 0.3) / 5.0))
+  return (0.5 + 2.5 * s) * math.abs(angle or 0)
+end
+
+-- Advance the front-wheel command: input drives it at a rate limit, releasing
+-- it self-centers. Used by the single-player and co-op drivers.
+function updateSteeringCommand(input, dt)
+  local step = math.min(dt or 0.016, 0.05)
+  local speed = rv.speed or 0
+  local maxAng = steeringMaxAngle(speed)
+  local cur = rv.steerCmd or 0
+  local desired = (input or 0) * maxAng
+  local delta = desired - cur
+  local rate
+  if math.abs(input or 0) > 0.01 then
+    rate = 3.5 -- rad/s while the driver holds a direction
+  else
+    rate = steeringReturnRate(speed, cur)
+  end
+  local maxStep = rate * step
+  if delta > maxStep then delta = maxStep end
+  if delta < -maxStep then delta = -maxStep end
+  rv.steerCmd = cur + delta
+  return rv.steerCmd
 end
 
 -- Client-side wheel prediction: the chassis pose is replicated from the server,

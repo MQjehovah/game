@@ -385,6 +385,32 @@ function runSelfTest()
          math.abs(r2) > math.abs(l2) and r2 < -0.1,
          string.format("L/R=%.2f/%.2f mirror=%.2f/%.2f", l, rr, l2, r2))
     end
+    if steeringMaxAngle ~= nil then
+      local park = steeringMaxAngle(0)
+      local road = steeringMaxAngle(10)
+      ok(r, "rv steering assist",
+         park > 0.5 and road < 0.35 and road < park,
+         string.format("park=%.2f road=%.2f", park, road))
+    end
+    if updateSteeringCommand ~= nil and steeringReturnRate ~= nil then
+      local kCmd, kSpeed = rv.steerCmd, rv.speed
+      rv.speed = 9.0
+      rv.steerCmd = 0.4
+      updateSteeringCommand(0, 0.1)
+      local fast = rv.steerCmd
+      rv.speed = 0.5
+      rv.steerCmd = 0.4
+      updateSteeringCommand(0, 0.1)
+      local slow = rv.steerCmd
+      rv.speed = 3.0
+      rv.steerCmd = 0
+      for _ = 1, 40 do updateSteeringCommand(1, 0.05) end
+      local held = rv.steerCmd
+      ok(r, "rv steering self-center",
+         fast < slow and held > 0.4,
+         string.format("fast=%.2f slow=%.2f held=%.2f", fast, slow, held))
+      rv.steerCmd, rv.speed = kCmd, kSpeed
+    end
     if slipTraction ~= nil then
       local fwd = slipTraction(0.6, 3000, 0.5)
       local brake = slipTraction(0.6, 3000, -0.1)

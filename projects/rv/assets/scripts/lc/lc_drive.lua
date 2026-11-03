@@ -29,6 +29,17 @@ function updateDrive(dt)
   -- Positive yaw turns toward -X, which is screen-right when facing +Z, so
   -- D must subtract: A = +1 turns left, D = -1 turns right.
   local steer = (ActionDown("a") and 1 or 0) - (ActionDown("d") and 1 or 0)
+  if rv.steerDemo then
+    -- Test hook: drive forward and sweep the wheel left / release / right /
+    -- release so the assist + self-centering show up in the steering log.
+    rv.steerDemoT = (rv.steerDemoT or 0) + dt
+    local t = rv.steerDemoT
+    throttle = 1
+    if t < 1.2 then steer = 1
+    elseif t < 2.4 then steer = 0
+    elseif t < 3.4 then steer = -1
+    else steer = 0 end
+  end
   if autoPilot then
     driveT = driveT + dt
     if nearNode and nearNode.id ~= "camp" and driveT > 3.0 then
@@ -167,8 +178,13 @@ function updateDrive(dt)
   local physicalPath = rvBody ~= nil and updateRvPhysics ~= nil and
                        PhysicsApplyImpulse ~= nil and terrainHeight ~= nil
   if physicalPath then
-    -- Steering is a wheel angle; yaw comes from the tire forces.
-    rv.steerCmd = steer * 0.50
+    -- Steering is a wheel angle; yaw comes from the tire forces. The command
+    -- is speed-sensitive and self-centers when the driver lets go.
+    if updateSteeringCommand ~= nil then
+      rv.steerCmd = updateSteeringCommand(steer, dt)
+    else
+      rv.steerCmd = steer * 0.50
+    end
   else
     rv.steerCmd = nil
     local sf = math.min(1.0, math.abs(rv.speed) / 3.0)

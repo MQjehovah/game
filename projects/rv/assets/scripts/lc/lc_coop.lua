@@ -923,7 +923,12 @@ local function serverUpdate(dt)
     local target = driver.f * RV_SPEED
     rv.speed = rv.speed + (target - rv.speed) * math.min(1, dt * 2.5)
     -- D (driver.s = +1) steers right, so the front-wheel angle is negative.
-    rv.steerCmd = -driver.s * 0.50
+    -- The same assist/self-centering curve is used on the authoritative server.
+    if updateSteeringCommand ~= nil then
+      rv.steerCmd = updateSteeringCommand(-driver.s, dt)
+    else
+      rv.steerCmd = -driver.s * 0.50
+    end
     local physical = false
     if rvBody ~= nil and updateRvPhysics ~= nil and
        rv.wheelBodies ~= nil and PhysicsApplyImpulse ~= nil then
