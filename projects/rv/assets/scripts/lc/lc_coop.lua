@@ -562,6 +562,7 @@ local function pushState()
     oil = math.floor(oilLife or 100),
     warm = math.floor(warmthMin or 0),
     rest = math.floor(restedMin or 0),
+    chains = (chainsOn ~= false) and 1 or 0,
     notes = notesMask(),
   })
 end
@@ -800,6 +801,11 @@ local function serverHandleCommand(clientId, a)
                         tostring(okWater), water or 0,
                         windmillWaterMin or 0))
     if okWater then setToast("风车水泵接了一些水") end
+    pushState()
+  elseif t == "toggle_chains" then
+    chainsOn = not (chainsOn ~= false)
+    print(string.format("[coop-chains] on=%s", tostring(chainsOn)))
+    setToast(chainsOn and "已装上防滑链" or "已取下防滑链")
     pushState()
   elseif t == "vending" then
     local okBuy = false
@@ -1348,6 +1354,15 @@ local function serverUpdate(dt)
     pushState()
   end
 
+  -- Test-only co-op chains toggle.
+  if coop.chainsDemo and not coop.chainsDemoDone and coop.autoT >= 3.0 then
+    coop.chainsDemoDone = true
+    chainsOn = true
+    chainsOn = not (chainsOn ~= false)
+    print(string.format("[coop-chains] demo on=%s", tostring(chainsOn)))
+    pushState()
+  end
+
   -- Test-only co-op roadside cache: stand by the first cache and loot it.
   if coop.cacheDemo and not coop.cacheDemoDone and coop.autoT >= 3.0 then
     coop.cacheDemoDone = true
@@ -1889,6 +1904,9 @@ local function applyState(s)
   if s.rest ~= nil and setRested ~= nil then
     setRested(s.rest)
   end
+  if s.chains ~= nil then
+    chainsOn = (s.chains == 1 or s.chains == true)
+  end
   if type(s.notes) == "string" then
     for i, d in ipairs(LORE_NOTES or {}) do
       notesFound[d.id] = (s.notes:sub(i, i) == "1")
@@ -2186,6 +2204,7 @@ local function clientUpdate(dt)
     if ActionPressed("t") then Rpc("game_cmd", { type = "firewood" }) end
     if ActionPressed("v") then Rpc("game_cmd", { type = "berry" }) end
     if ActionPressed("z") then Rpc("game_cmd", { type = "pond_trap" }) end
+    if ActionPressed("j") then Rpc("game_cmd", { type = "toggle_chains" }) end
     if coop.highDemo and not coop.highDemoDone then
       coop.highDemoT = (coop.highDemoT or 0) + dt
       if coop.highDemoT >= 3.0 and GetVar("netConnected") == 1 then
@@ -2668,6 +2687,7 @@ function coopInitWorld(role)
     coop.waterDemo = readFlag("coop_water.txt")
     coop.noteDemo = readFlag("coop_note.txt")
     coop.vendingDemo = readFlag("coop_vending.txt")
+    coop.chainsDemo = readFlag("coop_chains.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2792,6 +2812,7 @@ function coopInitWorld(role)
     coop.waterDemo = readFlag("coop_water.txt")
     coop.noteDemo = readFlag("coop_note.txt")
     coop.vendingDemo = readFlag("coop_vending.txt")
+    coop.chainsDemo = readFlag("coop_chains.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")

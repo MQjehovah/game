@@ -112,7 +112,7 @@
 - **首次进入提示**：没有存档的新旅程会在顶部横幅下方显示 12 秒
   “P 操作说明 · J 旅行日志 · K 鱼类图鉴 · M 地图”，降低上手门槛；
   截图 `start_mode=newgame`。
-- **天气**：晴 / 阴 / 雨 / 雾 / 雪，随游戏时间变化；雨雾雪天驾驶极速下降，雨天有 3D 雨丝、太阳能降到 25%、水箱缓慢接雨水，雪天有飘落雪花与地面积雪斑块、太阳能降到 30%。雨天路面抓地 ×0.82、雪天 ×0.78（`weatherGripScale`；带防滑链提高到 0.95/0.92，但干燥铺装路上车速 ×0.95 作为权衡），湿滑时刹车/过弯更容易推头；雪天没开取暖器时体力额外 -0.02/游戏分钟（吃热饭/热汤获得 30–45 分钟保暖可免疫，状态面板显示 `暖和 xx 分钟`）；下雪且未带防滑链时，天气提示会建议去营地兑换（`snowChainHint`）；雪地步行速度 ×0.85、雨天 ×0.95（`walkSpeedScale`）；带上防滑链后，步行按 `C` 可取下/装上，取下后雨雪抓地不再加成、干路也不再减速（`chainsOn`）；自检 `wet road grip` / `snow weather` / `snow patches` / `snow chains` / `snow chain hint` / `snow cold` / `warm meal` / `warmth status` / `chains tradeoff` / `chains toggle` / `walk weather speed`。
+- **天气**：晴 / 阴 / 雨 / 雾 / 雪，随游戏时间变化；雨雾雪天驾驶极速下降，雨天有 3D 雨丝、太阳能降到 25%、水箱缓慢接雨水，雪天有飘落雪花与地面积雪斑块、太阳能降到 30%。雨天路面抓地 ×0.82、雪天 ×0.78（`weatherGripScale`；带防滑链提高到 0.95/0.92，但干燥铺装路上车速 ×0.95 作为权衡），湿滑时刹车/过弯更容易推头；雪天没开取暖器时体力额外 -0.02/游戏分钟（吃热饭/热汤获得 30–45 分钟保暖可免疫，状态面板显示 `暖和 xx 分钟`）；下雪且未带防滑链时，天气提示会建议去营地兑换（`snowChainHint`）；雪地步行速度 ×0.85、雨天 ×0.95（`walkSpeedScale`）；带上防滑链后，步行按 `C` 可取下/装上，取下后雨雪抓地不再加成、干路也不再减速（`chainsOn`；联机客机按 `J` 由服务端切换）；自检 `wet road grip` / `snow weather` / `snow patches` / `snow chains` / `snow chain hint` / `snow cold` / `warm meal` / `warmth status` / `chains tradeoff` / `chains toggle` / `walk weather speed`。
 - **真实昼夜**：场景太阳光的强度/颜色随游戏时间变化（黄昏变暖、夜晚变暗），不是单纯屏幕遮罩。
 - **零件磨损**：引擎/轮胎/电瓶按里程磨损；引擎影响极速与加速，轮胎影响转向；引擎低于 10% 只能龟速，轮胎低于 10% 转向严重迟钝，并弹出警告。
 
@@ -859,6 +859,8 @@
   `[coop-note] demo ok=true mask=100000`，验证联机笔记读取与同步。
 - `coop_vending.txt`：服务端 3s 站到加油站售货机旁购买，日志
   `[coop-vending] demo ok=true metal=212`，验证联机售货机。
+- `coop_chains.txt`：服务端 3s 切换防滑链，日志
+  `[coop-chains] demo on=false`，验证联机防滑链由服务端权威切换。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /
