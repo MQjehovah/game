@@ -114,6 +114,7 @@ function updateDriveWorld(dt)
     SetRotationY(z.ent, dirYaw(dx, dz))
     if dist < 2.0 and math.abs(rv.speed) > 1 then
       dur = math.max(0, dur - 3)
+      if PlaySfx then PlaySfx("hurt") end
       EmitParticles({ pos = { x = z.x, y = 1.0, z = z.z }, count = 12,
                       speedMin = 1, speedMax = 3.5, lifeMin = 0.3, lifeMax = 0.6,
                       sizeStart = 0.2, sizeEnd = 0.05,

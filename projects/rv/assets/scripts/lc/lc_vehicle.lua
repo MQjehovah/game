@@ -366,6 +366,8 @@ end
 -- ===========================================================================
 function rvImpactFeedback(drop)
   rv.shakeT = math.min(0.50, 0.12 + (drop or 0) * 0.035)
+  rv.impactSfx = "hurt"
+  if PlaySfx then PlaySfx("hurt") end
   local wx, wz = rotOf(0, 3.58)
   local gy = rv.groundY or 0
   EmitParticles({
