@@ -442,6 +442,13 @@ function updateReverseBeep(dt)
 end
 
 -- 引擎水温：高速/重载升温，低速/怠速散热；过热时限制最高车速并缓慢磨损引擎
+-- 冷却液不足提示：低于 20% 时提醒去加油站补充
+function coolantLowText(value)
+  local c = value or 100
+  if c >= 20 then return nil end
+  return string.format("冷却液不足（%.0f%%）——尽快到加油站补充，否则容易过热", c)
+end
+
 -- 冷却液越低，升温越快（最低时热度 ×1.5）
 function coolantHeatScale(v)
   local c = v or 100
@@ -929,6 +936,16 @@ function updateDrive(dt)
     end
   elseif (oilLife or 100) > 20 then
     rv.oilWearWarned = false
+  end
+
+  -- 冷却液不足：提醒一次，冷却后可再次提醒
+  local coolWarn = coolantLowText(coolant)
+  if coolWarn ~= nil and not rv.coolantWarned then
+    rv.coolantWarned = true
+    toast.text = coolWarn
+    toast.t = 3.6
+  elseif (coolant or 100) >= 35 then
+    rv.coolantWarned = false
   end
 
   -- 刹车热衰减：连续重刹累积热量，松开后缓慢冷却

@@ -1798,6 +1798,17 @@ function runSelfTest()
                      full, low, need, tostring(refilled)))
   end
 
+  -- 冷却液不足提示：低于 20% 才提示
+  do
+    local low = coolantLowText(10)
+    local edge = coolantLowText(20)
+    local okCool = coolantLowText(60)
+    ok(r, "coolant low hint",
+       low ~= nil and edge == nil and okCool == nil,
+       string.format("low=%s edge=%s ok=%s", tostring(low),
+                     tostring(edge), tostring(okCool)))
+  end
+
   -- 机油劣化增加油耗（最高 +8%）
   do
     local full = engineOilFuelScale(100)
