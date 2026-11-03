@@ -1364,6 +1364,46 @@ function spawnPuddles()
   end
 end
 
+-- 白天野兔：在草甸上绕当前区域慢慢蹦跳，夜间隐藏
+function rabbitsActive()
+  return not (isNight ~= nil and isNight())
+end
+
+function spawnRabbits()
+  rabbits = {}
+  for i = 1, 5 do
+    local e = SpawnPrefab("rv_rabbit", { x = 0, y = -60, z = 0 })
+    if e ~= nil then
+      SetScale(e, 0.26, 0.22, 0.34)
+      rabbits[#rabbits + 1] = {
+        ent = e,
+        angle = math.random() * math.pi * 2,
+        radius = 5 + math.random() * 9,
+        speed = 0.12 + math.random() * 0.15,
+        phase = math.random() * math.pi * 2,
+      }
+    end
+  end
+end
+
+function updateRabbits(dt)
+  if #rabbits == 0 then return end
+  local active = rabbitsActive()
+  rabbitsT = (rabbitsT or 0) + dt
+  for _, r in ipairs(rabbits) do
+    SetVisible(r.ent, active)
+    if active then
+      r.angle = r.angle + r.speed * dt
+      local x = rv.x + math.cos(r.angle) * r.radius
+      local z = rv.z + math.sin(r.angle) * r.radius
+      local gy = (terrainHeight and terrainHeight(x, z)) or 0
+      local hop = math.abs(math.sin(rabbitsT * 5 + r.phase)) * 0.16
+      SetPosition(r.ent, { x = x, y = gy + 0.12 + hop, z = z })
+      SetRotationY(r.ent, -r.angle + math.pi * 0.5)
+    end
+  end
+end
+
 -- 农场风车：4 片叶片绕轮毂旋转
 function updateWindmill(dt)
   if windmill == nil or #(windmill.blades or {}) == 0 then return end

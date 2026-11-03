@@ -1659,6 +1659,19 @@ function runSelfTest()
                      tostring(ids.cook), tostring(ids.repair)))
   end
 
+  -- 野兔：白天活跃、夜间隐藏
+  do
+    local sc = clock
+    clock = 12 * 60
+    local day = rabbitsActive()
+    clock = 22 * 60
+    local night = rabbitsActive()
+    clock = sc
+    ok(r, "rabbits day cycle", #rabbits >= 4 and day == true and night == false,
+       string.format("rabbits=%d day=%s night=%s", #rabbits,
+                     tostring(day), tostring(night)))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
