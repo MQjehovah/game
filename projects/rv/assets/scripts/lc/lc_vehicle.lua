@@ -277,8 +277,9 @@ function setRvHeadlights(on)
   if rvParts == nil then return end
   if on then
     if #rvHeadlights > 0 then return end
+    local pre = highBeam and "rv_headlight_high" or "rv_headlight"
     for _, h in ipairs(HEADLIGHTS) do
-      local e = SpawnPrefab("rv_headlight", { x = rv.x, y = -60, z = rv.z })
+      local e = SpawnPrefab(pre, { x = rv.x, y = -60, z = rv.z })
       if e ~= nil then
         SetScale(e, 0.24, 0.17, 0.07)
         local part = { ent = e, name = "headlight", lx = h[1], ly = h[2], lz = h[3] }
@@ -297,6 +298,17 @@ function setRvHeadlights(on)
     end
     rvHeadlights = {}
   end
+end
+
+-- 远光切换：重建灯实体以套用高亮 prefab（引擎不提供运行时改灯光参数）
+function toggleHighBeam()
+  highBeam = not highBeam
+  if #rvHeadlights > 0 then
+    setRvHeadlights(false)
+    setRvHeadlights(true)
+  end
+  toast.text = highBeam and "远光灯已打开（H 关闭）" or "远光灯已关闭（H 打开）"
+  toast.t = 2.0
 end
 
 -- driving: 单机用 phase，联机由调用方传入“是否有人在开/车在动”

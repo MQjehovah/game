@@ -1233,6 +1233,24 @@ function runSelfTest()
     ok(r, "roadside debris", n >= 4, string.format("debris=%d", n))
   end
 
+  -- 远光灯：切换后按高亮 prefab 重建两盏灯
+  do
+    local sc, sh = clock, highBeam
+    clock = 22 * 60
+    highBeam = false
+    setRvHeadlights(false)
+    setRvHeadlights(true)
+    local low = #rvHeadlights
+    toggleHighBeam()
+    local high = #rvHeadlights
+    toggleHighBeam()
+    local back = #rvHeadlights
+    setRvHeadlights(false)
+    clock, highBeam = sc, sh
+    ok(r, "rv high beam", low == 2 and high == 2 and back == 2 and highBeam == false,
+       string.format("low=%d high=%d back=%d", low, high, back))
+  end
+
   -- 存读档：行程/探索/货运单数
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

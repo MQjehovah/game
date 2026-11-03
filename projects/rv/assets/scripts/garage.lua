@@ -640,7 +640,8 @@ function on_start()
     px, pz = 5.6, -18.0
     pyaw = dirYaw(-1.4, 12.0)
   end
-  if startMode == "nightbeam" or startMode == "nightoff" then
+  if startMode == "nightbeam" or startMode == "nightoff" or
+     startMode == "nightbeam_high" then
     -- Test-only: stand in front of the RV at night so the headlight cones
     -- point back toward the camera and the lit road is visible.
     px, pz = 7.4, 7.6
@@ -867,9 +868,20 @@ function on_start()
     clock = 22 * 60
     setPhase("driving")
     driveView = "chase"
+  elseif startMode == "highbeam" then
+    clock = 22 * 60
+    highBeam = true
+    setPhase("driving")
+    driveView = "chase"
   elseif startMode == "nightbeam" then
     clock = 22 * 60
     rv.forceHeadlights = true
+    flashlightOn = false
+  elseif startMode == "nightbeam_high" then
+    clock = 22 * 60
+    rv.forceHeadlights = true
+    highBeam = true
+    flashlightOn = false
   elseif startMode == "nightoff" then
     clock = 22 * 60
   elseif startMode == "jobmarker" then
@@ -1158,6 +1170,7 @@ function on_update(ent, dt)
     toast.text = flashlightOn and "手电已打开（F 关闭）" or "手电已关闭（F 打开）"
     toast.t = 2.0
   end
+  if ActionPressed("h") and toggleHighBeam ~= nil then toggleHighBeam() end
   if updateFlashlight ~= nil then updateFlashlight() end
   if hitMarkT > 0 then hitMarkT = hitMarkT - dt end
   if recoilT > 0 then recoilT = recoilT - dt end

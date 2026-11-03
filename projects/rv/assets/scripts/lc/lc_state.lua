@@ -72,6 +72,7 @@ campfireLightT = 0
 visitedPois = {}              -- 已首次抵达的地点（探索奖励去重）
 visitedCount = 0
 interiorLightsOn = true       -- 车内灯开关（L）
+highBeam = false             -- 远光灯（H）
 flashlightOn = true           -- 手电筒开关（F）
 flashlightEnt = nil           -- 手电筒聚光灯实体
 tripDistance, tripFuel = 0, 0 -- 行程统计：米 / 升
