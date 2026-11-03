@@ -1117,7 +1117,20 @@ local function serverUpdate(dt)
     coop.rv.groundY = rv.groundY or 0
     coop.rv.pitch = rv.pitch or 0
     coop.rv.roll = rv.roll or 0
-    fuel = math.max(0, fuel - math.abs(rv.speed) * dt * 0.03)
+    local loadRatio = (stats.weight or 0) /
+                      ((weightMax and weightMax()) or WEIGHT_MAX)
+    local meters = math.abs(rv.speed) * dt
+    if fuelBurnRate ~= nil then
+      fuel = math.max(0, fuel - fuelBurnRate(rv.speed or 0, loadRatio,
+                                             driver and driver.f or 0) * dt)
+    else
+      fuel = math.max(0, fuel - meters * 0.03)
+    end
+    if meters > 0 then
+      tripDistance = (tripDistance or 0) + meters
+      if addDailyProgress ~= nil then addDailyProgress("distance", meters) end
+      if checkMilestones ~= nil then checkMilestones("distance", tripDistance) end
+    end
     applyRvTransform()
     -- Only players who actually boarded ride with the RV; outside players are
     -- left where they stood (they can walk after the RV stops).
