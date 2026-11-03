@@ -957,7 +957,7 @@ function updateRvPhysics(dt)
                           { x = wx, y = wy, z = wz })
       nForce = math.max(0, SUSP_K * compression)
       local surfName, surfDef = surfaceInfo(wx, wz)
-      mu = surfDef.mu * tireMuScale(rv.tireTemps[i], rv.tireWear[i])
+      mu = surfDef.mu * tireMuScale(rv.tireTemps[i], rv.tireWear[i]) * (weatherGripScale and weatherGripScale() or 1.0)
       rv.__surfDef = surfDef
       surfLast = surfName
       s.plane[i] = ground - (p.y - 0.9)
@@ -984,7 +984,7 @@ function updateRvPhysics(dt)
                           { x = wx, y = wy, z = wz })
       nForce = math.max(0, SUSP_K * compression)
       local surfName, surfDef = surfaceInfo(wx, wz)
-      mu = surfDef.mu * tireMuScale(rv.tireTemps[i], rv.tireWear[i])
+      mu = surfDef.mu * tireMuScale(rv.tireTemps[i], rv.tireWear[i]) * (weatherGripScale and weatherGripScale() or 1.0)
       rv.__surfDef = surfDef
       surfLast = surfName
       s.plane[i] = ground - (p.y - 0.9)

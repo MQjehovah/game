@@ -43,6 +43,12 @@ function rollWeather()
   return "clear"
 end
 
+-- 雨天路面抓地折减（只对下雨生效；雾天路面不一定湿）
+function weatherGripScale()
+  if weather == "rain" then return 0.82 end
+  return 1.0
+end
+
 -- 夜间萤火虫发射率（/s）：深夜且非雨天；自检/调参用
 function fireflyRate()
   if weather == "rain" then return 0 end

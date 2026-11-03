@@ -1307,6 +1307,20 @@ function runSelfTest()
        string.format("%s %.0fcm best=%.0f", tostring(name), size, bestFish or 0))
   end
 
+  -- 雨天路面抓地折减（与极速惩罚叠加）
+  do
+    local sw = weather
+    weather = "rain"
+    local wet = weatherGripScale()
+    weather = "clear"
+    local dry = weatherGripScale()
+    weather = "fog"
+    local fog = weatherGripScale()
+    weather = sw
+    ok(r, "wet road grip", wet < 0.9 and dry == 1.0 and fog == 1.0,
+       string.format("rain=%.2f clear=%.2f fog=%.2f", wet, dry, fog))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
