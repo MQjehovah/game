@@ -1634,21 +1634,31 @@ function runSelfTest()
     dailyGoal = keep
   end
 
-  -- 雨天积水：下雨生成、雨停清除
+  -- 雨天积水：下雨生成、雨停清除、车开远后重新铺设
   do
     local sw = weather
+    local sx, sz = rv.x, rv.z
     weather = "clear"
     updatePuddles(0)
     local dry = #puddles
     weather = "rain"
     updatePuddles(0)
     local wet = #puddles
+    local recycled = false
+    if wet > 0 then
+      puddleCenter = { x = rv.x + 80, z = rv.z + 80 }
+      updatePuddles(0)
+      recycled = puddleCenter ~= nil and
+                 math.abs((puddleCenter.x or 0) - rv.x) < 0.01
+    end
     weather = "clear"
     updatePuddles(0)
     local after = #puddles
     weather = sw
-    ok(r, "rain puddles", dry == 0 and wet >= 4 and after == 0,
-       string.format("dry=%d wet=%d after=%d", dry, wet, after))
+    rv.x, rv.z = sx, sz
+    ok(r, "rain puddles", dry == 0 and wet >= 4 and recycled and after == 0,
+       string.format("dry=%d wet=%d recycled=%s after=%d", dry, wet,
+                     tostring(recycled), after))
   end
 
   -- 农场风车：4 片叶片且会旋转

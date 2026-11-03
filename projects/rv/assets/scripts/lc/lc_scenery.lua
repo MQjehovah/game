@@ -1387,6 +1387,7 @@ end
 function spawnPuddles()
   for _, p in ipairs(puddles) do Despawn(p.ent) end
   puddles = {}
+  puddleCenter = { x = rv.x, z = rv.z }
   for i = 1, 7 do
     local a = math.random() * math.pi * 2
     local r = 4 + math.random() * 15
@@ -1462,10 +1463,16 @@ end
 
 function updatePuddles(dt)
   if weather == "rain" then
-    if #puddles == 0 then spawnPuddles() end
+    if #puddles == 0 then
+      spawnPuddles()
+    elseif puddleCenter ~= nil then
+      local dx, dz = rv.x - (puddleCenter.x or rv.x), rv.z - (puddleCenter.z or rv.z)
+      if dx * dx + dz * dz > 32 * 32 then spawnPuddles() end
+    end
   elseif #puddles > 0 then
     for _, p in ipairs(puddles) do Despawn(p.ent) end
     puddles = {}
+    puddleCenter = nil
   end
 end
 

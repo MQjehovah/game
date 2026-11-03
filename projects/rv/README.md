@@ -385,7 +385,8 @@
   （`windshieldDropCount`），与 3D 雨丝、屏幕雨线叠加；追逐视角不显示；
   自检 `windshield rain drops`，截图 `start_mode=raincab`。
 - **雨后积水**：下雨时在房车周围 4–19m 随机铺 7 块反光水洼
-  （`rv_puddle`，高金属度/低粗糙度），雨停自动清除；自检 `rain puddles`。
+  （`rv_puddle`，高金属度/低粗糙度），雨停自动清除；房车开远 32m 会
+  在新位置重新铺设，不会一路留在身后；自检 `rain puddles`。
 - **雨天闪电**：雨中每 8–20s 触发一次全屏冷白闪光（0.5s 内衰减，HUD 层绘制，
   不影响光照状态），给雨夜驾驶加节奏；自检 `rv lightning flash`。
 - **夜间萤火虫**：深夜且非雨天在玩家/房车周围 3–13m 生成暖绿微光（6/s，
