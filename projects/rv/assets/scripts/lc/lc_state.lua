@@ -75,6 +75,7 @@ roadShoulders = {}            -- 主路两侧的土肩
 roadDebris = {}               -- 主路两侧的废弃车/石块
 roadDebrisColliders = 0       -- 已添加的静态碰撞盒数量
 hayBales = {}                 -- 农场谷仓外的干草捆
+waterTowers = {}              -- 小镇水塔地标
 windmill = nil                -- 农场风车 {x,y,z,angle,blades}
 poiSigns = {}                 -- POI 门头招牌
 poiSignsLit = nil

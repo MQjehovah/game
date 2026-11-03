@@ -975,6 +975,39 @@ function poiDoorBlocking(ndId)
 end
 
 -- 简易路边建筑：一个带门洞/窗的废弃小屋（纯装饰，原型级）
+-- 小镇水塔：4 条支架 + 圆柱水箱 + 顶盖，夜里可作地标
+function spawnWaterTower(x, z)
+  local gy = (terrainHeight and terrainHeight(x, z)) or 0
+  local tower = { x = x, z = z, parts = {} }
+  for _, off in ipairs({ { -1.15, -1.15 }, { 1.15, -1.15 },
+                         { -1.15, 1.15 }, { 1.15, 1.15 } }) do
+    local e = SpawnPrefab("rv_powerpole", { x = x + off[1], y = gy + 2.1,
+                                            z = z + off[2] })
+    if e ~= nil then
+      SetScale(e, 0.16, 4.2, 0.16)
+      tower.parts[#tower.parts + 1] = e
+    end
+  end
+  local tank = SpawnPrefab("rv_furn_water_tank", { x = x, y = gy + 5.2, z = z })
+  if tank ~= nil then
+    SetScale(tank, 3.0, 2.2, 3.0)
+    tower.parts[#tower.parts + 1] = tank
+  end
+  local cap = SpawnPrefab("rv_panel_dark", { x = x, y = gy + 6.45, z = z })
+  if cap ~= nil then
+    SetScale(cap, 3.3, 0.16, 3.3)
+    tower.parts[#tower.parts + 1] = cap
+  end
+  local ladder = SpawnPrefab("rv_camp_wood", { x = x + 1.15, y = gy + 2.6,
+                                               z = z })
+  if ladder ~= nil then
+    SetScale(ladder, 0.10, 5.0, 0.10)
+    tower.parts[#tower.parts + 1] = ladder
+  end
+  waterTowers[#waterTowers + 1] = tower
+  return tower
+end
+
 function spawnRuinFor(nd)
   if nd.ruinSpawned then return end
   nd.ruinSpawned = true
@@ -995,6 +1028,7 @@ function spawnRuinFor(nd)
   local isFarm = (nd.id == "farm") or (nm:find("农场") ~= nil)
   local isMall = (nd.id == "mall") or (nm:find("商场") ~= nil)
   local isCabin = (nd.id == "lakecamp") or (nm:find("营地") ~= nil)
+  local isTown = (nd.id == "town") or (nm:find("小镇") ~= nil)
   local isClinic = (nd.id == "clinic") or (nm:find("诊所") ~= nil) or
                    (nm:find("医院") ~= nil)
   if nd.id == "ruin" or nd.id == "gasstop" or nd.id == "depot" or
@@ -1119,6 +1153,11 @@ function spawnRuinFor(nd)
     end
     spawnPoiWindows(nd)
     return
+  end
+
+  -- 小镇水塔：作为远处可辨认的地标（放在建筑群侧面，不挡门）
+  if isTown then
+    spawnWaterTower(cx + 8.5, cz - 5.5)
   end
 
   poiShellParts = poiShellParts or {}

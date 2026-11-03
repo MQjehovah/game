@@ -1968,6 +1968,14 @@ function runSelfTest()
     ok(r, "distance milestone", awarded and hintOk, hint)
   end
 
+  -- 小镇水塔：支架+水箱+顶盖
+  do
+    local n = #waterTowers
+    local parts = (n > 0) and #(waterTowers[n].parts or {}) or 0
+    ok(r, "town water tower", n >= 1 and parts >= 6,
+       string.format("towers=%d parts=%d", n, parts))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

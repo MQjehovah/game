@@ -876,6 +876,15 @@ function on_start()
       end
     end
   end
+  if startMode == "townview" then
+    -- Test-only: look at the town water tower from the south.
+    local nd = nodeById("town")
+    if nd ~= nil then
+      local cx, cz = poiCenter(nd)
+      px, pz = cx + 8.5, cz + 9.0
+      pyaw = dirYaw(0, -14.5)
+    end
+  end
   if startMode == "mall" then
     -- 购物中心店门口
     local nd = nodeById("mall")
@@ -921,6 +930,7 @@ function on_start()
   elseif startMode == "texbody" then player.pitch = 0.05
   elseif startMode == "poinight" then player.pitch = 0.14
   elseif startMode == "windmillview" then player.pitch = 0.28
+  elseif startMode == "townview" then player.pitch = 0.20
   end
   SetVar("cameraMouseLock", 1)
   updateInteraction()
