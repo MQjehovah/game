@@ -223,11 +223,14 @@
   中央双层零食货架、玻璃门冷柜、咖啡机 + 杯堆 + 调料架、带屏幕/键盘/小票的收银机、
   挂式价牌、壁钟、购物篮堆；四柱雨棚 + 两台加油机；`gasstop` 和所有“加油站”地点
   生成该 glTF。
-- `assets/models/rv/rv_window_glass.gltf` / `rv_window_shard.gltf`
-  （`tools/gen_rv_windows.py`）：半透明 BLEND 玻璃面板 + 玻璃碎片；
+- `assets/models/rv/rv_window_glass.gltf` / `rv_glass_frag1..5.gltf`
+  （`tools/gen_rv_windows.py` / `tools/gen_rv_glass_frags.py`）：半透明 BLEND 玻璃面板 +
+  5 种不规则碎片网格（三角/四边/五边薄棱柱，带轻微倾角）；
   `lc_scenery.spawnPoiWindows()` 按 POI 类型（商店/加油站/仓库/商场/湖边木屋/诊所）
-  生成对应尺寸的两扇前窗面板，`breakPoiWindowsAt()` 在玩家进入或攻击时把面板替换为
-  16 块重力下落的碎片，`updatePoiWindows()` 负责弹跳与回收。
+  生成对应尺寸的两扇前窗面板，`breakPoiWindowsAt()` 在玩家进入或攻击时按固定 3×3
+  裂纹布局把每扇面板分离为 9 块碎片（共 18 块），`updatePoiWindows()` 施加向外 +
+  重力速度、落地弹跳并让碎片永久留在地面；服务器把 `glass=<id 列表>` 写入
+  `game_state`，客户端据此播放同一套碎片。
 - `assets/models/rv/rv_products.png`（`tools/gen_rv_product_atlas.py`）：4×4 商品包装
   图集（品牌条/标签文字/色带/条码）；`tools/rv_atlas.py` 提供 UV 映射，商店/加油站/
   商场/仓库/农场/诊所/湖边木屋的商品盒/托盘/货箱/药盒/补给箱使用 `*_product` 材质 +
@@ -304,9 +307,9 @@
    合作建造仍是网格模式（还不是单机的无网格自由摆放），也还没有每名玩家的独立物品所有权。
 2. **家具自由摆放**：已改为第一人称无网格自由放置 + AABB/车内边界校验。
 3. **美术**：房车外壳/车内仍是程序化低多边形 glTF + Kenney 家具，缺少高精度车内软装、
-   材质；商店/加油站/仓库/商场/湖边木屋/诊所前窗已支持透明玻璃与碎片飞散，但碎片是
-   简单刚体而非逐块断裂模拟；物流仓库卷帘门与谷仓滑动门均已可开合，且关闭时由
-   `poiDoorBlocking()` 参与碰撞阻挡通行；
+   材质；商店/加油站/仓库/商场/湖边木屋/诊所前窗已支持透明玻璃，并按固定 3×3 裂纹
+   布局碎成 9 块不规则碎片、落地后保留为永久碎屑（破碎状态由服务器权威广播）；
+   物流仓库卷帘门与谷仓滑动门均已可开合，且关闭时由 `poiDoorBlocking()` 参与碰撞阻挡通行；
    商店/加油站/商场/仓库/农场/诊所/湖边木屋的主要商品与补给箱已使用包装图集，
    角色动画也仍是手工关键帧。
 4. **世界**：已有世界固定公路网 + 15 个地点；废宅/商店 → `rv_store.gltf`、

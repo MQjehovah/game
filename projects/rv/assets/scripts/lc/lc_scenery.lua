@@ -274,7 +274,22 @@ function spawnPoiWindows(nd)
   print(string.format("[glass] intact panes at %s = %d (%s)", nd.id, #panes, kind))
 end
 
--- One-shot break: remove the intact panes and spawn a short-lived shard burst.
+-- Fixed nine-piece fracture pattern per pane, in normalised pane-local
+-- coordinates: u, v (-0.5..0.5), width/height fraction, mesh variant, yaw.
+-- Every break of a given pane separates along the same crack pattern.
+local GLASS_FRAGS = {
+  { -0.29,  0.29, 0.36, 0.34, 1,  0.35 },
+  {  0.00,  0.30, 0.36, 0.34, 2, -0.55 },
+  {  0.30,  0.28, 0.34, 0.34, 3,  0.90 },
+  { -0.30,  0.00, 0.34, 0.36, 4, -0.85 },
+  {  0.00,  0.00, 0.36, 0.36, 5,  0.20 },
+  {  0.30,  0.00, 0.34, 0.36, 2,  1.15 },
+  { -0.29, -0.30, 0.36, 0.32, 3, -0.25 },
+  {  0.00, -0.31, 0.36, 0.32, 4,  0.65 },
+  {  0.30, -0.29, 0.34, 0.32, 1, -1.05 },
+}
+
+-- One-shot break: remove the intact pane, then spawn the fixed fracture set.
 function breakPoiWindows(nd, reason)
   if nd == nil then return false end
   local g = poiGlass[nd.id]
@@ -282,34 +297,37 @@ function breakPoiWindows(nd, reason)
   g.broken = true
   local panes = g.panes
   g.panes = {}
+  local made = 0
   for _, pane in ipairs(panes) do
     Despawn(pane.ent)
     -- Pane normal (local +Z rotated by yaw) and its in-plane tangent.
     local nx, nz = math.sin(pane.rot), math.cos(pane.rot)
     local tx, tz = math.cos(pane.rot), -math.sin(pane.rot)
-    for _ = 1, 8 do
-      local ox = (math.random() - 0.5) * pane.sx * 0.9
-      local oy = (math.random() - 0.5) * pane.sy * 0.8
-      local sx = pane.x + tx * ox + nx * 0.06
+    for _, f in ipairs(GLASS_FRAGS) do
+      local ox, oy = f[1] * pane.sx, f[2] * pane.sy
+      local sx = pane.x + tx * ox + nx * 0.05
       local sy = pane.y + oy
-      local sz = pane.z + tz * ox + nz * 0.06
-      local e = SpawnPrefab("rv_window_shard", { x = sx, y = sy, z = sz })
+      local sz = pane.z + tz * ox + nz * 0.05
+      local e = SpawnPrefab("rv_glass_frag" .. f[5], { x = sx, y = sy, z = sz })
       if e ~= nil then
-        local s = 0.18 + math.random() * 0.26
-        SetScale(e, s, s, s)
-        SetRotationY(e, pane.rot + (math.random() - 0.5) * 0.6)
+        SetScale(e, f[3] * pane.sx, 1.0, f[4] * pane.sy)
+        SetRotationY(e, pane.rot + f[6])
+        local outward = 0.8 + math.random() * 1.3
         poiShards[#poiShards + 1] = {
           ent = e, x = sx, y = sy, z = sz,
-          vx = nx * (1.2 + math.random() * 1.4) + tx * (math.random() - 0.5) * 1.8,
-          vy = 1.8 + math.random() * 2.6,
-          vz = nz * (1.2 + math.random() * 1.4) + tz * (math.random() - 0.5) * 1.8,
-          life = 2.0 + math.random() * 0.8,
-          spin = (math.random() - 0.5) * 1.2,
+          vx = nx * outward + tx * (f[1] * 3.0),
+          vy = 1.2 + math.random() * 1.8 + math.max(0, oy) * 2.0,
+          vz = nz * outward + tz * (f[1] * 3.0),
+          yaw = pane.rot + f[6],
+          spin = (math.random() - 0.5) * 2.4,
+          settled = false,
         }
+        made = made + 1
       end
     end
   end
-  print(string.format("[glass] broke windows at %s (%s)", nd.id, reason or "enter"))
+  print(string.format("[glass] broke windows at %s (%s, %d fracture shards)",
+        nd.id, reason or "enter", made))
   return true
 end
 
@@ -327,28 +345,58 @@ function breakPoiWindowsAt(x, z, reason)
   return n
 end
 
--- Gravity + floor bounce for the shard burst; despawn after the lifetime.
+-- Gravitate the fragments, bounce once or twice, then let them rest on the
+-- ground as persistent debris (no despawn; the break is one-shot per pane).
 function updatePoiWindows(dt)
-  for i = #poiShards, 1, -1 do
+  local floor = 0.10
+  for i = 1, #poiShards do
     local s = poiShards[i]
-    s.life = s.life - dt
-    s.vy = s.vy - 9.8 * dt
-    s.x = s.x + s.vx * dt
-    s.y = s.y + s.vy * dt
-    s.z = s.z + s.vz * dt
-    if s.y < 0.08 then
-      s.y = 0.08
-      s.vy = -s.vy * 0.3
-      s.vx = s.vx * 0.6
-      s.vz = s.vz * 0.6
-    end
-    SetPosition(s.ent, { x = s.x, y = s.y, z = s.z })
-    SetRotationY(s.ent, (s.spin or 0) * s.life)
-    if s.life <= 0 then
-      Despawn(s.ent)
-      table.remove(poiShards, i)
+    if not s.settled then
+      s.vy = s.vy - 9.8 * dt
+      s.x = s.x + s.vx * dt
+      s.y = s.y + s.vy * dt
+      s.z = s.z + s.vz * dt
+      s.yaw = (s.yaw or 0) + (s.spin or 0) * dt
+      if s.y <= floor then
+        s.y = floor
+        if s.vy < -0.6 then
+          s.vy = -s.vy * 0.28
+          s.vx = s.vx * 0.5
+          s.vz = s.vz * 0.5
+          s.spin = (s.spin or 0) * 0.4
+        else
+          s.vy = 0
+          s.vx = 0
+          s.vz = 0
+          s.spin = 0
+          s.settled = true
+        end
+      end
+      SetPosition(s.ent, { x = s.x, y = s.y, z = s.z })
+      SetRotationY(s.ent, s.yaw or 0)
     end
   end
+end
+
+-- Broken-window ids for the authoritative co-op state field ("-" = none).
+function poiGlassBrokenList()
+  local ids = {}
+  for _, nd in ipairs(NODES) do
+    local g = poiGlass[nd.id]
+    if g ~= nil and g.broken then ids[#ids + 1] = nd.id end
+  end
+  return table.concat(ids, ",")
+end
+
+-- Apply a comma-separated broken list broadcast by the server.
+function applyPoiGlassState(csv)
+  if csv == nil or csv == "" then return 0 end
+  local n = 0
+  for id in string.gmatch(tostring(csv), "[^,]+") do
+    local nd = nodeById(id)
+    if nd ~= nil and breakPoiWindows(nd, "server") then n = n + 1 end
+  end
+  return n
 end
 
 -- ---------------------------------------------------------------------------
