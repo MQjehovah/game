@@ -2599,6 +2599,21 @@ function runSelfTest()
                      tostring(fixedFirst)))
   end
 
+  -- 收音机天气警告：根据下一段天气给出提示
+  do
+    local keep = weatherNextId
+    weatherNextId = "rain";  local rain = radioWeatherWarning()
+    weatherNextId = "snow";  local snow = radioWeatherWarning()
+    weatherNextId = "fog";   local fog = radioWeatherWarning()
+    weatherNextId = "clear"; local clear = radioWeatherWarning()
+    weatherNextId = keep
+    ok(r, "radio weather warning",
+       rain ~= nil and snow ~= nil and fog ~= nil and clear == nil,
+       string.format("rain=%s snow=%s fog=%s clear=%s",
+                     tostring(rain ~= nil), tostring(snow ~= nil),
+                     tostring(fog ~= nil), tostring(clear ~= nil)))
+  end
+
   -- 钓鱼水塘木栈桥
   do
     local n = #docks

@@ -523,6 +523,19 @@ function radioBroadcastPool()
   return RADIO_BROADCASTS or {}
 end
 
+-- 下一段天气的收音机警告（无警告返回 nil）
+function radioWeatherWarning()
+  local nid = weatherNextId
+  if nid == "rain" then
+    return "收音机：前方有雨，路面湿滑，注意减速。"
+  elseif nid == "snow" then
+    return "收音机：前方有雪，路面结冰，记得装防滑链。"
+  elseif nid == "fog" then
+    return "收音机：前方起雾，开远光灯、放慢车速。"
+  end
+  return nil
+end
+
 function updateRadioBroadcast(gm)
   if not radioOn then return false end
   radioBroadcastT = (radioBroadcastT or 0) + (gm or 0)
@@ -530,8 +543,15 @@ function updateRadioBroadcast(gm)
   radioBroadcastT = 0
   radioBroadcastNext = 90 + math.random() * 60
   local list = radioBroadcastPool()
-  if #list == 0 then return false end
-  local line = list[math.random(#list)]
+  local warn = radioWeatherWarning()
+  local line
+  if warn ~= nil and math.random() < 0.5 then
+    line = warn
+  elseif #list > 0 then
+    line = list[math.random(#list)]
+  else
+    return false
+  end
   toast.text = line
   toast.t = 5.0
   if addJournal ~= nil then addJournal(line, "radio") end
