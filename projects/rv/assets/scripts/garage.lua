@@ -138,6 +138,8 @@ function saveLayout()
       tripFuel = tripFuel or 0,
       jobs = jobDelivered or 0,
       visited = visitedList,
+      bestFish = bestFish or 0,
+      fishCaught = fishCaught or 0,
     }
   end
   if coopRole == "server" and coopSaveExtra ~= nil then
@@ -279,6 +281,8 @@ function loadLayout()
     tripDistance = tonumber(data.progress.tripDistance) or tripDistance
     tripFuel = tonumber(data.progress.tripFuel) or tripFuel
     jobDelivered = math.floor(tonumber(data.progress.jobs) or jobDelivered)
+    bestFish = tonumber(data.progress.bestFish) or bestFish
+    fishCaught = math.floor(tonumber(data.progress.fishCaught) or fishCaught)
     if type(data.progress.visited) == "table" then
       visitedPois = {}
       visitedCount = 0

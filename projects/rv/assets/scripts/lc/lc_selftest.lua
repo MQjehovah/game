@@ -1275,26 +1275,40 @@ function runSelfTest()
        string.format("night=%d day=%d rain=%d", night, day, rain))
   end
 
+  -- 钓鱼鱼种/尺寸/纪录
+  do
+    local name, size, sp = rollFish()
+    local valid = name ~= nil and sp ~= nil and size >= sp.min and size <= sp.max
+    local before = bestFish or 0
+    if size > before then bestFish = size end
+    local recordOk = (bestFish or 0) >= size
+    ok(r, "fishing species", valid and recordOk,
+       string.format("%s %.0fcm best=%.0f", tostring(name), size, bestFish or 0))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
     visitedPois["ruin"] = true
+    bestFish, fishCaught = 63, 12
     weather, weatherT, weatherNext = "rain", 7, 120
     local saved0 = saveLayout()
     tripDistance, tripFuel, jobDelivered = 0, 0, 0
     visitedPois = {}
     visitedCount = 0
+    bestFish, fishCaught = 0, 0
     weather, weatherT, weatherNext = "clear", 0, 90
     loadLayout()
     ok(r, "save progress stats",
        saved0 ~= false and math.abs((tripDistance or 0) - 3210) < 1 and
        math.abs((tripFuel or 0) - 88) < 1 and jobDelivered == 7 and
        visitedPois["ruin"] == true and weather == "rain" and
-       math.abs((weatherNext or 0) - 120) < 1,
-       string.format("trip=%.0f fuel=%.0f jobs=%d ruin=%s weather=%s next=%.0f",
-                     tripDistance or 0, tripFuel or 0, jobDelivered,
+       math.abs((weatherNext or 0) - 120) < 1 and
+       math.abs((bestFish or 0) - 63) < 1 and fishCaught == 12,
+       string.format("trip=%.0f jobs=%d ruin=%s weather=%s fish=%.0f/%d",
+                     tripDistance or 0, jobDelivered,
                      tostring(visitedPois["ruin"]), tostring(weather),
-                     weatherNext or 0))
+                     bestFish or 0, fishCaught or 0))
   end
 
   -- 存读档

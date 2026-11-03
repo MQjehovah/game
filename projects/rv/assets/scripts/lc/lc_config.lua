@@ -75,6 +75,14 @@ ITEMS = {
 }
 ITEM_ORDER = { "water", "canned", "rawfood", "meal", "fishsoup", "feast", "coffee", "brew", "rawfish", "fish", "seed", "repairkit" }
 
+-- 钓鱼鱼种（权重 / 尺寸 cm）：越稀有越大，用来做纪录与风味
+FISH_SPECIES = {
+  { name = "鲫鱼", w = 50, min = 12, max = 28 },
+  { name = "鲤鱼", w = 30, min = 25, max = 55 },
+  { name = "鲶鱼", w = 15, min = 35, max = 75 },
+  { name = "白鲢", w = 5,  min = 40, max = 80 },
+}
+
 -- 工作台可维修的车体/零件
 REPAIR_PARTS = {
   { id = "body",    name = "车体" },

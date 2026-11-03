@@ -270,6 +270,20 @@ function updateSurvival(dt)
 end
 
 -- 钓鱼：水塘边按 E 抛竿，等待 5-9 秒
+-- 钓鱼：按权重抽鱼种，并在该鱼种的尺寸区间内取一个尺寸
+function rollFish()
+  local total = 0
+  for _, s in ipairs(FISH_SPECIES) do total = total + s.w end
+  local r = math.random() * total
+  local pick = FISH_SPECIES[1]
+  for _, s in ipairs(FISH_SPECIES) do
+    r = r - s.w
+    if r <= 0 then pick = s break end
+  end
+  local size = pick.min + math.random() * (pick.max - pick.min)
+  return pick.name, size, pick
+end
+
 function startFishing()
   if fishingT > 0 then return end
   fishingTotal = 5 + math.random() * 4
@@ -282,9 +296,18 @@ function finishFishing(force)
   local success = force or math.random() < 0.78
   fishingT = 0
   if success then
+    local name, size, sp = rollFish()
     local n = 1 + ((math.random() < 0.30) and 1 or 0)
+    if size >= 55 then n = n + 1 end
     addItem("rawfish", n)
-    toast.text = string.format("钓到生鱼 x%d — 回营地篝火烤熟", n)
+    fishCaught = (fishCaught or 0) + n
+    local record = false
+    if size > (bestFish or 0) then
+      bestFish = size
+      record = true
+    end
+    toast.text = string.format("钓到 %s %.0fcm x%d%s", name, size, n,
+                               record and "  新纪录!" or "")
   else
     toast.text = "鱼跑了……再试一次"
   end

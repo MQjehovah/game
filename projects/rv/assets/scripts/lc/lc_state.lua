@@ -76,6 +76,7 @@ highBeam = false             -- 远光灯（H）
 flashlightOn = true           -- 手电筒开关（F）
 flashlightEnt = nil           -- 手电筒聚光灯实体
 tripDistance, tripFuel = 0, 0 -- 行程统计：米 / 升
+bestFish, fishCaught = 0, 0   -- 钓鱼纪录：最大尺寸 cm / 累计条数
 
 -- 搜刮 / 低强度威胁
 stopBag, stopThreat, evacT = {}, 0, -1
