@@ -2406,6 +2406,12 @@ function coopDrawHud()
     DrawRectOutline((vw - tw) * 0.5, vh - 92, tw, 34, 0.62, 0.58, 0.42, 0.9)
     DrawText(coop.toast, (vw - tw) * 0.5 + 14, vh - 82, 14, 0.98, 0.92, 0.74, 1)
   end
+
+  -- 联机客户端也显示罗盘与小地图（与单机驾驶 HUD 对齐）
+  if not coop.isServer then
+    if drawCompass ~= nil then drawCompass(vw) end
+    if drawMinimap ~= nil then drawMinimap(vw, vh) end
+  end
 end
 
 function on_player_join(clientId, name)
