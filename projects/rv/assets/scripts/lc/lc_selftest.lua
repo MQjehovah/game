@@ -1386,6 +1386,20 @@ function runSelfTest()
                      tostring(night), tostring(day)))
   end
 
+  -- 挡风玻璃水珠：仅雨天 + 驾驶席视角
+  do
+    local sw, sp, sv = weather, phase, driveView
+    weather, phase, driveView = "rain", "driving", "cab"
+    local cab = windshieldDropCount()
+    driveView = "chase"
+    local chase = windshieldDropCount()
+    weather = "clear"
+    local clear = windshieldDropCount()
+    weather, phase, driveView = sw, sp, sv
+    ok(r, "windshield rain drops", cab == 18 and chase == 0 and clear == 0,
+       string.format("cab=%d chase=%d clear=%d", cab, chase, clear))
+  end
+
   -- 存读档：行程/探索/货运单数 + 天气
   do
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7

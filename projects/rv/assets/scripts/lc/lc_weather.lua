@@ -43,6 +43,14 @@ function rollWeather()
   return "clear"
 end
 
+-- 挡风玻璃水珠数量：仅雨天 + 驾驶席视角
+function windshieldDropCount()
+  if weather == "rain" and phase == "driving" and driveView == "cab" then
+    return 18
+  end
+  return 0
+end
+
 -- 雨天路面抓地折减（只对下雨生效；雾天路面不一定湿）
 function weatherGripScale()
   if weather == "rain" then return 0.82 end
@@ -209,6 +217,14 @@ function drawWeatherOverlay()
     if lightningT ~= nil and lightningT > 0 then
       local a = math.min(0.35, lightningT * 0.9)
       DrawRect(0, 0, vw, vh, 0.86, 0.90, 1.0, a)
+    end
+    -- 驾驶席视角：挡风玻璃上的水珠/水痕
+    local drops = windshieldDropCount()
+    for i = 1, drops do
+      local x = (i * 173 + math.floor(weatherT * 9)) % vw
+      local y = (i * 89 + math.floor(weatherT * 55)) % vh
+      DrawCircle(x, y, 2 + (i % 3), 1, 0.72, 0.80, 0.90, 0.18, false)
+      DrawLine(x, y, x + 1, y + 5 + (i % 4), 1, 0.72, 0.80, 0.90, 0.12)
     end
   elseif weather == "fog" then
     DrawRect(0, 0, vw, vh, 0.72, 0.75, 0.79, 0.24)
