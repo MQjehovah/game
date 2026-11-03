@@ -148,7 +148,16 @@ function drawRvStatus(x, y, w)
            (parts and parts.engine) or 100, (parts and parts.tires) or 100,
            (parts and parts.battery) or 100),
            x + 10, yy, 11, 0.74, 0.74, 0.70, 1)
-  if rv.tireTemp ~= nil then
+  if rv.tireTemps ~= nil then
+    local t = rv.tireTemps
+    local hottest = math.max(t[1] or 22, t[2] or 22, t[3] or 22, t[4] or 22)
+    local tr, tg, tb = 0.74, 0.74, 0.70
+    if hottest > 110 then tr, tg, tb = 0.95, 0.45, 0.30
+    elseif hottest > 85 then tr, tg, tb = 0.95, 0.78, 0.35 end
+    DrawText(string.format("胎温 %.0f/%.0f/%.0f/%.0f°C",
+             t[1] or 22, t[2] or 22, t[3] or 22, t[4] or 22),
+             x + 10, yy + 17, 11, tr, tg, tb, 1)
+  elseif rv.tireTemp ~= nil then
     local t = rv.tireTemp
     local tr, tg, tb = 0.74, 0.74, 0.70
     if t > 110 then tr, tg, tb = 0.95, 0.45, 0.30
@@ -501,6 +510,16 @@ function drawDriveHud()
            (parts and parts.engine) or 100, (parts and parts.tires) or 100,
            (parts and parts.battery) or 100),
            px + 14, py + 142, 11, 0.74, 0.74, 0.70, 1)
+  if rv.tireTemps ~= nil then
+    local t = rv.tireTemps
+    local hottest = math.max(t[1] or 22, t[2] or 22, t[3] or 22, t[4] or 22)
+    local tr, tg, tb = 0.74, 0.74, 0.70
+    if hottest > 110 then tr, tg, tb = 0.95, 0.45, 0.30
+    elseif hottest > 85 then tr, tg, tb = 0.95, 0.78, 0.35 end
+    DrawText(string.format("胎温 %.0f/%.0f/%.0f/%.0f°C",
+             t[1] or 22, t[2] or 22, t[3] or 22, t[4] or 22),
+             px + 14, py + 158, 11, tr, tg, tb, 1)
+  end
 
   drawNeedsPanel(vw - 230, 10, 220)
 

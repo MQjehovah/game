@@ -447,6 +447,32 @@ function tireMuScale(temp, wear)
   return warm * wearScale
 end
 
+-- Per-wheel thermal step. Heat comes from that wheel's slip power
+-- (slip speed * normal load) plus a small rolling term; airflow at speed
+-- convects it back toward ambient. Clamped to 150 C. Exposed for the
+-- self-test.
+function tireStep(temp, speed, slipSpeed, load, dt, ambient)
+  local t = temp or 22
+  local amb = ambient or 22
+  local v = math.abs(speed or 0)
+  local n = math.max(0, load or 0)
+  local power = math.min(5000, math.abs(slipSpeed or 0) * n + v * n * 0.02)
+  t = t + power * 0.008 * (dt or 0.016)
+  t = t - (t - amb) * (0.15 + 0.02 * v) * (dt or 0.016)
+  if t < amb then t = amb end
+  if t > 150 then t = 150 end
+  return t
+end
+
+-- Per-wheel wear step: only that wheel's slip speed abrades the tread.
+function tireWearStep(wear, slipSpeed, dt, wearRate)
+  local w = wear or 100
+  local d = math.abs(slipSpeed or 0) * (dt or 0.016) * 0.02 * (wearRate or 1)
+  w = w - d
+  if w < 0 then w = 0 end
+  return w
+end
+
 -- Longitudinal tire force from a slip ratio (saturating, so it peaks at the
 -- friction limit). Exposed for the self-test and kept for older callers.
 function slipTraction(mu, normalForce, slip)
@@ -625,6 +651,10 @@ function updateRvPhysics(dt)
   end
 
   local useBodies = rv.wheelBodies ~= nil and rv.wheelBodies[1] ~= nil
+  -- Per-wheel tire state: each wheel has its own temperature/wear and surface.
+  rv.tireTemps = rv.tireTemps or { 22, 22, 22, 22 }
+  rv.tireWear = rv.tireWear or { 100, 100, 100, 100 }
+  local wheelV, wheelSlipSpd, wheelLoad, wheelSurf = {}, {}, {}, {}
   local heatPower, slipSum, slipSpeedSum, slipCount = 0, 0, 0, 0
   local muLast, surfLast = 0.9, "grass"
   if useBodies and PhysicsActivate ~= nil then
@@ -660,7 +690,7 @@ function updateRvPhysics(dt)
                           { x = wx, y = wy, z = wz })
       nForce = math.max(0, SUSP_K * compression)
       local surfName, surfDef = surfaceInfo(wx, wz)
-      mu = surfDef.mu * tireMuScale(rv.tireTemp, parts and parts.tires)
+      mu = surfDef.mu * tireMuScale(rv.tireTemps[i], rv.tireWear[i])
       rv.__surfDef = surfDef
       surfLast = surfName
       s.plane[i] = ground - (p.y - 0.9)
@@ -687,7 +717,7 @@ function updateRvPhysics(dt)
                           { x = wx, y = wy, z = wz })
       nForce = math.max(0, SUSP_K * compression)
       local surfName, surfDef = surfaceInfo(wx, wz)
-      mu = surfDef.mu * tireMuScale(rv.tireTemp, parts and parts.tires)
+      mu = surfDef.mu * tireMuScale(rv.tireTemps[i], rv.tireWear[i])
       rv.__surfDef = surfDef
       surfLast = surfName
       s.plane[i] = ground - (p.y - 0.9)
@@ -758,16 +788,24 @@ function updateRvPhysics(dt)
     end
 
     local surfDef = rv.__surfDef or SURFACES.grass
+    local slipSpeed = math.abs(slip) * math.abs(vLong)
+    wheelV[i] = math.abs(vLong)
+    wheelSlipSpd[i] = slipSpeed
+    wheelLoad[i] = nForce
+    wheelSurf[i] = surfDef
     if not w.front then
       heatPower = heatPower + math.abs(slip) * nForce * math.abs(vLong)
       slipSum = slipSum + math.abs(slip)
-      slipSpeedSum = slipSpeedSum + math.abs(slip) * math.abs(vLong)
+      slipSpeedSum = slipSpeedSum + slipSpeed
       slipCount = slipCount + 1
     end
     muLast = mu
 
+    -- Every tire carries longitudinal force from its own slip (that is what
+    -- spins a free-rolling front wheel up to road speed); the front axle keeps
+    -- slightly less authority so the rear still leads under braking.
     local factor = 1.0
-    if w.front then factor = braking and 0.55 or 0.0 end
+    if w.front then factor = braking and 1.0 or 0.8 end
     if factor > 0 then
       local impL = tireForceCurve(mu, nForce, slip, surfDef.peak,
                                   surfDef.sat) * factor * step
@@ -785,20 +823,38 @@ function updateRvPhysics(dt)
     end
   end
 
-  -- Tire temperature and wear: speed warms the carcass, slip adds heat and
-  -- extra wear. Clients keep the server's parts.tires and temperature.
+  -- Per-wheel temperature and wear: each tire is heated by its own slip power
+  -- and normal load, cooled by airflow at its own speed, and abrades with its
+  -- own slip speed. Clients keep the server's values (they only predict pose).
   local slipAvg = slipSum / math.max(1, slipCount)
   if useBodies and coopRole ~= "client" then
-    local surfDef = SURFACES[surfLast] or SURFACES.grass
-    local target = 22 + math.min(60, math.abs(targetSpeed) * 4.5) +
-                   math.min(60, slipAvg * 400.0)
-    rv.tireTemp = (rv.tireTemp or 22) + (target - (rv.tireTemp or 22)) *
-                  math.min(1, step * 0.25)
-    if parts ~= nil and parts.tires ~= nil then
-      local slipSpeed = slipSpeedSum / math.max(1, slipCount)
-      local extra = slipSpeed * step * 0.03 * surfDef.wear
-      parts.tires = math.max(0, parts.tires - extra)
+    local tempSum = 0
+    for i = 1, 4 do
+      local surfDef = wheelSurf[i] or SURFACES.grass
+      rv.tireTemps[i] = tireStep(rv.tireTemps[i] or 22, wheelV[i] or 0,
+                                 wheelSlipSpd[i] or 0, wheelLoad[i] or 0,
+                                 step, 22)
+      rv.tireWear[i] = tireWearStep(rv.tireWear[i] or 100,
+                                    wheelSlipSpd[i] or 0, step,
+                                    surfDef.wear)
+      tempSum = tempSum + rv.tireTemps[i]
     end
+    rv.tireTemp = tempSum / 4
+    if parts ~= nil and parts.tires ~= nil then
+      -- Repairs reset the whole set; otherwise the shared durability is the
+      -- average of the four independent treads.
+      local avgWear = 0
+      for i = 1, 4 do avgWear = avgWear + (rv.tireWear[i] or 100) end
+      avgWear = avgWear / 4
+      if parts.tires > avgWear + 1.0 then
+        for i = 1, 4 do rv.tireWear[i] = parts.tires end
+      else
+        parts.tires = avgWear
+      end
+    end
+  elseif rv.tireTemps ~= nil then
+    rv.tireTemp = (rv.tireTemps[1] + rv.tireTemps[2] +
+                   rv.tireTemps[3] + rv.tireTemps[4]) / 4
   end
 
   if rv.tireLog then
@@ -809,9 +865,13 @@ function updateRvPhysics(dt)
       local axx3, axy3, axz3 = rvOffset(1, 0, 0)
       local om3 = wv3 and (wv3.x*axx3 + wv3.y*axy3 + wv3.z*axz3) or 0
       local vf3 = vx * fwdX + vz * fwdZ
-      print(string.format("[tire] surf=%s mu=%.2f temp=%.0f tires=%.1f cmd=%.1f vf=%.1f omega=%.1f slip=%.2f",
+      local temps = rv.tireTemps or { 22, 22, 22, 22 }
+      local wears = rv.tireWear or { 100, 100, 100, 100 }
+      print(string.format("[tire] surf=%s mu=%.2f temp=%.0f T=(%.0f/%.0f/%.0f/%.0f) W=(%.1f/%.1f/%.1f/%.1f) cmd=%.1f vf=%.1f omega=%.1f slip=%.2f",
         surfLast, muLast, rv.tireTemp or 22,
-        (parts and parts.tires) or -1, targetSpeed, vf3, om3, slipAvg))
+        temps[1], temps[2], temps[3], temps[4],
+        wears[1], wears[2], wears[3], wears[4],
+        targetSpeed, vf3, om3, slipAvg))
     end
   end
 

@@ -414,6 +414,25 @@ function runSelfTest()
          string.format("cold=%.2f warm=%.2f hot=%.2f worn=%.2f",
                        cold, warm, hot, worn))
     end
+    if tireStep ~= nil and tireWearStep ~= nil then
+      -- Front tire: rolling fast, no drive slip. Rear tire: same speed but
+      -- wheelspin (slip speed 9 m/s) on a similar load. Run ~2 s at 60 Hz.
+      local front, rear = 22.0, 22.0
+      local frontW, rearW = 100.0, 100.0
+      for _ = 1, 120 do
+        front = tireStep(front, 8.0, 0.2, 4000, 1 / 60, 22)
+        rear = tireStep(rear, 7.0, 9.0, 3800, 1 / 60, 22)
+        frontW = tireWearStep(frontW, 0.2, 1 / 60, 0.8)
+        rearW = tireWearStep(rearW, 9.0, 1 / 60, 2.0)
+      end
+      local coldFront = tireStep(22, 0, 0, 0, 1 / 60, 22)
+      ok(r, "rv tire per wheel",
+         rear > front and front > 22 and rear <= 150 and
+         rearW < frontW and frontW > 99 and
+         math.abs(coldFront - 22) < 1e-6,
+         string.format("front=%.0fC rear=%.0fC fWear=%.1f rWear=%.1f",
+                       front, rear, frontW, rearW))
+    end
     if ackermannAngles ~= nil then
       local l, rr = ackermannAngles(0.5, 5.84, 2.52)
       local l2, r2 = ackermannAngles(-0.5, 5.84, 2.52)

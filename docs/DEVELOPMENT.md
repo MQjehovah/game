@@ -836,9 +836,16 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `|slip|=peak` 达 μ·N、之后回落到 `sat·μ·N`）直接作用在车轮刚体上。
   `SURFACES` 定义 6 种路面材质：沥青 0.98、混凝土 0.92、碎石 0.80、
   土坡 0.72、草地 0.60、泥地 0.42；`surfaceInfo(x,z)` 按道路板/路肩/土坡/
-  水塘/POI 铺装/草甸分区。`tireMuScale()` 让冷胎（<45°C）与过热（>95°C）
-  降 μ，`parts.tires` 磨损也降 μ；温度由车速与滑移加热、向环境冷却，
-  HUD 显示 `胎温 xx°C`，`tire_log.txt` 可打开逐秒对比日志。
+  水塘/POI 铺装/草甸分区。**每个车轮有独立的温度与磨损**：
+  `tireStep(temp, speed, slipSpeed, load, dt, ambient)` 用该轮的
+  滑移功率（滑移速度 × 法向载荷 + 少量滚动生热）加热、按该轮车速迎风冷却
+  （`0.15 + 0.02·v`，上限 150°C）；`tireWearStep()` 只磨该轮。
+  `tireMuScale()` 对每个接地点单独降 μ（冷胎 <45°C、过热 >95°C、磨损）；
+  `parts.tires` 取四轮平均（修理时整体重置）。HUD 显示
+  `胎温 前左/前右/后左/后右°C`，`tire_log.txt` 输出 `T=(...)/W=(...)`。
+  自由滚动的前轮也会从自身滑移获得纵向力（前轴系数 0.8），
+  因此会正常被地面带到滚动转速；实测沥青 `T=(35/35/61/61)`，
+  草地打滑 `T=(33/33/117/140)`、后轮磨损到 98.9/97.4%。
   A/D 只给前轮转角，`updateSteeringCommand()` 以 3.5 rad/s 逼近输入，松开后由
   `steeringReturnRate()` 自动回正（车速越高回正越快），`steeringMaxAngle()`
   随车速把最大转角从 ±0.55rad 收窄到 ±0.30rad；合作服务器走同一曲线。
@@ -887,12 +894,13 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `rv surface table` / `rv ackermann steering` / `rv steering assist` /
   `rv steering self-center` / `rv slip traction` /
   `rv wheel slip ratio` / `rv tire force curve` / `rv tire temperature` /
+  `rv tire per wheel` /
   `rv wheel body binding` /
   `rv wheel bodies` / `rv wheel cylinder rolling` / `rv wheel prediction` /
   `rv pose prediction` / `rv vegetation wind` / `rv wheel rolling` /
   `rv attitude roundtrip` /
   `rv yaw attitude roundtrip`，
-  总计 **59/59 PASS**。
+  总计 **60/60 PASS**。
   角色动画由 `tools/gen_rv_anim_clips.py`
   生成**手工关键帧**上车链 `DoorOpen`（够门把手→拉开，0.9s）→ `Step`（抬脚踩踏板，
   0.7s）→ `Board`（站姿→抬步→落座，0.9s）→ `Sit` 循环（坐姿 + 1s 呼吸关键帧），
