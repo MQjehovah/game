@@ -953,6 +953,11 @@ function runSelfTest()
      jobResult and string.format("cargo=%s cond=%.2f jobs=%d",
                                  tostring(jobResult.cargo), jobResult.cond or 0,
                                  jobResult.jobs or 0) or "missing")
+  ok(r, "job history",
+     jobHistory ~= nil and #jobHistory >= 1 and
+     tostring(jobHistory[#jobHistory]):find("→", 1, true) ~= nil,
+     string.format("entries=%d last=%s", #(jobHistory or {}),
+                   tostring(jobHistory and jobHistory[#jobHistory] or "-")))
 
   -- 放弃合同：卸货、重量还原
   jobRefreshOffers()

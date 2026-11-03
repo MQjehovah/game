@@ -880,6 +880,15 @@ function drawMapHud()
     drawTextCentered(fishingRecordText(), px + pw * 0.5, py + ph - 42, 12,
                      0.72, 0.76, 0.68, 1)
   end
+  if jobHistory ~= nil and #jobHistory > 0 then
+    DrawText("最近货运", px + 20, py + ph - 96, 12, 0.82, 0.78, 0.62, 1)
+    local shown = math.min(3, #jobHistory)
+    for i = 1, shown do
+      local line = jobHistory[#jobHistory - shown + i]
+      DrawText(line, px + 20, py + ph - 78 + (i - 1) * 16, 11,
+               0.72, 0.76, 0.70, 1)
+    end
+  end
 end
 
 -- ===========================================================================
