@@ -171,6 +171,8 @@ function saveLayout(silent)
       milestones = milestones,
       radioMastFixed = radioMastFixed and true or false,
       relayDone = relayDone and true or false,
+      campfireFuel = campfireFuelMin or 0,
+      campfireOn = campfireOn and true or false,
       journal = journal,
       daily = dailyGoal and {
         id = dailyGoal.id, name = dailyGoal.name, target = dailyGoal.target,
@@ -375,6 +377,14 @@ function loadLayout()
     end
     radioMastFixed = data.progress.radioMastFixed == true
     relayDone = data.progress.relayDone == true
+    if data.progress.campfireFuel ~= nil then
+      campfireFuelMin = math.max(0, tonumber(data.progress.campfireFuel) or 0)
+    end
+    if data.progress.campfireOn ~= nil then
+      campfireOn = data.progress.campfireOn == true
+      for _, f in ipairs(campfireFlames or {}) do SetVisible(f.ent, campfireOn) end
+      if campfireLight ~= nil then SetVisible(campfireLight, campfireOn) end
+    end
     if type(data.progress.journal) == "table" then
       journal = {}
       for _, e in ipairs(data.progress.journal) do

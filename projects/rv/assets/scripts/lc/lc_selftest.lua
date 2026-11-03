@@ -3246,6 +3246,7 @@ function runSelfTest()
 
   -- 存读档：行程/探索/货运单数 + 天气
   do
+    local keepFireFuel, keepFireOn = campfireFuelMin, campfireOn
     tripDistance, tripFuel, jobDelivered = 3210, 88, 7
     visitedPois["ruin"] = true
     bestFish, fishCaught = 63, 12
@@ -3255,6 +3256,7 @@ function runSelfTest()
     if setInteriorLights ~= nil then setInteriorLights(false) end
     weather, weatherT, weatherNext = "rain", 7, 120
     relayDone = true
+    campfireFuelMin, campfireOn = 123, false
     local saved0 = saveLayout()
     tripDistance, tripFuel, jobDelivered = 0, 0, 0
     visitedPois = {}
@@ -3265,25 +3267,31 @@ function runSelfTest()
     batteryCharge, rawFoodAge = 0, 0
     weather, weatherT, weatherNext = "clear", 0, 90
     relayDone = false
+    campfireFuelMin, campfireOn = 720, true
     loadLayout()
     local lightsOk = interiorLightsOn == false and highBeam == true
     local powerOk2 = math.abs((batteryCharge or 0) - 1.1) < 1e-6 and
                      math.abs((rawFoodAge or 0) - 500) < 1
     local relayOk = relayDone == true
+    local fireOk = math.abs((campfireFuelMin or 0) - 123) < 1 and
+                   campfireOn == false
     if setInteriorLights ~= nil then setInteriorLights(true) end
     highBeam = false
+    campfireFuelMin, campfireOn = keepFireFuel, keepFireOn
+    for _, f in ipairs(campfireFlames or {}) do SetVisible(f.ent, campfireOn) end
+    if campfireLight ~= nil then SetVisible(campfireLight, campfireOn) end
     ok(r, "save progress stats",
        saved0 ~= false and math.abs((tripDistance or 0) - 3210) < 1 and
        math.abs((tripFuel or 0) - 88) < 1 and jobDelivered == 7 and
        visitedPois["ruin"] == true and weather == "rain" and
        math.abs((weatherNext or 0) - 120) < 1 and
        math.abs((bestFish or 0) - 63) < 1 and fishCaught == 12 and
-       lastJobDay == 11 and lightsOk and powerOk2 and relayOk,
-       string.format("trip=%.0f jobs=%d weather=%s fish=%.0f/%d day=%d lights=%s batt=%.2f age=%.0f relay=%s",
+       lastJobDay == 11 and lightsOk and powerOk2 and relayOk and fireOk,
+       string.format("trip=%.0f jobs=%d weather=%s fish=%.0f/%d day=%d lights=%s batt=%.2f age=%.0f relay=%s fire=%s",
                      tripDistance or 0, jobDelivered, tostring(weather),
                      bestFish or 0, fishCaught or 0, lastJobDay or 0,
                      tostring(lightsOk), batteryCharge or 0, rawFoodAge or 0,
-                     tostring(relayOk)))
+                     tostring(relayOk), tostring(fireOk)))
   end
 
   -- 存读档
