@@ -217,6 +217,23 @@ function updateInteraction()
     end
   end
 
+  -- 营地篝火旁柴堆
+  do
+    local wx, wz = 0.9, 2.9
+    local dx, dz = wx - player.x, wz - player.z
+    local d = math.sqrt(dx * dx + dz * dz)
+    if d < 2.3 then
+      local dot = forwardDot(dx, dz, d)
+      if dot > 0.05 then
+        nearAction = { kind = "woodpile", verb = "营地柴堆",
+                       detail = (campWoodpileText and campWoodpileText()) or
+                                "E 取木材",
+                       x = wx, z = wz }
+        return
+      end
+    end
+  end
+
   -- 农场风车水泵
   if windmill ~= nil then
     local dx, dz = windmill.x - player.x, windmill.z - player.z
@@ -336,6 +353,10 @@ function doInteract()
     return true
   elseif nearAction.kind == "note" then
     readLoreNote(nearAction.index)
+    updateInteraction()
+    return true
+  elseif nearAction.kind == "woodpile" then
+    gatherCampWoodpile()
     updateInteraction()
     return true
   elseif nearAction.kind == "vending" then

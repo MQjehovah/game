@@ -3160,6 +3160,25 @@ function runSelfTest()
     end
   end
 
+  -- 营地柴堆：每 60 分钟可取 1 木材，冷却中不能再取
+  do
+    local keepWood, keepCd = materials.wood or 0, campWoodMin
+    local kt, kv = toast.text, toast.t
+    materials.wood, campWoodMin = 0, 0
+    local got = gatherCampWoodpile()
+    local gotWood = materials.wood or 0
+    local gotCd = campWoodMin or 0
+    local one = gotWood == 1
+    local cooling = gotCd >= 59
+    local again = gatherCampWoodpile()
+    materials.wood, campWoodMin = keepWood, keepCd
+    toast.text, toast.t = kt, kv
+    ok(r, "camp woodpile",
+       got and one and cooling and again == false,
+       string.format("wood=%d cd=%.0f again=%s", gotWood, gotCd,
+                     tostring(again)))
+  end
+
   -- 风车水泵升级：消耗材料，冷却从 60 分钟缩短到 30 分钟
   do
     local keepUp = windmillUpgraded

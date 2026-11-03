@@ -97,6 +97,7 @@ waterTowers = {}              -- 小镇水塔地标
 windmill = nil                -- 农场风车 {x,y,z,angle,blades}
 windmillWaterMin = 0          -- 风车水泵冷却（游戏分钟）
 windmillUpgraded = false      -- 风车水泵是否已升级（冷却 60→30 分钟）
+campWoodMin = 0               -- 营地柴堆补给冷却（游戏分钟）
 poiSigns = {}                 -- POI 门头招牌
 poiSignsLit = nil
 campfireLight = nil           -- 营火暖光（只保留 light 组件）

@@ -356,6 +356,30 @@ function windmillWaterText()
                        WINDMILL_WATER_AMOUNT)
 end
 
+-- 营地柴堆：每 60 游戏分钟可补充 1 个木材
+CAMP_WOOD_MINUTES = 60
+
+function campWoodpileText()
+  if (campWoodMin or 0) > 0 then
+    return string.format("柴堆补充中（约 %.0f 分钟）", campWoodMin)
+  end
+  return "E 取 1 个木材"
+end
+
+function gatherCampWoodpile()
+  if (campWoodMin or 0) > 0 then
+    toast.text = string.format("柴堆还没补充好（约 %.0f 分钟）", campWoodMin)
+    toast.t = 2.2
+    return false
+  end
+  campWoodMin = CAMP_WOOD_MINUTES
+  materials.wood = (materials.wood or 0) + 1
+  if PlaySfx then PlaySfx("pickup") end
+  toast.text = "从营地柴堆拿了 1 个木材"
+  toast.t = 2.4
+  return true
+end
+
 -- 升级风车水泵：消耗金属 3 + 木材 2，冷却 60→30 分钟
 function upgradeWindmill()
   if windmill == nil then return false end
@@ -867,6 +891,9 @@ function updateSurvival(dt)
   end
   if (windmillWaterMin or 0) > 0 then
     windmillWaterMin = math.max(0, windmillWaterMin - gm)
+  end
+  if (campWoodMin or 0) > 0 then
+    campWoodMin = math.max(0, campWoodMin - gm)
   end
 
   needs.hunger = math.max(0, needs.hunger - SURVIVAL.hungerRate * gm)
