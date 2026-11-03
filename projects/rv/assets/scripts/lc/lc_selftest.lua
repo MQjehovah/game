@@ -1808,6 +1808,29 @@ function runSelfTest()
                      gotJi, gotLi, tostring(gotName), gotBest))
   end
 
+  -- 首次钓到某鱼种写入旅行日志
+  do
+    local keepR, keepC = fishRecords, fishCounts
+    local keepB, keepN, keepK = bestFish, bestFishName, fishCaught
+    local keepJ, keepGoal = journal, dailyGoal
+    fishRecords, fishCounts = {}, {}
+    bestFish, bestFishName, fishCaught = 0, nil, 0
+    journal, dailyGoal = {}, nil
+    recordFish("鲫鱼", 20, 1)
+    local first = #journal == 1 and
+                  journal[1].text:find("首次钓到", 1, true) ~= nil
+    journal = {}
+    recordFish("鲫鱼", 22, 1)
+    local notFirst = #journal == 1 and
+                     journal[1].text:find("新纪录", 1, true) ~= nil
+    fishRecords, fishCounts = keepR, keepC
+    bestFish, bestFishName, fishCaught = keepB, keepN, keepK
+    journal, dailyGoal = keepJ, keepGoal
+    ok(r, "first catch journal", first and notFirst,
+       string.format("first=%s notFirst=%s", tostring(first),
+                     tostring(notFirst)))
+  end
+
   -- 雨天路面抓地折减（与极速惩罚叠加）
   do
     local sw = weather

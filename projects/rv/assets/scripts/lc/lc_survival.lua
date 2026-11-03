@@ -888,6 +888,7 @@ end
 function recordFish(name, size, n)
   n = n or 1
   fishCounts[name] = (fishCounts[name] or 0) + n
+  local firstCatch = (fishRecords[name] or 0) <= 0
   local speciesRecord = false
   if size > (fishRecords[name] or 0) then
     fishRecords[name] = size
@@ -901,8 +902,12 @@ function recordFish(name, size, n)
   end
   fishCaught = (fishCaught or 0) + n
   if addDailyProgress ~= nil then addDailyProgress("fish", n) end
-  if overall and addJournal ~= nil then
-    addJournal(string.format("钓鱼新纪录：%s %.0fcm", name, size), "fish")
+  if addJournal ~= nil then
+    if firstCatch then
+      addJournal(string.format("首次钓到：%s %.0fcm", name, size), "fish")
+    elseif overall then
+      addJournal(string.format("钓鱼新纪录：%s %.0fcm", name, size), "fish")
+    end
   end
   return speciesRecord, overall
 end
