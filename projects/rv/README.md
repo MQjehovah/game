@@ -615,6 +615,9 @@ POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃
   两端 HUD/日志显示相同的剩余物资箱与材料。`coop_actions.txt` 可自动验证这条链路。
 - **电力同步**：`game_state.battery` 把服务器的电池电量广播给客户端，
   客户端 HUD/`powerOk()` 不再各算各的；合作 smoke 通过。
+- **货运详情同步**：`game_state.job` 为 `dest:crates:cond:flags`
+  （flags：1 急单 / 2 易碎 / 4 双站），客户端 HUD 显示目的地、货况百分比与
+  标记；服务器日志可直接看到 `job=poi_3:3:100:3`。
 - **合作建造验证**：`coop_build.txt` 让槽位 1 自动放置车顶太阳能板、储物箱，再拆除
   储物箱；服务器日志 `furn=9→11→10`、`metal=12→10`，两端都出现
   `furniture rebuilt (10)` / `(11)` / `(10)`，截图 HUD 显示“家具 10 件”。

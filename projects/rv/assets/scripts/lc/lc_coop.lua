@@ -449,6 +449,15 @@ local function pushWorld()
   })
 end
 
+-- 货运合同广播串：dest:crates:cond:flags（flags: 1 急单 / 2 易碎 / 4 双站）
+local function jobToken()
+  if job == nil then return "-" end
+  local flags = (job.urgent and 1 or 0) + (job.fragile and 2 or 0) +
+                (job.stops and 4 or 0)
+  return string.format("%s:%d:%d:%d", job.destId, job.crates or 1,
+                       math.floor((job.condition or 1) * 100), flags)
+end
+
 local function pushState()
   coop.seq = coop.seq + 1
   local players = {}
@@ -496,10 +505,7 @@ local function pushState()
                   yaw = q3(coop.rv.yaw), speed = q3(coop.rv.speed),
                   gy = q3(coop.rv.groundY or 0),
                   p = q3(coop.rv.pitch or 0), r = q3(coop.rv.roll or 0) }
-  local jobOut = "-"
-  if job ~= nil then
-    jobOut = string.format("%s:%d", job.destId, job.crates or 1)
-  end
+  local jobOut = jobToken()
   Rpc("game_state", {
     seq = coop.seq, rv = rvOut, players = players, needs = needsOut,
     fuel = math.floor((fuel or 0) * 10 + 0.5) / 10,
@@ -549,7 +555,7 @@ local function serverDebugLog()
     end
   end
   print(string.format(
-    "[coop-main-server] seq=%d rv=(%.2f,%.2f,yaw=%.2f speed=%.2f p=%.2f r=%.2f gy=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) joined=%d/%d fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%d barndoor=%d glass=%s",
+    "[coop-main-server] seq=%d rv=(%.2f,%.2f,yaw=%.2f speed=%.2f p=%.2f r=%.2f gy=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) joined=%d/%d fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%d barndoor=%d glass=%s job=%s",
     coop.seq, rv.x, rv.z, rv.yaw, rv.speed,
     rv.pitch or 0, rv.roll or 0, rv.groundY or 0,
     coop.slots[1].x, coop.slots[1].z, coop.slots[2].x, coop.slots[2].z,
@@ -563,7 +569,7 @@ local function serverDebugLog()
     coop.slots[1].inside and 1 or 0, coop.slots[2].inside and 1 or 0,
     coop.slots[3].inside and 1 or 0, coop.slots[4].inside and 1 or 0, door, shop,
     coop.rollup and 1 or 0, coop.barnDoor and 1 or 0,
-    (poiGlassBrokenList and poiGlassBrokenList()) or "-"))
+    (poiGlassBrokenList and poiGlassBrokenList()) or "-", jobToken()))
 end
 
 local function serverHandleCommand(clientId, a)
@@ -1373,12 +1379,18 @@ local function applyState(s)
     coop.weather = s.weather
     setWeather(coop.weather)
   end
-  -- 货运合同：destId:crates 或 "-"（客户端的 HUD 用节点名+距离显示）
+  -- 货运合同：dest:crates:cond:flags 或 "-"（客户端 HUD 显示节点名/货况/标记）
   if s.job ~= nil then
-    local jd, jc = tostring(s.job):match("^([^:]+):(%d+)$")
-    coop.jobDest, coop.jobCrates = jd, tonumber(jc) or 0
-    if jd == nil or jd == "" or jd == "-" then
+    local parts = {}
+    for p in string.gmatch(tostring(s.job), "([^:]+)") do parts[#parts + 1] = p end
+    if parts[1] == nil or parts[1] == "" or parts[1] == "-" then
       coop.jobDest, coop.jobCrates = nil, 0
+      coop.jobCond, coop.jobFlags = 1, 0
+    else
+      coop.jobDest = parts[1]
+      coop.jobCrates = tonumber(parts[2]) or 0
+      coop.jobCond = (tonumber(parts[3]) or 100) / 100
+      coop.jobFlags = tonumber(parts[4]) or 0
     end
   end
   coop.jobsDone = tonumber(s.jobsDone) or coop.jobsDone
@@ -2299,9 +2311,15 @@ function coopDrawHud()
   if coop.jobDest ~= nil then
     local jnd = nodeById(coop.jobDest)
     local jd = jnd and math.sqrt((jnd.x - rv.x) ^ 2 + (jnd.z - rv.z) ^ 2) or 0
-    DrawText(string.format("货运 %s x%d → %s  %.0fm  （0 放弃）",
-             "货物", coop.jobCrates or 0, jnd and jnd.name or coop.jobDest, jd),
-             vw - 390, 40, 12, 0.96, 0.86, 0.52, 1)
+    local f = coop.jobFlags or 0
+    local tags = ""
+    if math.floor(f / 1) % 2 == 1 then tags = tags .. "[急]" end
+    if math.floor(f / 2) % 2 == 1 then tags = tags .. "[易碎]" end
+    if math.floor(f / 4) % 2 == 1 then tags = tags .. "[2站]" end
+    DrawText(string.format("货运%s 货物 x%d → %s  %.0fm  货况 %.0f%%  （0 放弃）",
+             tags, coop.jobCrates or 0, jnd and jnd.name or coop.jobDest, jd,
+             (coop.jobCond or 1) * 100),
+             vw - 500, 40, 12, 0.96, 0.86, 0.52, 1)
   elseif (coop.jobsDone or 0) > 0 then
     DrawText(string.format("已完成货运 %d 单", coop.jobsDone),
              vw - 390, 40, 12, 0.78, 0.82, 0.72, 1)
