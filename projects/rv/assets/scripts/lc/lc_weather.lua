@@ -43,24 +43,36 @@ function updateWeather(dt)
     local nextWeather = rollWeather()
     if nextWeather ~= weather then setWeather(nextWeather) else weatherT = 0 end
   end
-  -- 3D 雨丝（屏幕雨线之外，让雨真正落在世界里）
-  if weather == "rain" and onFoot and player.active then
-    rainAcc = (rainAcc or 0) + dt * 42
-    while rainAcc >= 1 do
-      rainAcc = rainAcc - 1
-      local a = math.random() * math.pi * 2
-      local r = 2 + math.random() * 9
-      EmitParticles({
-        pos = { x = player.x + math.sin(a) * r, y = 5.5 + math.random() * 2.5,
-                z = player.z + math.cos(a) * r },
-        count = 1, speedMin = 0, speedMax = 0,
-        vel = { x = -0.6, y = -11, z = 0.2 },
-        lifeMin = 0.28, lifeMax = 0.42,
-        sizeStart = 0.035, sizeEnd = 0.02,
-        color = { r = 0.62, g = 0.74, b = 0.88, a = 0.55 },
-        colorEnd = { r = 0.62, g = 0.74, b = 0.88, a = 0.0 },
-        additive = false, gravity = 0,
-      })
+  -- 3D 雨丝（屏幕雨线之外，让雨真正落在世界里）：步行围绕玩家，
+  -- 驾驶时围绕房车，追逐视角也能看到雨幕。
+  if weather == "rain" then
+    local cx, cz, cy, rate, rad
+    if onFoot and player.active then
+      cx, cz, cy = player.x, player.z, 4.6
+      rate, rad = 42, 9
+    elseif phase == "driving" then
+      cx, cz = rv.x, rv.z
+      cy = (rv.groundY or 0) + 4.2
+      rate, rad = 60, 15
+    end
+    if cx ~= nil then
+      rainAcc = (rainAcc or 0) + dt * rate
+      while rainAcc >= 1 do
+        rainAcc = rainAcc - 1
+        local a = math.random() * math.pi * 2
+        local r = 2 + math.random() * rad
+        EmitParticles({
+          pos = { x = cx + math.sin(a) * r, y = cy + math.random() * 2.5,
+                  z = cz + math.cos(a) * r },
+          count = 1, speedMin = 0, speedMax = 0,
+          vel = { x = -0.6, y = -11, z = 0.2 },
+          lifeMin = 0.28, lifeMax = 0.42,
+          sizeStart = 0.035, sizeEnd = 0.02,
+          color = { r = 0.62, g = 0.74, b = 0.88, a = 0.55 },
+          colorEnd = { r = 0.62, g = 0.74, b = 0.88, a = 0.0 },
+          additive = false, gravity = 0,
+        })
+      end
     end
   end
 end

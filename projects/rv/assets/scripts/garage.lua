@@ -834,6 +834,10 @@ function on_start()
     mapOpen = true
   elseif startMode == "brakeview" then
     rv.brakeTest = true
+  elseif startMode == "raindrive" then
+    setWeather("rain")
+    setPhase("driving")
+    driveView = "chase"
   elseif startMode == "drive" or startMode == "night_drive" or autoPilot or rv.steerDemo then
     setPhase("driving")
   elseif startMode == "utilroof" then
