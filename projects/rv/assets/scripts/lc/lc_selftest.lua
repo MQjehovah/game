@@ -4658,6 +4658,26 @@ function runSelfTest()
        string.format("none=%s one=%s", none, one))
   end
 
+  -- 旅行日志摘要：天数/货运/里程/钓鱼/笔记
+  do
+    local keepDay, keepJobs = day, jobDelivered
+    local keepFish, keepDist = fishCaught, tripDistance
+    local keepVisited, keepStreak = visitedCount, jobStreak
+    day, jobDelivered, fishCaught, tripDistance = 5, 3, 7, 1234
+    visitedCount, jobStreak = 2, 4
+    local summary = journalSummaryText()
+    day, jobDelivered, fishCaught, tripDistance = keepDay, keepJobs,
+                                                keepFish, keepDist
+    visitedCount, jobStreak = keepVisited, keepStreak
+    ok(r, "journal summary",
+       summary:find("第 5 天", 1, true) ~= nil and
+       summary:find("货运 3 单", 1, true) ~= nil and
+       summary:find("里程 1.2km", 1, true) ~= nil and
+       summary:find("笔记", 1, true) ~= nil and
+       summary:find("连送 4", 1, true) ~= nil,
+       summary)
+  end
+
   -- 地点特色掉落：数据完整，且物品都在 ITEMS 里
   do
     local function has(id, item)

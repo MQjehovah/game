@@ -1240,6 +1240,25 @@ function checkExplorationMilestone()
   return true
 end
 
+-- 旅行日志顶部摘要：天数/货运/里程/钓鱼/探索/笔记/连送
+function journalSummaryText()
+  local parts = {
+    string.format("第 %d 天", day or 1),
+    string.format("货运 %d 单", jobDelivered or 0),
+    string.format("里程 %.1fkm", (tripDistance or 0) / 1000),
+    string.format("钓鱼 %d 条", fishCaught or 0),
+    string.format("探索 %d/%d", visitedCount or 0, #(NODES or {})),
+  }
+  if loreProgressText ~= nil then
+    local lp = loreProgressText()
+    if lp ~= nil then parts[#parts + 1] = lp end
+  end
+  if (jobStreak or 0) > 0 then
+    parts[#parts + 1] = string.format("连送 %d", jobStreak)
+  end
+  return table.concat(parts, "  ·  ")
+end
+
 -- 笔记收集进度文案（地图/日志用）
 function loreProgressText()
   local total = #(LORE_NOTES or {})
