@@ -2196,6 +2196,23 @@ function runSelfTest()
        string.format("scared=%d cooldown=%s", scared, tostring(cooldown)))
   end
 
+  -- 鸣笛惊走附近的鹿
+  do
+    local keepCd = rv.honkCd
+    rv.honkCd = 0
+    spawnDriveDeer(1)
+    local d = driveDeer[#driveDeer]
+    local n0 = #driveDeer
+    if d ~= nil then d.x, d.z = rv.x, rv.z end
+    honk()
+    local gone = #driveDeer == n0 - 1
+    local counted = (rv.honkScaredWildlife or 0) >= 1
+    rv.honkCd = keepCd
+    ok(r, "horn scares deer", d ~= nil and gone and counted,
+       string.format("deer %d->%d scared=%d", n0, #driveDeer,
+                     rv.honkScaredWildlife or 0))
+  end
+
   -- 引擎水温：全油门升温、怠速降温、过热限速
   do
     local keepTemp = engineTemp

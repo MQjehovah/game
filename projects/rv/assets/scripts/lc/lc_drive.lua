@@ -225,9 +225,32 @@ function honk()
     end
   end
   rv.honkScared = scared
-  if scared > 0 then
-    toast.text = string.format("喇叭吓跑了 %d 只感染者", scared)
-    toast.t = 2.2
+  -- 鸣笛也会惊走附近的野生动物（鹿）
+  local scaredWild = 0
+  if driveDeer ~= nil then
+    for i = #driveDeer, 1, -1 do
+      local d = driveDeer[i]
+      local dx, dz = d.x - rv.x, d.z - rv.z
+      if dx * dx + dz * dz < 24 * 24 then
+        EmitParticles({ pos = { x = d.x, y = 1.0, z = d.z }, count = 8,
+                        speedMin = 1.0, speedMax = 2.5, lifeMin = 0.25, lifeMax = 0.5,
+                        sizeStart = 0.14, sizeEnd = 0.05,
+                        color = { r = 0.45, g = 0.40, b = 0.30, a = 0.75 },
+                        colorEnd = { r = 0.45, g = 0.40, b = 0.30, a = 0.0 },
+                        additive = false })
+        Despawn(d.ent)
+        table.remove(driveDeer, i)
+        scaredWild = scaredWild + 1
+      end
+    end
+  end
+  rv.honkScaredWildlife = scaredWild
+  if scared > 0 or scaredWild > 0 then
+    local parts = {}
+    if scared > 0 then parts[#parts + 1] = scared .. " 只感染者" end
+    if scaredWild > 0 then parts[#parts + 1] = scaredWild .. " 只野生动物" end
+    toast.text = "喇叭吓跑了 " .. table.concat(parts, " / ")
+    toast.t = 2.4
   end
   return true
 end
