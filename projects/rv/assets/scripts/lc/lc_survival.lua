@@ -368,6 +368,15 @@ function faintPlayer()
   toast.t = 4.0
 end
 
+-- 夜里在营地篝火旁休息：慢速恢复体力
+function campfireRestAvailable()
+  if campfire == nil or not onFoot or not player.active or buildMode then return false end
+  if atNode ~= "camp" then return false end
+  if not (isNight ~= nil and isNight()) then return false end
+  local dx, dz = player.x - campfire.x, player.z - campfire.z
+  return dx * dx + dz * dz < 3.4 * 3.4
+end
+
 -- 卫生对睡眠恢复的影响：干净时 100%，脏到 0 只剩 60%
 function hygieneEnergyFactor(h)
   local v = math.max(0, math.min(100, h or 0)) / 100
@@ -414,6 +423,11 @@ function updateSurvival(dt)
   local sprinting = onFoot and not buildMode and ActionDown("w") and ActionDown("shift")
   needs.energy = math.max(0, needs.energy -
     (SURVIVAL.energyRate + (sprinting and SURVIVAL.sprintExtra or 0)) * gm)
+  -- 夜里坐在营地篝火旁：缓慢回体力
+  if campfireRestAvailable ~= nil and campfireRestAvailable() then
+    needs.energy = math.min(100, needs.energy +
+      (SURVIVAL.campfireRest or 0.10) * gm)
+  end
 
   if needs.hunger <= 0 or needs.thirst <= 0 then
     needs.health = math.max(0, needs.health - SURVIVAL.healthDrain * gm)

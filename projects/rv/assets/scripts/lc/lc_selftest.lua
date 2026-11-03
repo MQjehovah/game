@@ -2075,6 +2075,21 @@ function runSelfTest()
                      itemCount("rawfood"), n0, #rabbits))
   end
 
+  -- 夜里篝火旁休息：只有夜晚/营地/步行/靠近火堆才生效
+  do
+    local sc, sa, sf = clock, atNode, onFoot
+    local px, pz = player.x, player.z
+    clock, atNode, onFoot = 22 * 60, "camp", true
+    if campfire ~= nil then player.x, player.z = campfire.x, campfire.z end
+    local night = campfireRestAvailable()
+    clock = 12 * 60
+    local day = campfireRestAvailable()
+    clock, atNode, onFoot = sc, sa, sf
+    player.x, player.z = px, pz
+    ok(r, "campfire rest", night == true and day == false,
+       string.format("night=%s day=%s", tostring(night), tostring(day)))
+  end
+
   -- 睡醒晨报：包含天数/货运单数/今日目标/油量
   do
     local sd, sc = day, clock

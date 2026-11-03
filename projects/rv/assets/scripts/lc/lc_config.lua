@@ -42,6 +42,7 @@ SURVIVAL = {
   hungerRate = 0.030,
   thirstRate = 0.060,
   energyRate = 0.022,
+  campfireRest = 0.10,          -- 夜里在篝火边休息：体力 +0.10/游戏分钟
   hygieneRate = 0.012,
   healthDrain = 0.06,          -- 饥饿/口渴归零后按游戏分钟扣血
   healthRegen = 0.012,         -- 饱食/水分充足时缓慢回血
