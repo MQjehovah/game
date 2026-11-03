@@ -759,6 +759,18 @@ local function serverHandleCommand(clientId, a)
                         (parts and parts.engine) or 0,
                         (materials and materials.metal) or 0))
     pushState()
+  elseif t == "mast_repair" then
+    local mx = (radioMast and radioMast.x) or 1e9
+    local mz = (radioMast and radioMast.z) or 1e9
+    local dx, dz = (rv.x or 0) - mx, (rv.z or 0) - mz
+    local near = dx * dx + dz * dz < 12 * 12
+    local okMast = false
+    if near and repairRadioMast ~= nil then okMast = repairRadioMast() end
+    print(string.format("[coop-mast] ok=%s near=%s fixed=%s metal=%d",
+                        tostring(okMast), tostring(near),
+                        tostring(radioMastFixed),
+                        (materials and materials.metal) or 0))
+    pushState()
   elseif t == "eat" then
     local id = chooseFood()
     if id ~= nil and useItem(id) then
@@ -1069,6 +1081,22 @@ local function serverUpdate(dt)
     print(string.format("[coop-cook] demo ok=%s stove=%s meal=%d water=%.0f",
                         tostring(okCook), tostring(furnState("stove")),
                         inv.meal or 0, water or 0))
+    pushState()
+  end
+
+  -- Test-only co-op radio mast repair: drive to the mast, give materials,
+  -- repair server-side, and log the beacon/map unlock state.
+  if coop.mastDemo and not coop.mastDemoDone and coop.autoT >= 3.0 then
+    coop.mastDemoDone = true
+    radioMastFixed = false
+    if radioMast ~= nil then rv.x, rv.z = radioMast.x, radioMast.z end
+    materials.metal = (materials.metal or 0) + 10
+    materials.electronics = (materials.electronics or 0) + 5
+    local okMast = false
+    if repairRadioMast ~= nil then okMast = repairRadioMast() end
+    print(string.format("[coop-mast] demo ok=%s fixed=%s metal=%d",
+                        tostring(okMast), tostring(radioMastFixed),
+                        (materials and materials.metal) or 0))
     pushState()
   end
 
@@ -1824,6 +1852,7 @@ local function clientUpdate(dt)
     if ActionPressed("q") then Rpc("game_cmd", { type = "refuel_can" }) end
     if ActionPressed("k") then Rpc("game_cmd", { type = "workbench_repair" }) end
     if ActionPressed("c") then Rpc("game_cmd", { type = "cook" }) end
+    if ActionPressed("n") then Rpc("game_cmd", { type = "mast_repair" }) end
     if coop.highDemo and not coop.highDemoDone then
       coop.highDemoT = (coop.highDemoT or 0) + dt
       if coop.highDemoT >= 3.0 and GetVar("netConnected") == 1 then
@@ -2278,6 +2307,7 @@ function coopInitWorld(role)
     coop.fuelDemo = readFlag("coop_fuel.txt")
     coop.workbenchDemo = readFlag("coop_workbench.txt")
     coop.cookMealDemo = readFlag("coop_cookmeal.txt")
+    coop.mastDemo = readFlag("coop_mast.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2391,6 +2421,7 @@ function coopInitWorld(role)
     coop.fuelDemo = readFlag("coop_fuel.txt")
     coop.workbenchDemo = readFlag("coop_workbench.txt")
     coop.cookMealDemo = readFlag("coop_cookmeal.txt")
+    coop.mastDemo = readFlag("coop_mast.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
