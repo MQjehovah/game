@@ -557,7 +557,7 @@ POI 墙体碰撞/门洞通行等。
   `rv terrain lod stream`（load=190 unload=210）、
   `glass voronoi cells`（cells=19 area=1.000 near=0.0420 far=0.0575 n=6/13）、
   `glass seed token`（ruin:981231:19 legacy=gasstop:42:0）、
-  `rv sculpted geometry`（wall=393/393 t=0.08 jambs=64(chamfer 0.03) panes=14 gaskets=28 fascia=30/22 reveals=32 bodyV=15152 lathe=28 sinkV=2048）、
+  `rv sculpted geometry`（wall=393/393 t=0.08 jambs=64(chamfer 0.03) panes=14 gaskets=28 fascia=30/22 rear=48/30 reveals=32 bodyV=15384 lathe=28 sinkV=2048）、
   `rv wheel body binding`（`PhysicsAddWheelJoint` + `PhysicsAddCylinder` +
   `PhysicsActivate`）、
   `rv wheel bodies`（bodies=4）、
@@ -725,6 +725,10 @@ POI 墙体碰撞/门洞通行等。
   挡风玻璃改成 6 列折面曲面（`zb(x)=5.54−0.10·(x/1.06)²`、
   `zt(x)=4.92−0.05·(x/1.06)²`），两侧与顶部共 22 条倒角/包角接缝；
   合计 **30 片曲面**（`curvedPanels=30`、`fasciaChamfers=22`、`fasciaCurve=0.10`）。
+  **后围改为 loft 曲面尾舱**：8 行 × 8 列的曲面后围板
+  （`z = −4.06 + 0.06·(x/1.18)² + 0.03·((y−1.20)/0.90)²`，中央最靠后），
+  按矩形后窗开洞并做 4 条浅窗洞 reveal，两侧/顶部/底部共 30 条倒角接缝
+  （`rearPanels=48`、`rearChamfers=30`、`rearReveals=4`、`rearCurve=0.06`）。
   **轮拱改为沿圆周扫掠的连续圆角唇边**（每侧每轮 16 段、共 4 条），
   内侧有半圆轮腔挡板；车顶与侧墙之间改为
   **3 段 loft 圆角肩线**（1.18/2.02 → 1.16/2.07 → 1.11/2.115 → 1.08/2.14），
@@ -732,7 +736,8 @@ POI 墙体碰撞/门洞通行等。
   `assets/data/rv_body_stats.json`（wall=393/393、thickness=0.08、jambs=64、
   jambChamfer=0.03、glassThickness=0.03、windowPanes=14、gaskets=28、
   curvedPanels=30、fasciaChamfers=22、fasciaCurve=0.10、
-  reveals=32、holes=12、curve=0.05、arch=16/4、roof=3、15,152 顶点）。
+  rearPanels=48、rearChamfers=30、rearReveals=4、rearCurve=0.06、
+  reveals=32、holes=12、curve=0.05、arch=16/4、roof=3、15,384 顶点）。
   20 类可摆放家具仍由 `tools/gen_rv_furniture.py` 生成多部件 glTF；
   **水槽盆体改为旋成曲面**：`tools/rv_geom.lathe()` 将 12 点 U 形剖面绕 Y 轴
   旋成 28 段的椭圆不锈钢盆（含内壁/盆底/外壁/盆沿），台面改用四块围板留出开口，
@@ -744,10 +749,11 @@ POI 墙体碰撞/门洞通行等。
   法线/粗糙度/金属度/AO/自发光；截图 `rv_sculpt_side.png`（轮拱/肩线）与
   `rv_sculpt_sink.png`（旋成盆体）可见曲面轮廓，`rv_wall_side2.png` 为带厚度
   开洞的侧墙/车窗近景，`rv_glass_close.png` 为车窗双层玻璃+密封条近景，
-  `rv_fascia_front.png` 为曲面车头/挡风玻璃，`rv_fascia_side.png` 为侧面复查。
+  `rv_fascia_front.png` 为曲面车头/挡风玻璃，`rv_fascia_side.png` 为侧面复查，
+  `rv_rear_cap.png` 为曲面后围/后窗。
   但车窗仍是平面玻璃片（双层+边条，但没有曲率/折射），
-  后围与车顶附件仍是盒体，家具只有水槽用了旋成曲面；
-  前围曲面仍是低多边形折面（4×6 网格，没有 NURBS/细分）；
+  保险杠/尾灯座与车顶附件仍是盒体，家具只有水槽用了旋成曲面；
+  前/后围曲面仍是低多边形折面（4×6 / 8×8 网格，没有 NURBS/细分）；
   没有曲面细分/视差贴图；
 - 地形已有 288×288m（73×73、4m 网格，JSON 约 30KB）的营地级高度场与土坡，
   但超出该范围仍是平地，网格分辨率也较粗（4m 面片），且没有 LOD/流式加载；

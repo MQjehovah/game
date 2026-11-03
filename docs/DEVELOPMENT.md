@@ -770,6 +770,10 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   挡风玻璃改成 6 列折面曲面（底边 `5.54−0.10·(x/1.06)²`、
   顶边 `4.92−0.05·(x/1.06)²`），两侧与顶部的倒角/包角接缝共 22 条；
   合计 30 片曲面（`curvedPanels=30`、`fasciaChamfers=22`、`fasciaCurve=0.10`）。
+  **后围同样是 loft 曲面尾舱**：8 行 × 8 列曲面后围板
+  （`z = −4.06 + 0.06·(x/1.18)² + 0.03·((y−1.20)/0.90)²`，中央最靠后），
+  按矩形后窗开洞并做 4 条浅窗洞 reveal，两侧/顶部/底部共 30 条倒角接缝
+  （`rearPanels=48`、`rearChamfers=30`、`rearReveals=4`、`rearCurve=0.06`）。
   另有**沿圆周扫掠的连续圆角轮拱唇边**（每轮 16 段、共 4 条）+ 半圆轮腔挡板、
   **3 段 loft 圆角肩线**（1.18/2.02 → 1.16/2.07 →
   1.11/2.115 → 1.08/2.14）、前后保险杠/防擦条、车顶行李架/空调/爬梯/遮阳篷盒、
@@ -780,9 +784,10 @@ UI 编辑器（`ui/*.ui.json` 节点编辑 + 1:1 预览 + 拖动/缩放）、本
   `assets/data/rv_body_stats.json`（wallQuads=393、wallInnerQuads=393、
   wallThickness=0.08、wallJambs=64、jambChamfer=0.03、glassThickness=0.03、
   windowPanes=14、gasketStrips=28、curvedPanels=30、fasciaChamfers=22、
-  fasciaCurve=0.10、wallArchReveals=32、wallHoles=12、
+  fasciaCurve=0.10、rearPanels=48、rearChamfers=30、rearReveals=4、
+  rearCurve=0.06、wallArchReveals=32、wallHoles=12、
   wallCurve=0.05、archLipSegments=16、archArcs=4、roofShoulderStrips=3、
-  15,152 顶点 / 7,224 三角）。
+  15,384 顶点 / 7,344 三角）。
   `tools/gen_rv_furniture.py` 生成全部 20 类可摆放家具 `rv_furn_bed_single/bed_double/
   stove/fridge/sink/workbench/storage/tv/bathroom/med_cabinet/gun_rack/heater/
   water_tank/battery/generator/turret/solar/roof_vent/coffee/plant`（多部件：

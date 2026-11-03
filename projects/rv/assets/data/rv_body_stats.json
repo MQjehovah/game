@@ -1,5 +1,9 @@
 {
   "curvedPanels": 30,
+  "rearPanels": 48,
+  "rearChamfers": 30,
+  "rearReveals": 4,
+  "rearCurve": 0.06,
   "fasciaChamfers": 22,
   "fasciaCurve": 0.1,
   "wallQuads": 393,
@@ -18,7 +22,7 @@
   "wheelWellSegments": 16,
   "wheelWellArcs": 4,
   "roofShoulderStrips": 3,
-  "verts": 15152,
-  "tris": 7224,
+  "verts": 15384,
+  "tris": 7344,
   "prims": 10
 }

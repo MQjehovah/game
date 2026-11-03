@@ -405,6 +405,68 @@ def curved_windshield(m):
     return quads
 
 
+REAR_Z = -4.0
+REAR_BULGE = 0.06
+REAR_HOLE = (-0.66, 0.66, 1.15, 1.75)
+
+
+def rear_cap(m):
+    """Lofted curved rear cap with a window cut-out and chamfered joints.
+
+    Returns (panels, chamfers, reveals); the rear window glass/frame is added
+    by the caller at the matching depth.
+    """
+    hx0, hx1, hy0, hy1 = REAR_HOLE
+    xcuts = [-1.18, -0.95, hx0, -0.33, 0.0, 0.33, hx1, 0.95, 1.18]
+    ycuts = [Y0, 0.55, 0.85, hy0, 1.45, hy1, 2.05, 2.10]
+
+    def zr(x, y):
+        tx = (x / 1.18) ** 2
+        ty = min(1.0, ((y - 1.20) / 0.90) ** 2)
+        return REAR_Z - 0.06 + REAR_BULGE * tx + 0.03 * ty
+
+    panels = 0
+    for j in range(len(ycuts) - 1):
+        y0, y1 = ycuts[j], ycuts[j + 1]
+        for i in range(len(xcuts) - 1):
+            x0, x1 = xcuts[i], xcuts[i + 1]
+            xc, yc = (x0 + x1) * 0.5, (y0 + y1) * 0.5
+            if hx0 < xc < hx1 and hy0 < yc < hy1:
+                continue
+            # normal points backward (-Z): wind x ascending, y descending
+            m.quad(BODY, (x0, y1, zr(x0, y1)), (x1, y1, zr(x1, y1)),
+                   (x1, y0, zr(x1, y0)), (x0, y0, zr(x0, y0)))
+            panels = panels + 1
+
+    # window reveals (a shallow tunnel into the cap)
+    reveals = 0
+    for (xa, ya, xb, yb) in ((hx0, hy0, hx1, hy0), (hx1, hy1, hx0, hy1),
+                             (hx0, hy1, hx0, hy0), (hx1, hy0, hx1, hy1)):
+        m.poly(TRIM, [(xa, ya, zr(xa, ya)), (xb, yb, zr(xb, yb)),
+                      (xb, yb, zr(xb, yb) + 0.05),
+                      (xa, ya, zr(xa, ya) + 0.05)], (0.0, 0.0, -1.0))
+        reveals = reveals + 1
+
+    # chamfered joints: sides to the wall planes, top to the roof shoulder,
+    # bottom to the floor.
+    chamfers = 0
+    for sx in (-1, 1):
+        for j in range(len(ycuts) - 1):
+            y0, y1 = ycuts[j], ycuts[j + 1]
+            m.quad(BODY, (sx * 1.18, y0, zr(sx * 1.18, y0)),
+                   (sx * 1.10, y0, ZB), (sx * 1.10, y1, ZB),
+                   (sx * 1.18, y1, zr(sx * 1.18, y1)))
+            chamfers = chamfers + 1
+    for i in range(len(xcuts) - 1):
+        x0, x1 = xcuts[i], xcuts[i + 1]
+        m.quad(BODY, (x0, 2.10, zr(x0, 2.10)), (x1, 2.10, zr(x1, 2.10)),
+               (x1, 2.10, ZB + 0.05), (x0, 2.10, ZB + 0.05))
+        m.quad(BODY, (x0, Y0, zr(x0, Y0)), (x1, Y0, zr(x1, Y0)),
+               (x1, Y0, ZB), (x0, Y0, ZB))
+        chamfers = chamfers + 2
+    return panels, chamfers, reveals
+
+
 def main():
     m = Mesh()
     # Hidden material-0 primitive.
@@ -412,14 +474,15 @@ def main():
 
     # ---- Floor / rear wall / front cab ----
     m.box(BODY, 0, 0.275, 0.5, 2.36, 0.05, 9.0)
-    m.box(BODY, 0, (Y0 + Y1) * 0.5, ZB, 2.36, Y1 - Y0, 0.08)
-    # rear window + frame ring
-    m.box(GLASS, 0, 1.45, ZB - 0.05, 1.30, 0.55, 0.03)
-    m.box(TRIM, 0, 1.13, ZB - 0.045, 1.44, 0.07, 0.04)
-    m.box(TRIM, 0, 1.77, ZB - 0.045, 1.44, 0.07, 0.04)
-    m.box(TRIM, -0.68, 1.45, ZB - 0.045, 0.07, 0.71, 0.04)
-    m.box(TRIM, 0.68, 1.45, ZB - 0.045, 0.07, 0.71, 0.04)
-    m.box(TRIM, 0, 1.45, ZB - 0.03, 0.06, 0.55, 0.02)
+    # Lofted curved rear cap (window cut-out + chamfered joints).
+    rear_panels, rear_chamfers, rear_reveals = rear_cap(m)
+    # rear window glass + frame sit just behind the curved cap
+    m.box(GLASS, 0, 1.45, ZB - 0.10, 1.30, 0.55, 0.03)
+    m.box(TRIM, 0, 1.13, ZB - 0.075, 1.44, 0.07, 0.04)
+    m.box(TRIM, 0, 1.77, ZB - 0.075, 1.44, 0.07, 0.04)
+    m.box(TRIM, -0.68, 1.45, ZB - 0.075, 0.07, 0.71, 0.04)
+    m.box(TRIM, 0.68, 1.45, ZB - 0.075, 0.07, 0.71, 0.04)
+    m.box(TRIM, 0, 1.45, ZB - 0.06, 0.06, 0.55, 0.02)
 
     # Front cab: lofted curved fascia + faceted curved windshield.
     fascia_panels, fascia_chamfers = front_fascia(m)
@@ -677,6 +740,10 @@ def main():
     STATS.parent.mkdir(parents=True, exist_ok=True)
     STATS.write_text(json.dumps({
         "curvedPanels": curved_panels,
+        "rearPanels": rear_panels,
+        "rearChamfers": rear_chamfers,
+        "rearReveals": rear_reveals,
+        "rearCurve": REAR_BULGE,
         "fasciaChamfers": fascia_chamfers,
         "fasciaCurve": FRONT_BULGE,
         "wallQuads": wall_quads,

@@ -583,6 +583,11 @@ function on_start()
     px, pz = 2.6, 9.2
     pyaw = dirYaw(-2.6, -9.2)
   end
+  if startMode == "rvrear" then
+    -- Test-only rear three-quarter view of the RV (curved rear cap).
+    px, pz = 2.8, -9.0
+    pyaw = dirYaw(-2.8, 5.4)
+  end
   if startMode == "furnview" then
     -- Test-only interior view down the furniture wall.
     px, pz = -0.72, 1.30
