@@ -961,6 +961,27 @@ function runSelfTest()
      job == nil and cond < 0.7 and gained >= 1 and gained < fullMetal,
      string.format("cond=%.2f metal=%d/%d", cond, gained, fullMetal))
 
+  -- 易碎货：撞击掉货况翻倍（0.10 vs 0.05 per m/s）
+  do
+    jobRefreshOffers("gasstop")
+    jobAccept(1)
+    job.fragile = true
+    local c0 = job.condition
+    jobApplyImpact(2.0)
+    local fragileDrop = c0 - job.condition
+    jobAbandon()
+    jobRefreshOffers("gasstop")
+    jobAccept(1)
+    job.fragile = false
+    c0 = job.condition
+    jobApplyImpact(2.0)
+    local normalDrop = c0 - job.condition
+    jobAbandon()
+    ok(r, "fragile cargo damage",
+       math.abs(fragileDrop - 0.20) < 1e-6 and math.abs(normalDrop - 0.10) < 1e-6,
+       string.format("fragile=%.2f normal=%.2f", fragileDrop, normalDrop))
+  end
+
   -- 限时急单：超时作废，不结算报酬
   jobRefreshOffers("gasstop")
   jobAccept(1)

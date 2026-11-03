@@ -120,6 +120,11 @@ function jobRefreshOffers(preferId)
       pay.metal = math.max(1, math.floor(pay.metal * 1.4 + 0.5))
       pay.wood = math.max(1, math.floor(pay.wood * 1.4 + 0.5))
     end
+    -- 约 20% 是易碎货（医疗/电子类）：撞击掉货况翻倍，报酬 ×1.25
+    local fragile = math.random() < 0.20
+    if fragile then
+      pay.metal = math.max(1, math.floor(pay.metal * 1.25 + 0.5))
+    end
     return {
       destId = nd.id,
       destName = nd.name,
@@ -132,6 +137,7 @@ function jobRefreshOffers(preferId)
       pay = pay,
       fuel = fuelPay,
       urgent = urgent,
+      fragile = fragile,
       deadlineAbs = urgent and (jobNowAbs() + 300 + dist * 0.8) or nil,
       stage = "offer",
     }
@@ -192,6 +198,7 @@ function jobAccept(idx)
     weight = offer.weight, distance = offer.distance,
     pay = offer.pay, fuel = offer.fuel, stage = "carry", condition = 1.0,
     urgent = offer.urgent, deadlineAbs = offer.deadlineAbs,
+    fragile = offer.fragile,
   }
   jobUI = false
   jobOffers = {}
@@ -208,9 +215,11 @@ end
 function jobApplyImpact(drop)
   if job == nil then return end
   local before = job.condition or 1.0
-  job.condition = math.max(0, before - math.min(0.5, (drop or 0) * 0.05))
+  local mult = job.fragile and 0.10 or 0.05
+  job.condition = math.max(0, before - math.min(0.5, (drop or 0) * mult))
   if before >= 0.5 and job.condition < 0.5 then
-    toast.text = "货物受损过半！送达报酬会明显打折"
+    toast.text = job.fragile and "易碎货物受损过半！报酬会大幅打折"
+                              or "货物受损过半！送达报酬会明显打折"
     toast.t = 3.2
   end
 end
