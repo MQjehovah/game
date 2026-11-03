@@ -554,41 +554,71 @@ end
 -- both are scaled together so the resultant never exceeds mu_eff * N.
 -- Returns fx, fy (N), utilization and the effective mu.
 function tireCombinedForce(mu, normalForce, slip, latV, wheelMass, dt, peak, sat,
-                           pressure, vLong)
+                           pressure, vLong, muLat)
   local n = math.max(0, normalForce or 0)
   local p = pressure or 2.4
-  local muEff = (mu or 0.9) * tireLoadMuScale(n) * tirePressureMuScale(p)
-  local cap = math.max(1.0, muEff * n)
+  local loadScale = tireLoadMuScale(n) * tirePressureMuScale(p)
+  local muEff = (mu or 0.9) * loadScale
+  local muLatEff = (muLat or mu or 0.9) * loadScale
+  local cap = math.max(1.0, math.max(muEff, muLatEff) * n)
   local fx = tirePacejkaLong(mu, n, slip, p)
   local fwd = math.max(1.0, math.abs(vLong or 8.0))
   local alpha = math.atan((latV or 0) / fwd)
-  local fy = -tirePacejkaLat(muEff, n, alpha)
+  local fy = -tirePacejkaLat(muLatEff, n, alpha)
   local mag = math.sqrt((fx / cap) ^ 2 + (fy / cap) ^ 2)
   local scale = 1.0
   if mag > 1.0 then scale = 1.0 / mag end
   return fx * scale, fy * scale, mag, muEff
 end
 
--- Per-tread thermal step: the inner tread is heated by longitudinal (drive /
--- brake) slip, the outer one by lateral (cornering) slip; both cool with
--- airflow at the wheel speed. Returns inner, outer.
-function tireTreadStep(tInner, tOuter, speed, slipLong, slipLat, load, dt, ambient)
-  local n = math.max(0, load or 0)
-  local v = math.abs(speed or 0)
-  local step = dt or 0.016
+-- Multi-rib tread band: four ribs across the tire (1-2 inner, 3-4 outer).
+-- Longitudinal slip heats the inner ribs more, lateral slip the outer ones;
+-- heat conducts sideways between neighbouring ribs before airflow cooling.
+local RIB_LONG = { 0.34, 0.28, 0.22, 0.16 }
+local RIB_LAT = { 0.14, 0.22, 0.30, 0.34 }
+local RIB_CONDUCT = 0.6
+
+function tireRibStep(ribs, speed, slipLong, slipLat, load, dt, ambient)
   local amb = ambient or 22
-  local pIn = math.min(5000, math.abs(slipLong or 0) * n + v * n * 0.012)
-  local pOut = math.min(5000, math.abs(slipLat or 0) * n + v * n * 0.008)
-  local ti = (tInner or amb) + pIn * 0.008 * step
-  local to = (tOuter or amb) + pOut * 0.008 * step
+  local v = math.abs(speed or 0)
+  local n = math.max(0, load or 0)
+  local step = dt or 0.016
+  local heated = {}
+  for k = 1, 4 do
+    local t = (ribs and ribs[k]) or amb
+    local power = math.min(8000,
+      (math.abs(slipLong or 0) * RIB_LONG[k] +
+       math.abs(slipLat or 0) * RIB_LAT[k]) * n * 0.40 + v * n * 0.012)
+    heated[k] = t + power * 0.008 * step
+  end
+  -- Explicit lateral heat conduction between neighbouring ribs.
+  local cond = {}
+  for k = 1, 4 do
+    local left = heated[k - 1] or heated[k]
+    local right = heated[k + 1] or heated[k]
+    cond[k] = heated[k] + RIB_CONDUCT * (left + right - 2 * heated[k]) * step
+  end
   local cool = (0.15 + 0.02 * v) * step
-  ti = ti - (ti - amb) * cool
-  to = to - (to - amb) * cool
-  if ti < amb then ti = amb end
-  if to < amb then to = amb end
-  if ti > 150 then ti = 150 end
-  if to > 150 then to = 150 end
-  return ti, to
+  local out = {}
+  for k = 1, 4 do
+    local t = cond[k] - (cond[k] - amb) * cool
+    if t < amb then t = amb end
+    if t > 150 then t = 150 end
+    out[k] = t
+  end
+  return out
+end
+
+-- Effective mu for one side of the tread (inner ribs 1-2 for drive/brake,
+-- outer ribs 3-4 for cornering), using each rib's own temperature/wear.
+function tireRibMu(mu, ribs, wears, k0, k1)
+  local sum, n = 0.0, 0
+  for k = k0, k1 do
+    sum = sum + tireMuScale((ribs and ribs[k]) or 22,
+                            (wears and wears[k]) or 100)
+    n = n + 1
+  end
+  return (mu or 0.9) * (sum / math.max(1, n))
 end
 
 -- Longitudinal tire force from a slip ratio (saturating, so it peaks at the
@@ -874,7 +904,21 @@ function updateRvPhysics(dt)
   -- Per-wheel tire state: each wheel has its own temperature/wear and surface.
   rv.tireTemps = rv.tireTemps or { 22, 22, 22, 22 }
   rv.tireWear = rv.tireWear or { 100, 100, 100, 100 }
-  rv.tireTreads = rv.tireTreads or { { 22, 22 }, { 22, 22 }, { 22, 22 }, { 22, 22 } }
+  if rv.tireRibs == nil then
+    rv.tireRibs = {}
+    for i = 1, 4 do
+      local t = rv.tireTreads and rv.tireTreads[i] or nil
+      rv.tireRibs[i] = { t and t[1] or 22, t and t[1] or 22,
+                         t and t[2] or 22, t and t[2] or 22 }
+    end
+  end
+  if rv.tireRibWear == nil then
+    rv.tireRibWear = {}
+    for i = 1, 4 do
+      local w = rv.tireWear[i] or 100
+      rv.tireRibWear[i] = { w, w, w, w }
+    end
+  end
   rv.tirePressureCold = rv.tirePressureCold or { 2.4, 2.4, 2.4, 2.4 }
   rv.tirePressure = rv.tirePressure or { 2.4, 2.4, 2.4, 2.4 }
   local wheelV, wheelSlipSpd, wheelLatSpd, wheelLoad, wheelSurf = {}, {}, {}, {}, {}
@@ -1029,9 +1073,13 @@ function updateRvPhysics(dt)
     local press = tirePressureAt(rv.tireTemps[i] or 22,
                                  rv.tirePressureCold[i] or 2.4)
     rv.tirePressure[i] = press
+    local ribs = rv.tireRibs[i]
+    local ribWear = rv.tireRibWear[i]
+    local muLong = tireRibMu(mu, ribs, ribWear, 1, 2)
+    local muLat = tireRibMu(mu, ribs, ribWear, 3, 4)
     local fx, fy, util, muEff = tireCombinedForce(
-        mu, nForce, slip, latV, mass / 4, step, surfDef.peak, surfDef.sat,
-        press, vLong)
+        muLong, nForce, slip, latV, mass / 4, step, surfDef.peak, surfDef.sat,
+        press, vLong, muLat)
     fx = fx * factor
     local impL = fx * step
     local impLat = fy * step
@@ -1058,17 +1106,25 @@ function updateRvPhysics(dt)
     local tempSum = 0
     for i = 1, 4 do
       local surfDef = wheelSurf[i] or SURFACES.grass
-      local tr = rv.tireTreads[i]
-      local ti, to = tireTreadStep(tr[1], tr[2], wheelV[i] or 0,
-                                   wheelSlipSpd[i] or 0,
-                                   wheelLatSpd[i] or 0,
-                                   wheelLoad[i] or 0, step, 22)
-      tr[1], tr[2] = ti, to
-      rv.tireTemps[i] = (ti + to) * 0.5
-      rv.tireWear[i] = tireWearStep(rv.tireWear[i] or 100,
-                                    (wheelSlipSpd[i] or 0) +
-                                    (wheelLatSpd[i] or 0) * 0.5, step,
-                                    surfDef.wear)
+      local ribs = rv.tireRibs[i]
+      local ribWear = rv.tireRibWear[i]
+      local next = tireRibStep(ribs, wheelV[i] or 0,
+                               wheelSlipSpd[i] or 0,
+                               wheelLatSpd[i] or 0,
+                               wheelLoad[i] or 0, step, 22)
+      local tempSumI = 0
+      local wearSumI = 0
+      for k = 1, 4 do
+        ribs[k] = next[k]
+        tempSumI = tempSumI + ribs[k]
+        local slipK = (wheelSlipSpd[i] or 0) * RIB_LONG[k] +
+                      (wheelLatSpd[i] or 0) * 0.5 * RIB_LAT[k]
+        ribWear[k] = tireWearStep(ribWear[k] or 100, slipK, step,
+                                  surfDef.wear)
+        wearSumI = wearSumI + ribWear[k]
+      end
+      rv.tireTemps[i] = tempSumI * 0.25
+      rv.tireWear[i] = wearSumI * 0.25
       tempSum = tempSum + rv.tireTemps[i]
     end
     rv.tireTemp = tempSum / 4
@@ -1079,7 +1135,10 @@ function updateRvPhysics(dt)
       for i = 1, 4 do avgWear = avgWear + (rv.tireWear[i] or 100) end
       avgWear = avgWear / 4
       if parts.tires > avgWear + 1.0 then
-        for i = 1, 4 do rv.tireWear[i] = parts.tires end
+        for i = 1, 4 do
+          rv.tireWear[i] = parts.tires
+          for k = 1, 4 do rv.tireRibWear[i][k] = parts.tires end
+        end
       else
         parts.tires = avgWear
       end
@@ -1099,14 +1158,14 @@ function updateRvPhysics(dt)
       local vf3 = vx * fwdX + vz * fwdZ
       local temps = rv.tireTemps or { 22, 22, 22, 22 }
       local wears = rv.tireWear or { 100, 100, 100, 100 }
-      local tr3 = rv.tireTreads and rv.tireTreads[3] or { 22, 22 }
+      local rib3 = rv.tireRibs and rv.tireRibs[3] or { 22, 22, 22, 22 }
       local pr = rv.tirePressure or { 2.4, 2.4, 2.4, 2.4 }
-      print(string.format("[tire] surf=%s mu=%.2f temp=%.0f T=(%.0f/%.0f/%.0f/%.0f) P=(%.2f/%.2f/%.2f/%.2f) W=(%.1f/%.1f/%.1f/%.1f) trRL=(%.0f/%.0f) cmd=%.1f vf=%.1f omega=%.1f slip=%.2f",
+      print(string.format("[tire] surf=%s mu=%.2f temp=%.0f T=(%.0f/%.0f/%.0f/%.0f) P=(%.2f/%.2f/%.2f/%.2f) W=(%.1f/%.1f/%.1f/%.1f) ribsRL=(%.0f/%.0f/%.0f/%.0f) cmd=%.1f vf=%.1f omega=%.1f slip=%.2f",
         surfLast, muLast, rv.tireTemp or 22,
         temps[1], temps[2], temps[3], temps[4],
         pr[1], pr[2], pr[3], pr[4],
         wears[1], wears[2], wears[3], wears[4],
-        tr3[1], tr3[2],
+        rib3[1], rib3[2], rib3[3], rib3[4],
         targetSpeed, vf3, om3, slipAvg))
     end
   end

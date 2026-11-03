@@ -622,16 +622,39 @@ function runSelfTest()
          string.format("muNom=%.2f muLow=%.2f pCold=%.2f pHot=%.2f",
                        nom, low, cold, hot))
     end
-    if tireTreadStep ~= nil then
-      local ci, co, bi, bo = 22.0, 22.0, 22.0, 22.0
+    if tireRibStep ~= nil and tireRibMu ~= nil then
+      -- Four-rib tread band: cornering heats the outer ribs (3-4), braking
+      -- heats the inner ones (1-2); heat conducts sideways between ribs.
+      local cor = { 22.0, 22.0, 22.0, 22.0 }
+      local brk = { 22.0, 22.0, 22.0, 22.0 }
       for _ = 1, 120 do
-        ci, co = tireTreadStep(ci, co, 8.0, 0.3, 6.0, 4000, 1 / 60, 22)
-        bi, bo = tireTreadStep(bi, bo, 8.0, 6.0, 0.1, 4000, 1 / 60, 22)
+        cor = tireRibStep(cor, 8.0, 0.3, 6.0, 4000, 1 / 60, 22)
+        brk = tireRibStep(brk, 8.0, 6.0, 0.1, 4000, 1 / 60, 22)
       end
-      ok(r, "rv tire tread split",
-         co > ci + 1.0 and bi > bo + 1.0 and co > 22 and bi > 22,
+      local corOuter = (cor[3] + cor[4]) * 0.5
+      local corInner = (cor[1] + cor[2]) * 0.5
+      local brkInner = (brk[1] + brk[2]) * 0.5
+      local brkOuter = (brk[3] + brk[4]) * 0.5
+      ok(r, "rv tire rib tread",
+         corOuter > corInner + 1.0 and brkInner > brkOuter + 1.0 and
+         cor[4] >= cor[1] and brk[1] >= brk[4],
          string.format("corner in/out=%.0f/%.0f brake in/out=%.0f/%.0f",
-                       ci, co, bi, bo))
+                       corInner, corOuter, brkInner, brkOuter))
+      -- Conduction: a hot rib bleeds into a cold neighbour even with no slip.
+      local hot = { 100.0, 30.0, 22.0, 22.0 }
+      for _ = 1, 60 do hot = tireRibStep(hot, 0.0, 0.0, 0.0, 0.0, 1 / 60, 22) end
+      ok(r, "rv tire rib conduction",
+         hot[1] < 100.0 and hot[2] > 30.0 + 2.0 and hot[3] > 22.0,
+         string.format("ribs=%.0f/%.0f/%.0f/%.0f", hot[1], hot[2], hot[3], hot[4]))
+      -- Per-side mu: overheated inner ribs reduce drive grip while the cool
+      -- outer side keeps cornering grip.
+      local ribs = { 130.0, 130.0, 30.0, 30.0 }
+      local wear = { 100.0, 100.0, 100.0, 100.0 }
+      local mLong = tireRibMu(0.9, ribs, wear, 1, 2)
+      local mLat = tireRibMu(0.9, ribs, wear, 3, 4)
+      ok(r, "rv tire rib mu",
+         mLong < mLat - 0.05 and mLat > 0.80 and mLong > 0.5,
+         string.format("muLong=%.2f muLat=%.2f", mLong, mLat))
     end
     if ackermannAngles ~= nil then
       local l, rr = ackermannAngles(0.5, 5.84, 2.52)
