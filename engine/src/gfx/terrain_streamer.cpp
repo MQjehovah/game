@@ -28,7 +28,6 @@ void TerrainStreamer::Update(Renderer& renderer, const math::Vec3& focus, float 
 
     world::SelectTerrainChunks({focus.x, focus.z}, config_.viewDistance, config_.maxLevel,
                                selected_);
-
     missing_.clear();
     for (const auto& key : selected_)
         if (chunks_.find(key) == chunks_.end()) missing_.push_back(key);
@@ -122,6 +121,13 @@ void TerrainStreamer::Draw(Renderer& renderer, const math::Mat4& viewProj,
     if (chunks_.empty()) return;
 
     Material material = terrainMaterial;
+    // The 2K texture-array path currently uploads/samples the wrong slice on
+    // this GL backend (the ground renders as a flat tan sheet). Use the
+    // shader's procedural grass/rock/snow palette until the array slice upload
+    // is fixed; this keeps the world readable and skips ~400 MB of array VRAM.
+    material.terrainAlbedoArray = {};
+    material.terrainNormalArray = {};
+    material.terrainOrmArray = {};
     if (!material.shader.Valid()) material.shader = renderer.TerrainLayersShader();
     material.lit = true;
     material.castShadow = false;

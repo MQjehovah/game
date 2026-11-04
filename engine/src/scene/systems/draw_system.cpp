@@ -8,6 +8,7 @@
 #include "neon/scene/systems/draw_system.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -1019,7 +1020,8 @@ void DrawSystem::DrawVegetation(gfx::Renderer& renderer, const gfx::Camera& came
 
 void DrawSystem::DrawProceduralScatter(gfx::Renderer& renderer,
                                        const gfx::Camera& camera,
-                                       const world::TerrainWorld* terrain) {
+                                       const world::TerrainWorld* terrain,
+                                       ecs::World& world) {
     if (terrain == nullptr) return;
     if (!scatterReady_) {
         // Procedural low-poly meshes keep the scatter layer asset-free and
@@ -1048,89 +1050,178 @@ void DrawSystem::DrawProceduralScatter(gfx::Renderer& renderer,
     if (!scatterGrassMesh_.Valid() && !scatterRockMesh_.Valid()) return;
 
     const math::Vec3& c = camera.position;
+    // Pull the finished background build first; while it runs, keep drawing the
+    // previous field (radius 80m, rebuild threshold 12m) so there is no pop or
+    // main-thread hitch.
+    if (scatterBuilding_ && scatterFuture_.valid() &&
+        scatterFuture_.wait_for(std::chrono::milliseconds(0)) ==
+            std::future_status::ready) {
+        ScatterBuildResult result = scatterFuture_.get();
+        terrainScatter_.center = result.center;
+        terrainScatter_.grass = std::move(result.grass);
+        terrainScatter_.rocks = std::move(result.rocks);
+        terrainScatter_.built = true;
+        scatterBuilding_ = false;
+    }
+
     const float mdx = c.x - terrainScatter_.center.x;
     const float mdz = c.z - terrainScatter_.center.z;
-    if (!terrainScatter_.built || mdx * mdx + mdz * mdz > 12.0f * 12.0f) {
-        terrainScatter_.center = c;
-        terrainScatter_.grass.clear();
-        terrainScatter_.rocks.clear();
-
-        auto hash01 = [](uint32_t h) {
-            return static_cast<float>(h & 0x00FFFFFFu) * (1.0f / 16777216.0f);
+    if (!scatterBuilding_ &&
+        (!terrainScatter_.built || mdx * mdx + mdz * mdz > 12.0f * 12.0f)) {
+        // Pond/water rectangles: the terrain scatter must not grow grass or
+        // boulders out of a water plane.
+        struct WaterRect {
+            float x, z, hx, hz;
         };
+        std::vector<WaterRect> water;
+        world.ViewAll<SceneMesh>().ForEach(
+            [&](ecs::Entity ent, const SceneMesh& mesh) {
+                if (!mesh.water) return;
+                const SceneTransform* t = world.Get<SceneTransform>(ent);
+                if (t == nullptr) return;
+                water.push_back({t->pos.x, t->pos.z,
+                                 std::fabs(t->scale.x) * 0.5f + 2.0f,
+                                 std::fabs(t->scale.z) * 0.5f + 2.0f});
+            });
+        // Build on a worker: Height/Normal/FlattenWeight sampling costs ~25 ms
+        // for the full field, which would otherwise hitch every 12 m of driving.
+        // TerrainWorld is immutable after Configure(), so these const samples
+        // are thread-safe.
+        scatterBuilding_ = true;
+        scatterFuture_ = std::async(
+            std::launch::async, [terrain, c, water]() -> ScatterBuildResult {
+                ScatterBuildResult result;
+                result.center = c;
 
-        // Grass: one deterministic candidate per 5.5 m world cell, so moving
-        // the camera only adds/removes edge cells (no population popping).
-        {
-            constexpr float cell = 4.5f;
-            constexpr float radius = 80.0f;
-            const int x0 = static_cast<int>(std::floor((c.x - radius) / cell));
-            const int x1 = static_cast<int>(std::floor((c.x + radius) / cell));
-            const int z0 = static_cast<int>(std::floor((c.z - radius) / cell));
-            const int z1 = static_cast<int>(std::floor((c.z + radius) / cell));
-            for (int gz = z0; gz <= z1; ++gz) {
-                for (int gx = x0; gx <= x1; ++gx) {
-                    const uint32_t h = world::Hash2D(gx, gz, 0x51A7u);
-                    const float wx = (static_cast<float>(gx) + 0.15f +
-                                      0.70f * hash01(h)) * cell;
-                    const float wz = (static_cast<float>(gz) + 0.15f +
-                                      0.70f * hash01(h ^ 0x9E3779B9u)) * cell;
-                    const float dx = wx - c.x;
-                    const float dz = wz - c.z;
-                    if (dx * dx + dz * dz > radius * radius) continue;
-                    if (terrain->FlattenWeight(wx, wz) > 0.04f) continue;
-                    const math::Vec3 n = terrain->Normal(wx, wz);
-                    if (1.0f - n.y > 0.38f) continue;
-                    const float wy = terrain->SurfaceHeight(wx, wz);
-                    if (wy > 92.0f) continue;
-                    const float s = 0.45f + 0.45f *
-                        hash01(h * 1664525u + 1013904223u);
-                    const float yaw = 6.2831853f *
-                        hash01(h * 1103515245u + 12345u);
-                    terrainScatter_.grass.push_back(
-                        math::Mat4::Translation({wx, wy, wz}) *
-                        math::Quat::FromEuler(0.0f, yaw, 0.0f).ToMat4() *
-                        math::Mat4::Scale({s, s, s}));
-                }
-            }
-        }
+                auto hash01 = [](uint32_t h) {
+                    return static_cast<float>(h & 0x00FFFFFFu) *
+                           (1.0f / 16777216.0f);
+                };
+                // Keep the scatter out of roads and building footprints, but
+                // allow grass on the outer pad/falloff (the old all-pad skip
+                // left the camp looking like a bare yellow sheet).
+                auto blockedByFeature = [terrain](float x, float z) {
+                    const auto& features = terrain->Config().features;
+                    for (const auto& road : features.roads) {
+                        if (road.points.size() < 2) continue;
+                        const float d = world::DistanceToPolyline(
+                            road.points, {x, z}, nullptr);
+                        if (d < road.halfWidth + 1.0f)
+                            return true;
+                    }
+                    for (const auto& pad : features.pads) {
+                        const float dx = x - pad.center.x;
+                        const float dz = z - pad.center.y;
+                        const float r = pad.radius * 0.55f;
+                        if (dx * dx + dz * dz < r * r) return true;
+                    }
+                    // Keep the RV spawn/footprint clear.
+                    if (x * x + z * z < 9.0f * 9.0f) return true;
+                    return false;
+                };
 
-        // Boulders: sparser grid, partly buried, no grass-thin slopes.
-        {
-            constexpr float cell = 18.0f;
-            constexpr float radius = 120.0f;
-            const int x0 = static_cast<int>(std::floor((c.x - radius) / cell));
-            const int x1 = static_cast<int>(std::floor((c.x + radius) / cell));
-            const int z0 = static_cast<int>(std::floor((c.z - radius) / cell));
-            const int z1 = static_cast<int>(std::floor((c.z + radius) / cell));
-            for (int gz = z0; gz <= z1; ++gz) {
-                for (int gx = x0; gx <= x1; ++gx) {
-                    const uint32_t h = world::Hash2D(gx, gz, 0xB0DEu);
-                    if (hash01(h) > 0.55f) continue;  // sparse boulder field
-                    const float wx = (static_cast<float>(gx) + 0.20f +
-                                      0.60f * hash01(h ^ 0x85EBCA6Bu)) * cell;
-                    const float wz = (static_cast<float>(gz) + 0.20f +
-                                      0.60f * hash01(h ^ 0xC2B2AE35u)) * cell;
-                    const float dx = wx - c.x;
-                    const float dz = wz - c.z;
-                    if (dx * dx + dz * dz > radius * radius) continue;
-                    if (terrain->FlattenWeight(wx, wz) > 0.05f) continue;
-                    const math::Vec3 n = terrain->Normal(wx, wz);
-                    if (1.0f - n.y > 0.55f) continue;
-                    const float wy = terrain->SurfaceHeight(wx, wz);
-                    if (wy > 95.0f) continue;
-                    const float s = 0.35f + 0.55f *
-                        hash01(h * 22695477u + 1u);
-                    const float yaw = 6.2831853f *
-                        hash01(h * 1103515245u + 12345u);
-                    terrainScatter_.rocks.push_back(
-                        math::Mat4::Translation({wx, wy - 0.10f * s, wz}) *
-                        math::Quat::FromEuler(0.0f, yaw, 0.0f).ToMat4() *
-                        math::Mat4::Scale({s, s * 0.85f, s}));
+                // Grass: one deterministic candidate per 4.5 m world cell.
+                {
+                    constexpr float cell = 4.5f;
+                    constexpr float radius = 80.0f;
+                    const int x0 = static_cast<int>(
+                        std::floor((c.x - radius) / cell));
+                    const int x1 = static_cast<int>(
+                        std::floor((c.x + radius) / cell));
+                    const int z0 = static_cast<int>(
+                        std::floor((c.z - radius) / cell));
+                    const int z1 = static_cast<int>(
+                        std::floor((c.z + radius) / cell));
+                    for (int gz = z0; gz <= z1; ++gz) {
+                        for (int gx = x0; gx <= x1; ++gx) {
+                            const uint32_t h = world::Hash2D(gx, gz, 0x51A7u);
+                            const float wx = (static_cast<float>(gx) + 0.15f +
+                                              0.70f * hash01(h)) * cell;
+                            const float wz = (static_cast<float>(gz) + 0.15f +
+                                              0.70f * hash01(
+                                                  h ^ 0x9E3779B9u)) * cell;
+                            const float dx = wx - c.x;
+                            const float dz = wz - c.z;
+                            if (dx * dx + dz * dz > radius * radius) continue;
+                            bool inWater = false;
+                            for (const WaterRect& w : water) {
+                                if (std::fabs(wx - w.x) < w.hx &&
+                                    std::fabs(wz - w.z) < w.hz) {
+                                    inWater = true;
+                                    break;
+                                }
+                            }
+                            if (inWater) continue;
+                            if (blockedByFeature(wx, wz)) continue;
+                            const math::Vec3 n = terrain->Normal(wx, wz);
+                            if (1.0f - n.y > 0.38f) continue;
+                            const float wy = terrain->SurfaceHeight(wx, wz);
+                            if (wy > 92.0f) continue;
+                            const float s = 0.45f + 0.45f *
+                                hash01(h * 1664525u + 1013904223u);
+                            const float yaw = 6.2831853f *
+                                hash01(h * 1103515245u + 12345u);
+                            result.grass.push_back(
+                                math::Mat4::Translation({wx, wy, wz}) *
+                                math::Quat::FromEuler(0.0f, yaw, 0.0f).ToMat4() *
+                                math::Mat4::Scale({s, s, s}));
+                        }
+                    }
                 }
-            }
-        }
-        terrainScatter_.built = true;
+
+                // Boulders: sparser grid, partly buried.
+                {
+                    constexpr float cell = 18.0f;
+                    constexpr float radius = 120.0f;
+                    const int x0 = static_cast<int>(
+                        std::floor((c.x - radius) / cell));
+                    const int x1 = static_cast<int>(
+                        std::floor((c.x + radius) / cell));
+                    const int z0 = static_cast<int>(
+                        std::floor((c.z - radius) / cell));
+                    const int z1 = static_cast<int>(
+                        std::floor((c.z + radius) / cell));
+                    for (int gz = z0; gz <= z1; ++gz) {
+                        for (int gx = x0; gx <= x1; ++gx) {
+                            const uint32_t h = world::Hash2D(gx, gz, 0xB0DEu);
+                            if (hash01(h) > 0.55f) continue;
+                            const float wx = (static_cast<float>(gx) + 0.20f +
+                                              0.60f * hash01(
+                                                  h ^ 0x85EBCA6Bu)) * cell;
+                            const float wz = (static_cast<float>(gz) + 0.20f +
+                                              0.60f * hash01(
+                                                  h ^ 0xC2B2AE35u)) * cell;
+                            const float dx = wx - c.x;
+                            const float dz = wz - c.z;
+                            if (dx * dx + dz * dz > radius * radius) continue;
+                            bool inWater = false;
+                            for (const WaterRect& w : water) {
+                                if (std::fabs(wx - w.x) < w.hx &&
+                                    std::fabs(wz - w.z) < w.hz) {
+                                    inWater = true;
+                                    break;
+                                }
+                            }
+                            if (inWater) continue;
+                            if (blockedByFeature(wx, wz)) continue;
+                            const math::Vec3 n = terrain->Normal(wx, wz);
+                            if (1.0f - n.y > 0.55f) continue;
+                            const float wy = terrain->SurfaceHeight(wx, wz);
+                            if (wy > 95.0f) continue;
+                            const float s = 0.35f + 0.55f *
+                                hash01(h * 22695477u + 1u);
+                            const float yaw = 6.2831853f *
+                                hash01(h * 1103515245u + 12345u);
+                            result.rocks.push_back(
+                                math::Mat4::Translation(
+                                    {wx, wy - 0.10f * s, wz}) *
+                                math::Quat::FromEuler(0.0f, yaw, 0.0f).ToMat4() *
+                                math::Mat4::Scale({s, s * 0.85f, s}));
+                        }
+                    }
+                }
+                return result;
+            });
     }
 
     if (!terrainScatter_.grass.empty()) {
@@ -1987,7 +2078,7 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
     // yaw to face the camera) would follow the host's free/orbit camera, so
     // right-drag orbits the foliage billboards while the world stays put.
     DrawVegetation(renderer, cam, world, sceneTree);
-    DrawProceduralScatter(renderer, cam, params.terrainWorld);
+    DrawProceduralScatter(renderer, cam, params.terrainWorld, world);
     // Script VFX particles: world-space camera-facing billboards (additive +
     // alpha batches), drawn INSIDE the HDR target so bright particles bloom.
     particles.Draw(renderer);
@@ -2141,6 +2232,8 @@ void DrawSystem::Clear() {
     drawBvh_.Clear();
     bvhVisible_.clear();
     drawOrder_.clear();
+    if (scatterFuture_.valid()) scatterFuture_.wait();
+    scatterBuilding_ = false;
     terrainScatter_.built = false;
     terrainScatter_.grass.clear();
     terrainScatter_.rocks.clear();
@@ -2160,6 +2253,8 @@ void DrawSystem::Reset() {
     skyTexPath_.clear();
     skyIblFromTex_ = false;
     terrainScatter_ = {};
+    scatterFuture_ = {};
+    scatterBuilding_ = false;
     scatterGrassMesh_ = {};
     scatterRockMesh_ = {};
     scatterReady_ = false;

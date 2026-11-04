@@ -226,43 +226,6 @@
     {
       "components": {
         "mesh": {
-          "castShadow": false,
-          "material": {
-            "albedoTex": "assets/models/rv/rv_ground_meadow.png",
-            "ao": 1,
-            "colorHex": "#FFFFFF",
-            "emissiveIntensity": 1,
-            "metallic": 0,
-            "roughness": 0.9,
-            "uvRepeat": 160
-          },
-          "meshKey": "cube"
-        },
-        "transform": {
-          "pos": [
-            0,
-            -0.05000000074505806,
-            0
-          ],
-          "rot": [
-            0,
-            0,
-            0,
-            1
-          ],
-          "scale": [
-            60,
-            0.10000000149011612,
-            60
-          ]
-        }
-      },
-      "id": 4,
-      "name": "Ground"
-    },
-    {
-      "components": {
-        "mesh": {
           "material": {
             "ao": 1,
             "colorHex": "#6E6152",

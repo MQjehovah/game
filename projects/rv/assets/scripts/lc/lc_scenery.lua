@@ -259,16 +259,7 @@ function spawnRoadBetween(ax, az, bx, bz)
       roadSegments[#roadSegments + 1] = { ent = ent }
     end
   end
-  for d = 6, len - 2, 6 do
-    local ent = SpawnPrefab("rv_road_dash", { x = 0, y = -50, z = 0 })
-    if ent ~= nil then
-      -- Keep the paint clear of the asphalt's polygon offset and its normal
-      -- map; otherwise the line vanishes or turns into road texture at
-      -- grazing angles.
-      placeAt(ent, d, 0.14 + (roadLinkSeq % 6) * 0.0015)
-      roadDashes[#roadDashes + 1] = { ent = ent }
-    end
-  end
+  -- Lane paint is baked into rv_asphalt_albedo.png; no separate raised cubes.
 end
 
 -- 公路电线杆 + 电线（纯装饰，强化公路感）

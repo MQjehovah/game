@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <future>
 #include <map>
 #include <memory>
 #include <set>
@@ -284,7 +285,8 @@ private:
     // fixed instance budget. Rebuilt only when the camera moves far enough, so
     // it is an engine-side streaming layer rather than per-frame spawning.
     void DrawProceduralScatter(gfx::Renderer& renderer, const gfx::Camera& camera,
-                               const world::TerrainWorld* terrain);
+                               const world::TerrainWorld* terrain,
+                               ecs::World& world);
     // Resolves a vegetation meshKey ("tree"/"bush"/"rock"/obj:/gltf:) to a mesh.
     gfx::Mesh VegetationMesh(gfx::Renderer& renderer, const std::string& meshKey);
 
@@ -315,7 +317,14 @@ private:
         std::vector<math::Mat4> grass;
         std::vector<math::Mat4> rocks;
     };
+    struct ScatterBuildResult {
+        math::Vec3 center{0.0f, 0.0f, 0.0f};
+        std::vector<math::Mat4> grass;
+        std::vector<math::Mat4> rocks;
+    };
     ProceduralScatterField terrainScatter_;
+    std::future<ScatterBuildResult> scatterFuture_;
+    bool scatterBuilding_ = false;
     gfx::Mesh scatterGrassMesh_;
     gfx::Mesh scatterRockMesh_;
     gfx::Material scatterGrassMat_;

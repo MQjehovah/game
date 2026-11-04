@@ -172,10 +172,14 @@
   更细的 1024 草/干草/泥土/碎石混合纹理。生成脚本
   `tools/gen_rv_terrain_textures.py`，截图 `start_mode=chase` / `night_drive`，
   自检 `road surface textures`。
-- **路面深度修复**：5m 路板改为首尾相接、不再重叠；黄色虚线单独
-  `polygonOffset -4` 并抬高 0.14m，避免被沥青的 `polygonOffset -2` 和
-  normal map 在掠射角遮掉；路肩也按坡度俯仰并与路板对齐，减少远处破面抖动。
-  自检 `road paint depth`。
+- **车道线烘焙**：黄色车道虚线直接画进 `rv_asphalt_albedo.png` 的每个 5m
+  路板贴图，不再生成抬高的黄色立方体；掠射角不会再出现巨大的黄色条带，
+  也没有路面/车漆 z-fighting。路板首尾相接、路肩按坡度俯仰，
+  自检 `road lane paint`。
+- **地形贴图回退**：2K 地形纹理数组在当前 GL 后端会整片采样成黄褐色块；
+  暂时改用 `lit_terrain_layers` 的 grass/rock/snow 程序化调色板
+  （`terrainAlbedoArray` 清空），并跳过 8×2K 数组上传（约 400 MB VRAM）。
+  地形恢复绿色可读；后续修复 `TexSubImage3D` slice 顺序后再开回 2K 数组。
 - 开局一次性生成固定地点（加油站/废宅/农场/诊所/商场/仓库/营地/湖边营地），并自动铺连接到最近地点的路；行驶中不再新增/改向公路。程序化地点有 11 种类型（含新增的林间木屋/废弃邮局/林间护林站），各有危险度与战利品表；木屋门口会堆柴并带烟囱，护林站旁边有木制瞭望塔，首次抵达会用地形图揭示附近 90m 内未探索地点（`revealNearbyPoisAt`），邮局门口的邮箱可走近按 `E` 翻找一次（金属+随机补给，`lootMailbox`），旁边散落包裹箱（`poiDecorStyle`）；自检 `poi kinds` / `poi decor style` / `ranger map reveal` / `mailbox loot`。
 - 非营地停靠时，物资箱刷新在地点建筑内；废宅/商店的 6 个箱子固定落在店内货架/柜台旁，
   玩家必须从正门进入搜刮；其他地点仍散落在屋外。
@@ -341,11 +345,11 @@
   视角压到约 12 FPS；2m/512m 在保持细节和完整视野的同时，营地静态约 54 FPS、
   夜间驾驶约 75 FPS。自检 `terrain render budget` 锁定 512m / ≥2m 的预算。
 - **程序化植被/岩石散布**：`DrawProceduralScatter` 在程序化地形上按世界网格
-  哈希生成草簇和岩石，相机移动超过 12m 才重建，位置由世界格点决定，不会
-  随相机移动整片刷新。草用 64×64 透明草叶贴图 + alpha cutout + 顶点风摆；
-  岩石使用低模 boulder 网格。`TerrainWorld::FlattenWeight` 会跳过公路/场地
-  压实区，陡坡和雪线以上也不生成。两层都是 GPU instancing，视锥剔除和
-  前后排序由 renderer 统一处理；实测路边视角约 70 FPS、夜间驾驶约 82 FPS。
+  哈希生成草簇和岩石，重建放到后台线程（约 25 ms 的采样不占主线程），
+  相机移动超过 12m 才换新场，避免行驶时周期卡顿。水塘矩形会跳过，
+  公路和建筑核心区按 `world_features` 排除，外围场地仍长草。草用 64×64
+  透明草叶贴图 + alpha cutout + 顶点风摆；岩石用低模 boulder。两层都是
+  GPU instancing，视锥剔除和前后排序由 renderer 统一处理。
   引擎回归测试 `TerrainWorldFlattenWeightMarksRoadsAndPads`。
   `lc_terrain.lua` 对 JSON 做双线性采样，`terrainHeight(x,z)` 给出任意点
   高度、`terrainSlope(x,z)` 给出梯度；公路段按高度抬升并按坡度倾斜

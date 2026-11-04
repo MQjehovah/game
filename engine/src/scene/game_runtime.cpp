@@ -1267,7 +1267,12 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
     // public entry point so the editor/player call sites are unchanged.
     // Terrain layer arrays are a renderer resource, so they load lazily on the
     // first draw (Start() runs before any renderer is attached in some hosts).
-    if (terrainWorld_ && !terrainLayersTried_) {
+    // The texture-array path renders a flat tan sheet on the current GL
+    // backend; the streamer switches to the shader's procedural palette (see
+    // TerrainStreamer::Draw). Skip decoding/uploading 8x2K arrays (~400 MB)
+    // until the slice upload is fixed.
+    constexpr bool kUseTerrainTextureArrays = false;
+    if (kUseTerrainTextureArrays && terrainWorld_ && !terrainLayersTried_) {
         terrainLayersTried_ = true;
         const std::string manifest =
             ReadScript(FullScriptPath("assets/data/terrain_layers.json"));

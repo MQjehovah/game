@@ -100,7 +100,7 @@ def asphalt() -> None:
     # Dusty edges where the asphalt meets gravel/soil.
     edge = np.maximum(np.exp(-(u / 0.045) ** 2),
                       np.exp(-((1 - u) / 0.045) ** 2))
-    rgb += edge[..., None] * np.array([18.0, 13.0, 7.0])
+    rgb += edge[..., None] * np.array([4.0, 4.0, 4.0])
 
     # Tar-filled patches: irregular low-frequency darker areas.
     patch = smoothstep(0.58, 0.74, broad)
@@ -138,6 +138,24 @@ def asphalt() -> None:
                 d.arc([cx + ox - rx - 2, cy + oy - ry - 2,
                        cx + ox + rx + 2, cy + oy + ry + 2],
                       0, 360, fill=(72, 68, 60), width=2)
+
+    # Centre lane dash baked into the asphalt tile: the road is drawn as 5 m
+    # slabs whose top face UVs span 0..1, so one dash per tile gives a 2.4 m
+    # painted mark with a 2.6 m gap. Keeping it in the texture removes the
+    # raised yellow cube (which could read as a giant yellow plane at grazing
+    # angles) and any road/paint z-fighting.
+    d.rectangle([int(S * 0.488), int(S * 0.24),
+                 int(S * 0.512), int(S * 0.72)],
+                fill=(200, 166, 74))
+    d.rectangle([int(S * 0.491), int(S * 0.25),
+                 int(S * 0.509), int(S * 0.71)],
+                fill=(214, 181, 88))
+    for _ in range(90):
+        px = rr.randint(int(S * 0.488), int(S * 0.512))
+        py = rr.randint(int(S * 0.24), int(S * 0.72))
+        r = rr.randint(1, 4)
+        c = rr.choice([(150, 128, 68), (176, 148, 74), (96, 92, 76)])
+        d.ellipse([px - r, py - r, px + r, py + r], fill=c)
 
     img = img.filter(ImageFilter.GaussianBlur(0.35))
     albedo = np.asarray(img, dtype=np.float64)

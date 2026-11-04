@@ -46,6 +46,8 @@ constexpr gl::GLenum Repeat = 0x2901;
 constexpr gl::GLenum Linear = 0x2601;
 constexpr gl::GLenum Nearest = 0x2600;
 constexpr gl::GLenum LinearMipmapLinear = 0x2703;
+constexpr gl::GLenum TextureMaxAnisotropy = 0x84FE;
+constexpr gl::GLenum MaxTextureMaxAnisotropy = 0x84FF;
 constexpr gl::GLenum Blend = 0x0BE2;
 constexpr gl::GLenum SrcAlpha = 0x0302;
 constexpr gl::GLenum One = 0x0001;
@@ -727,6 +729,16 @@ public:
                             : (desc.mipmaps ? glc::LinearMipmapLinear : glc::Linear));
         g.TexParameteri(target, glc::TextureMagFilter,
                         desc.filter == Filter::Nearest ? glc::Nearest : glc::Linear);
+        // Anisotropic filtering keeps road/terrain detail at grazing angles;
+        // trilinear alone smears it into a flat colour band (the "road turns
+        // yellow/detail vanishes" view-dependent artefact).
+        {
+            gl::GLint maxAniso = 1;
+            g.GetIntegerv(glc::MaxTextureMaxAnisotropy, &maxAniso);
+            if (maxAniso > 8) maxAniso = 8;
+            if (maxAniso > 1)
+                g.TexParameteri(target, glc::TextureMaxAnisotropy, maxAniso);
+        }
 
         // Allocate immutable storage (loaded from the ICD via wglGetProcAddress,
         // avoiding the legacy opengl32 glTexImage2D stub) and upload the base level.
@@ -807,6 +819,14 @@ public:
         // base level instead of shimmering.
         g.TexParameteri(glc::Texture2D, glc::TextureMinFilter, glc::Linear);
         g.TexParameteri(glc::Texture2D, glc::TextureMagFilter, glc::Linear);
+        {
+            gl::GLint maxAniso = 1;
+            g.GetIntegerv(glc::MaxTextureMaxAnisotropy, &maxAniso);
+            if (maxAniso > 8) maxAniso = 8;
+            if (maxAniso > 1)
+                g.TexParameteri(glc::Texture2D, glc::TextureMaxAnisotropy,
+                                maxAniso);
+        }
         // glCompressedTexImage2D requires BOTH dimensions to be multiples of
         // the 4x4 block size; the encoder pads non-multiple sizes, so allocate
         // the padded size here.
