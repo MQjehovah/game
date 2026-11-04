@@ -278,6 +278,12 @@ function engineOilFuelScale(o)
   return 1.0 + math.min(0.08, (40 - v) * 0.002)
 end
 
+-- 引擎升级同时优化燃烧效率：每级 -2% 油耗（最高 Lv3 -6%）
+function engineUpgradeFuelScale(level)
+  local lv = math.max(0, math.min(3, level or 0))
+  return 1.0 - lv * 0.02
+end
+
 -- 冷车动力衰减：水温低于 60°C 时动力逐渐受限（20°C 时 ×0.85）
 function engineColdPowerScale(tempValue)
   local t = tempValue or 60
@@ -443,7 +449,8 @@ function fuelBurnRate(speed, loadRatio, throttle)
               surfaceFuelScale(surfName) *
               engineColdFuelScale(engineTemp) *
               weatherFuelScale(weather) *
-              dirtFuelScale(rv and rv.dirt or 0)
+              dirtFuelScale(rv and rv.dirt or 0) *
+              engineUpgradeFuelScale(upgrades and upgrades.engine or 0)
   if (throttle or 0) > 0 then
     return (idle + VEH.burn * (0.30 + 0.70 * v) * load) * eff
   elseif (throttle or 0) < 0 then

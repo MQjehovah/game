@@ -2056,6 +2056,17 @@ function runSelfTest()
        string.format("100=%.3f 20=%.3f 0=%.3f", full, mid, low))
   end
 
+  -- 引擎升级优化燃烧：Lv0 1.0，逐级降到 Lv3 0.94
+  do
+    local l0 = engineUpgradeFuelScale(0)
+    local l1 = engineUpgradeFuelScale(1)
+    local l3 = engineUpgradeFuelScale(3)
+    ok(r, "engine upgrade fuel",
+       l0 == 1.0 and l1 < l0 and l3 < l1 and
+       math.abs(l3 - 0.94) < 1e-6,
+       string.format("0=%.2f 1=%.2f 3=%.2f", l0, l1, l3))
+  end
+
   -- 机油严重不足时继续行驶会加速发动机磨损
   do
     local none = oilEngineWearRate(100)
