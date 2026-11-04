@@ -1,0 +1,19 @@
+# arm_upper_fp.mtl - generated
+newmtl sleeve
+Kd 0.240 0.250 0.190
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl pad
+Kd 0.155 0.148 0.130
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl strap
+Kd 0.315 0.330 0.260
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+

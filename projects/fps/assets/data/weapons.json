@@ -2,6 +2,8 @@
   {
     "id": "rifle",
     "name": "Assault Rifle",
+    "role": "Balanced automatic",
+    "description": "Reliable all-rounder with low recoil.",
     "prefab": "weapon_rifle",
     "auto": true,
     "damage": 24,
@@ -12,11 +14,76 @@
     "projectileSpeed": 70,
     "range": 140,
     "pellets": 1,
+    "reloadTime": 1.55,
+    "recoilPitch": 0.012,
+    "recoilKick": 0.032,
+    "gripRight": {
+      "x": 0.04,
+      "y": -0.13,
+      "z": 0.03
+    },
+    "gripLeft": {
+      "x": -0.04,
+      "y": 0.005,
+      "z": -0.6
+    },
+    "magGrip": {
+      "x": 0.0,
+      "y": -0.2,
+      "z": -0.2
+    },
+    "muzzle": {
+      "x": 0.0,
+      "y": 0.005,
+      "z": -1.04
+    },
+    "sfx": "shoot"
+  },
+  {
+    "id": "smg",
+    "name": "Tactical SMG",
+    "role": "Fast close-quarters",
+    "description": "Extreme fire rate, runs dry fast.",
+    "prefab": "weapon_smg",
+    "auto": true,
+    "damage": 13,
+    "fireRate": 0.08,
+    "mag": 40,
+    "reserve": 240,
+    "spread": 0.02,
+    "projectileSpeed": 60,
+    "range": 110,
+    "pellets": 1,
+    "reloadTime": 1.45,
+    "recoilPitch": 0.009,
+    "recoilKick": 0.022,
+    "gripRight": {
+      "x": 0.04,
+      "y": -0.13,
+      "z": 0.06
+    },
+    "gripLeft": {
+      "x": -0.04,
+      "y": -0.09,
+      "z": -0.34
+    },
+    "magGrip": {
+      "x": 0.0,
+      "y": -0.155,
+      "z": -0.06
+    },
+    "muzzle": {
+      "x": 0.0,
+      "y": 0.01,
+      "z": -0.565
+    },
     "sfx": "shoot"
   },
   {
     "id": "shotgun",
     "name": "Combat Shotgun",
+    "role": "Close-range breacher",
+    "description": "Devastating in close quarters.",
     "prefab": "weapon_shotgun",
     "auto": false,
     "damage": 12,
@@ -27,11 +94,36 @@
     "projectileSpeed": 55,
     "range": 45,
     "pellets": 8,
+    "reloadTime": 1.9,
+    "recoilPitch": 0.034,
+    "recoilKick": 0.055,
+    "gripRight": {
+      "x": 0.04,
+      "y": -0.13,
+      "z": 0.04
+    },
+    "gripLeft": {
+      "x": -0.04,
+      "y": -0.045,
+      "z": -0.55
+    },
+    "magGrip": {
+      "x": 0.0,
+      "y": -0.15,
+      "z": -0.1
+    },
+    "muzzle": {
+      "x": 0.0,
+      "y": 0.022,
+      "z": -0.86
+    },
     "sfx": "shoot"
   },
   {
     "id": "sniper",
     "name": "Precision Rifle",
+    "role": "Long-range marksman",
+    "description": "One-shot precision at long range.",
     "prefab": "weapon_sniper",
     "auto": false,
     "damage": 120,
@@ -42,20 +134,29 @@
     "projectileSpeed": 130,
     "range": 240,
     "pellets": 1,
-    "sfx": "shoot"
-  },
-  {
-    "id": "smg",
-    "name": "Tactical SMG",
-    "prefab": "weapon_smg",
-    "auto": true,
-    "damage": 13,
-    "fireRate": 0.08,
-    "mag": 40,
-    "reserve": 240,
-    "spread": 0.02,
-    "range": 110,
-    "pellets": 1,
+    "reloadTime": 2.15,
+    "recoilPitch": 0.042,
+    "recoilKick": 0.065,
+    "gripRight": {
+      "x": 0.04,
+      "y": -0.13,
+      "z": 0.03
+    },
+    "gripLeft": {
+      "x": -0.04,
+      "y": -0.02,
+      "z": -0.62
+    },
+    "magGrip": {
+      "x": 0.0,
+      "y": -0.13,
+      "z": -0.22
+    },
+    "muzzle": {
+      "x": 0.0,
+      "y": 0.005,
+      "z": -1.1
+    },
     "sfx": "shoot"
   }
 ]

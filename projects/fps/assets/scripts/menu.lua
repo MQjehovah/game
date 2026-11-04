@@ -3,6 +3,8 @@
 
 local settings = { mouseSensitivity = 0.004, musicVolume = 0.7, sfxVolume = 0.8 }
 local bestScore = 0
+local loadoutId = "rifle"
+local nextScene = "assets/scenes/level_01.json"
 
 local function clamp(v, lo, hi)
   return math.max(lo, math.min(hi, v))
@@ -16,8 +18,9 @@ end
 
 local function save_settings()
   local text = string.format(
-    '{"settings":{"mouseSensitivity":%f,"musicVolume":%f,"sfxVolume":%f},"bestScore":%d}',
-    settings.mouseSensitivity, settings.musicVolume, settings.sfxVolume, bestScore)
+    '{"settings":{"mouseSensitivity":%f,"musicVolume":%f,"sfxVolume":%f},"bestScore":%d,"loadout":"%s","nextScene":"%s"}',
+    settings.mouseSensitivity, settings.musicVolume, settings.sfxVolume, bestScore,
+    loadoutId, nextScene)
   WriteText("save.json", text)
 end
 
@@ -35,7 +38,10 @@ local function load_settings()
       settings.musicVolume = root.settings.musicVolume or settings.musicVolume
       settings.sfxVolume = root.settings.sfxVolume or settings.sfxVolume
     end
-    bestScore = root.bestScore or 0
+    bestScore = math.floor(root.bestScore or 0)
+    if type(root.loadout) == "string" and root.loadout ~= "" then
+      loadoutId = root.loadout
+    end
   end
   apply_audio()
 end
@@ -59,7 +65,9 @@ function on_update(e, dt)
   if UIClicked("Start") then
     PlaySfx("click")
     UISetVisible("MainMenu", false)
-    ChangeScene("assets/scenes/level_01.json")
+    nextScene = "assets/scenes/level_01.json"
+    save_settings()
+    ChangeScene("assets/scenes/loadout.json")
     return
   end
 

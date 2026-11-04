@@ -1,0 +1,86 @@
+{
+  "format": "neon-ui",
+  "version": 1,
+  "root": {
+    "type": "panel",
+    "name": "root",
+    "rect": [0, 0, 1280, 720],
+    "color": [0, 0, 0, 0],
+    "border": [0, 0, 0, 0],
+    "fill": 0,
+    "fontSize": 16,
+    "clip": true,
+    "visible": true,
+    "children": [
+      {
+        "type": "panel",
+        "name": "Loadout",
+        "rect": [0, 0, 1280, 720],
+        "color": [0, 0, 0, 0],
+        "border": [0, 0, 0, 0],
+        "fill": 0,
+        "fontSize": 16,
+        "clip": true,
+        "visible": true,
+        "children": [
+          { "type": "label", "name": "Title", "rect": [46, 28, 420, 50], "color": [0.30, 0.85, 1, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 38, "text": "LOADOUT", "clip": true, "visible": true },
+          { "type": "label", "name": "Subtitle", "rect": [48, 80, 620, 24], "color": [0.60, 0.72, 0.86, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 15, "text": "PREPARE FOR DEPLOYMENT  //  SELECT PRIMARY WEAPON", "clip": true, "visible": true },
+
+          {
+            "type": "panel",
+            "name": "WeaponList",
+            "rect": [40, 124, 340, 476],
+            "color": [0.035, 0.06, 0.10, 0.94],
+            "border": [0.30, 0.52, 0.78, 0.85],
+            "fill": 0,
+            "fontSize": 16,
+            "clip": true,
+            "visible": true,
+            "children": [
+              { "type": "label", "name": "ListHeader", "rect": [20, 14, 300, 22], "color": [0.55, 0.72, 0.90, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 14, "text": "PRIMARY", "clip": true, "visible": true },
+              { "type": "button", "name": "Pick_rifle", "rect": [20, 44, 300, 58], "color": [0.10, 0.16, 0.24, 1], "border": [0.42, 0.72, 0.95, 0.85], "fill": 0, "fontSize": 19, "text": "1   ASSAULT RIFLE", "clip": true, "visible": true },
+              { "type": "button", "name": "Pick_smg", "rect": [20, 112, 300, 58], "color": [0.10, 0.16, 0.24, 1], "border": [0.42, 0.72, 0.95, 0.85], "fill": 0, "fontSize": 19, "text": "2   TACTICAL SMG", "clip": true, "visible": true },
+              { "type": "button", "name": "Pick_shotgun", "rect": [20, 180, 300, 58], "color": [0.10, 0.16, 0.24, 1], "border": [0.42, 0.72, 0.95, 0.85], "fill": 0, "fontSize": 19, "text": "3   COMBAT SHOTGUN", "clip": true, "visible": true },
+              { "type": "button", "name": "Pick_sniper", "rect": [20, 248, 300, 58], "color": [0.10, 0.16, 0.24, 1], "border": [0.42, 0.72, 0.95, 0.85], "fill": 0, "fontSize": 19, "text": "4   PRECISION RIFLE", "clip": true, "visible": true },
+              { "type": "label", "name": "CycleHint", "rect": [20, 330, 300, 22], "color": [0.62, 0.72, 0.84, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 14, "text": "1-4  or  Q  to cycle", "clip": true, "visible": true },
+              { "type": "label", "name": "BestScoreLabel", "rect": [20, 366, 300, 22], "color": [0.95, 0.85, 0.45, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 14, "text": "BEST SCORE 0", "clip": true, "visible": true },
+              { "type": "label", "name": "SaveHint", "rect": [20, 398, 300, 44], "color": [0.52, 0.60, 0.72, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 13, "text": "Your choice is saved for the mission.", "clip": true, "visible": true }
+            ]
+          },
+
+          {
+            "type": "panel",
+            "name": "StatsPanel",
+            "rect": [940, 124, 300, 392],
+            "color": [0.035, 0.06, 0.10, 0.94],
+            "border": [0.30, 0.52, 0.78, 0.85],
+            "fill": 0,
+            "fontSize": 16,
+            "clip": true,
+            "visible": true,
+            "children": [
+              { "type": "label", "name": "WeaponName", "rect": [18, 16, 264, 32], "color": [0.98, 0.98, 1, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 24, "text": "Assault Rifle", "clip": true, "visible": true },
+              { "type": "label", "name": "WeaponRole", "rect": [18, 52, 264, 22], "color": [0.35, 0.80, 0.95, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 14, "text": "Balanced automatic", "clip": true, "visible": true },
+              { "type": "label", "name": "WeaponDesc", "rect": [18, 80, 264, 46], "color": [0.70, 0.78, 0.88, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 13, "text": "Reliable all-rounder with controllable recoil.", "clip": true, "visible": true },
+
+              { "type": "label", "name": "DamageLabel", "rect": [18, 146, 264, 20], "color": [0.85, 0.90, 0.98, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 14, "text": "DAMAGE  24", "clip": true, "visible": true },
+              { "type": "bar", "name": "DamageBar", "rect": [18, 168, 264, 8], "color": [0.95, 0.45, 0.25, 1], "border": [0.3, 0.4, 0.5, 0.8], "fill": 0.2, "fontSize": 16, "text": "", "clip": true, "visible": true },
+              { "type": "label", "name": "RateLabel", "rect": [18, 192, 264, 20], "color": [0.85, 0.90, 0.98, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 14, "text": "FIRE RATE  500 RPM", "clip": true, "visible": true },
+              { "type": "bar", "name": "RateBar", "rect": [18, 214, 264, 8], "color": [0.35, 0.80, 0.95, 1], "border": [0.3, 0.4, 0.5, 0.8], "fill": 0.5, "fontSize": 16, "text": "", "clip": true, "visible": true },
+              { "type": "label", "name": "MagLabel", "rect": [18, 238, 264, 20], "color": [0.85, 0.90, 0.98, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 14, "text": "MAGAZINE  30", "clip": true, "visible": true },
+              { "type": "bar", "name": "MagBar", "rect": [18, 260, 264, 8], "color": [0.95, 0.80, 0.35, 1], "border": [0.3, 0.4, 0.5, 0.8], "fill": 0.4, "fontSize": 16, "text": "", "clip": true, "visible": true },
+              { "type": "label", "name": "RangeLabel", "rect": [18, 284, 264, 20], "color": [0.85, 0.90, 0.98, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 14, "text": "EFFECTIVE RANGE  140 m", "clip": true, "visible": true },
+              { "type": "bar", "name": "RangeBar", "rect": [18, 306, 264, 8], "color": [0.55, 0.90, 0.55, 1], "border": [0.3, 0.4, 0.5, 0.8], "fill": 0.5, "fontSize": 16, "text": "", "clip": true, "visible": true },
+
+              { "type": "label", "name": "MissionLabel", "rect": [18, 344, 264, 32], "color": [0.95, 0.85, 0.45, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 13, "text": "NEXT: PERIMETER BREACH", "clip": true, "visible": true }
+            ]
+          },
+
+          { "type": "button", "name": "Deploy", "rect": [500, 628, 280, 60], "color": [0.12, 0.48, 0.30, 1], "border": [0.45, 0.95, 0.65, 0.95], "fill": 0, "fontSize": 24, "text": "DEPLOY", "clip": true, "visible": true },
+          { "type": "button", "name": "BackLoadout", "rect": [1084, 32, 156, 44], "color": [0.12, 0.20, 0.32, 1], "border": [0.45, 0.65, 0.9, 0.8], "fill": 0, "fontSize": 17, "text": "BACK", "clip": true, "visible": true },
+          { "type": "label", "name": "FooterHint", "rect": [0, 690, 1280, 22], "color": [0.55, 0.65, 0.78, 1], "border": [0, 0, 0, 0], "fill": 0, "fontSize": 13, "text": "A / D or 1-4 or Q  SELECT     ENTER  DEPLOY     P  BACK", "clip": true, "visible": true }
+        ]
+      }
+    ]
+  }
+}

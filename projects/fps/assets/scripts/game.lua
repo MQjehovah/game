@@ -25,19 +25,32 @@ local stepAcc = 0
 
 local settings = { mouseSensitivity = 0.004, musicVolume = 0.7, sfxVolume = 0.8 }
 local bestScore = 0
+local selectedWeaponId = "rifle"
+local campaignNext = ""
 
 local weapons = {}
 local weaponsById = {}
 local gunModels = {}
+local rig = {}
 local weaponIdx = 1
 local weapon = nil
 local mag = 0
 local reserve = 0
+local ammoState = {}
 local fireCd = 0
 local reloadTime = 0
+local reloadDuration = 1.35
 local hitMarker = 0
 local muzzleFlash = 0
 local recoil = 0
+local recoilPitch = 0
+local swayYaw = 0
+local swayPitch = 0
+local adsBlend = 0
+local switchT = 0
+local landDip = 0
+local mouseDX = 0
+local mouseDY = 0
 local hitImpact = 0
 local lastHitPoint = nil
 local shakeT = 0
@@ -63,9 +76,40 @@ local score = 0
 local EYE_H = 1.6
 local CAM_DIST = 2.0
 local MAX_HP = 100
+local GUN_SCALE = 0.42
+local UPPER_LEN = 0.44
+local FORE_LEN = 0.42
+local SWITCH_TIME = 0.30
+-- Older engine builds predate the SetLook binding. Degrade to yaw-only
+-- viewmodels instead of erroring; current builds get the full IK rig.
+local function has_setlook()
+  return type(SetLook) == "function"
+end
 
 local function clamp(v, lo, hi)
   return math.max(lo, math.min(hi, v))
+end
+
+local function vadd(a, b) return { x = a.x + b.x, y = a.y + b.y, z = a.z + b.z } end
+local function vsub(a, b) return { x = a.x - b.x, y = a.y - b.y, z = a.z - b.z } end
+local function vmul(a, s) return { x = a.x * s, y = a.y * s, z = a.z * s } end
+local function vdot(a, b) return a.x * b.x + a.y * b.y + a.z * b.z end
+local function vcross(a, b)
+  return { x = a.y * b.z - a.z * b.y, y = a.z * b.x - a.x * b.z, z = a.x * b.y - a.y * b.x }
+end
+local function vlen(a) return math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z) end
+local function vnorm(a)
+  local l = vlen(a)
+  if l < 1e-6 then return { x = 0, y = 0, z = -1 } end
+  return { x = a.x / l, y = a.y / l, z = a.z / l }
+end
+local function vlerp(a, b, t)
+  return { x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t, z = a.z + (b.z - a.z) * t }
+end
+local function lerp(a, b, t) return a + (b - a) * t end
+local function smoothstep(t)
+  t = clamp(t, 0, 1)
+  return t * t * (3 - 2 * t)
 end
 
 local function dist2d(ax, az, bx, bz)
@@ -82,8 +126,8 @@ end
 local function save_game()
   local s = settings
   local text = string.format(
-    '{"settings":{"mouseSensitivity":%f,"musicVolume":%f,"sfxVolume":%f},"bestScore":%d}',
-    s.mouseSensitivity, s.musicVolume, s.sfxVolume, bestScore)
+    '{"settings":{"mouseSensitivity":%f,"musicVolume":%f,"sfxVolume":%f},"bestScore":%d,"loadout":"%s","nextScene":"%s"}',
+    s.mouseSensitivity, s.musicVolume, s.sfxVolume, bestScore, selectedWeaponId, campaignNext)
   WriteText("save.json", text)
 end
 
@@ -95,7 +139,11 @@ local function load_save()
       settings.musicVolume = root.settings.musicVolume or settings.musicVolume
       settings.sfxVolume = root.settings.sfxVolume or settings.sfxVolume
     end
-    bestScore = root.bestScore or 0
+    bestScore = math.floor(root.bestScore or 0)
+    if type(root.loadout) == "string" and root.loadout ~= "" then
+      selectedWeaponId = root.loadout
+    end
+    if type(root.nextScene) == "string" then campaignNext = root.nextScene end
   end
 end
 
@@ -153,13 +201,36 @@ local function switch_weapon(idx)
     mag, reserve = 0, 0
     return
   end
+  if weapon ~= nil then
+    ammoState[weapon.id] = { mag = mag, reserve = reserve }
+  end
   weaponIdx = clamp(idx, 1, #weapons)
   weapon = weapons[weaponIdx]
-  mag = weapon.mag or 0
-  reserve = weapon.reserve or 0
+  selectedWeaponId = weapon.id
+  local st = ammoState[weapon.id]
+  if st ~= nil then
+    mag, reserve = st.mag, st.reserve
+  else
+    mag = weapon.mag or 0
+    reserve = weapon.reserve or 0
+    ammoState[weapon.id] = { mag = mag, reserve = reserve }
+  end
   fireCd = 0
   reloadTime = 0
+  reloadDuration = weapon.reloadTime or 1.35
+  switchT = SWITCH_TIME
+  recoilPitch = 0
   update_gun_visibility()
+end
+
+local function switch_weapon_by_id(id)
+  for i, w in ipairs(weapons) do
+    if w.id == id then
+      switch_weapon(i)
+      return
+    end
+  end
+  switch_weapon(1)
 end
 
 -- FX light pool: point lights parked underground, flashed on demand (muzzle
@@ -207,6 +278,9 @@ end
 
 -- Persistent boss menace light (follows the Juggernaut, crimson).
 local bossLight = nil
+-- Subtle near-camera fill so the dark viewmodel and gloves never disappear
+-- into the level lighting (a standard FPS viewmodel trick).
+local viewLight = nil
 
 local function spawn_weapon_models()
   for _, w in ipairs(weapons) do
@@ -221,10 +295,33 @@ local function spawn_weapon_models()
   update_gun_visibility()
 end
 
+-- Two-bone IK first-person rig: two arm segments + two grip hands. The
+-- segments are unit-length meshes whose local -Z is aimed down the bone and
+-- whose length is written through SetScale.
+local function spawn_rig()
+  rig.upperR = SpawnPrefab("arm_upper", { x = 0, y = 0, z = 0 })
+  rig.foreR = SpawnPrefab("arm_fore", { x = 0, y = 0, z = 0 })
+  rig.handR = SpawnPrefab("hand_right", { x = 0, y = 0, z = 0 })
+  rig.upperL = SpawnPrefab("arm_upper", { x = 0, y = 0, z = 0 })
+  rig.foreL = SpawnPrefab("arm_fore", { x = 0, y = 0, z = 0 })
+  rig.handL = SpawnPrefab("hand_left", { x = 0, y = 0, z = 0 })
+  -- Only forearms + hands are drawn: the upper arms live behind the camera
+  -- and would just smear dark shapes across the bottom of the screen.
+  if rig.upperR ~= nil then SetVisible(rig.upperR, false) end
+  if rig.upperL ~= nil then SetVisible(rig.upperL, false) end
+end
+
+local function set_rig_visible(v)
+  for _, key in ipairs({ "foreR", "handR", "foreL", "handL" }) do
+    if rig[key] ~= nil then SetVisible(rig[key], v) end
+  end
+end
+
 local function reload_weapon()
-  if weapon == nil or reloadTime > 0 then return end
+  if weapon == nil or reloadTime > 0 or switchT > SWITCH_TIME * 0.5 then return end
   if mag >= weapon.mag or reserve <= 0 then return end
-  reloadTime = 1.35
+  reloadDuration = weapon.reloadTime or 1.35
+  reloadTime = reloadDuration
   PlaySfx("reload")
 end
 
@@ -236,6 +333,13 @@ local function forward_dir(yaw, pitch)
     z = -math.cos(yaw) * cp,
   }
 end
+
+-- Viewmodel helpers are defined below but fire_weapon (defined earlier in the
+-- file) needs the muzzle point, so forward-declare them as locals.
+local viewmodel_transform
+local viewmodel_muzzle
+local viewmodel_ejection_port
+local update_viewmodel
 
 local function emit_burst(pos, count, speed, r, g, b)
   EmitParticles({
@@ -377,7 +481,7 @@ local function hitscan(origin, dir, range, damage)
 end
 
 local function fire_weapon()
-  if weapon == nil or reloadTime > 0 or fireCd > 0 then return end
+  if weapon == nil or reloadTime > 0 or fireCd > 0 or switchT > SWITCH_TIME * 0.5 then return end
   if mag <= 0 then
     reload_weapon()
     return
@@ -390,15 +494,20 @@ local function fire_weapon()
   local eye = { x = pos.x, y = pos.y + EYE_H, z = pos.z }
   local fwd = forward_dir(lookYaw, lookPitch)
   local right = { x = math.cos(lookYaw), y = 0, z = -math.sin(lookYaw) }
-  local muzzle = {
-    x = eye.x + fwd.x * 0.55 + right.x * 0.18,
-    y = eye.y + fwd.y * 0.55 - 0.16,
-    z = eye.z + fwd.z * 0.55 + right.z * 0.18,
-  }
+  local muzzle = viewmodel_muzzle()
+  if muzzle == nil then
+    muzzle = {
+      x = eye.x + fwd.x * 0.55 + right.x * 0.18,
+      y = eye.y + fwd.y * 0.55 - 0.16,
+      z = eye.z + fwd.z * 0.55 + right.z * 0.18,
+    }
+  end
+  local ejectPort = viewmodel_ejection_port() or muzzle
   local pellets = weapon.pellets or 1
   local tracerEnd = nil
+  local aimScale = aiming and 0.55 or 1.0
   for _ = 1, pellets do
-    local spread = (weapon.spread or 0.008) + spreadHeat * 0.006
+    local spread = (weapon.spread or 0.008) * aimScale + spreadHeat * 0.006
     local py = lookYaw + (math.random() - 0.5) * 2 * spread
     local pp = lookPitch + (math.random() - 0.5) * 2 * spread
     local _, hitPoint = hitscan(eye, forward_dir(py, pp), weapon.range or 120, weapon.damage or 20)
@@ -407,6 +516,7 @@ local function fire_weapon()
   spreadHeat = math.min(1, spreadHeat + 0.22)
   muzzleFlash = 0.055
   recoil = 1
+  recoilPitch = recoilPitch - (weapon.recoilPitch or 0.012)
   emit_burst(muzzle, 5, 6, 1, 0.8, 0.3)
   -- Bright tracer streak downrange + muzzle point-light flash.
   if tracerEnd ~= nil then
@@ -426,21 +536,23 @@ local function fire_weapon()
       })
     end
   end
-  -- Ejected shell casing: arcs out to the right with gravity.
+  -- Ejected shell casing: leaves the ejection port and arcs out to the right.
   EmitParticles({
-    pos = muzzle,
+    pos = ejectPort,
     count = 1,
-    vel = { x = right.x * 2.2 + (math.random() - 0.5), y = 2.0, z = right.z * 2.2 + (math.random() - 0.5) },
+    vel = { x = right.x * 2.4 + (math.random() - 0.5), y = 2.2, z = right.z * 2.4 + (math.random() - 0.5) },
     speedMin = 0, speedMax = 0,
     lifeMin = 0.55, lifeMax = 0.75,
-    sizeStart = 0.055, sizeEnd = 0.035,
+    sizeStart = 0.045, sizeEnd = 0.028,
     color = { r = 0.92, g = 0.72, b = 0.25, a = 1 },
     colorEnd = { r = 0.65, g = 0.5, b = 0.18, a = 0.9 },
     gravity = -9.8, additive = false,
   })
   flash_fx_light(muzzle, { r = 1, g = 0.72, b = 0.32, a = 1 }, 3.2, 9, 0.05)
   PlaySfx(weapon.sfx or "shoot")
-  lookPitch = lookPitch + 0.006
+  -- A small physical aim kick on top of the viewmodel recoil; it does not
+  -- auto-recover, so burst control stays in the player's hands.
+  lookPitch = clamp(lookPitch - (weapon.recoilPitch or 0.012) * 0.35, -1.25, 1.25)
 end
 
 local function spawn_cover()
@@ -556,10 +668,9 @@ local function end_game(victory)
   UISetVisible("Hud", false)
   UISetVisible(victory and "VictoryPanel" or "GameOverPanel", true)
   UISetText(victory and "VictoryScoreLabel" or "FinalScoreLabel", "Score " .. tostring(score))
-  if score > bestScore then
-    bestScore = score
-    save_game()
-  end
+  if victory then campaignNext = NEXT_SCENE or "" end
+  if score > bestScore then bestScore = score end
+  save_game()
   SetVar("cameraMouseLock", 0)
   PlaySfx(victory and "win" or "explosion")
 end
@@ -577,9 +688,15 @@ function on_start(e)
   NEXT_SCENE = next_scene or ""
   load_save()
   apply_audio()
+  if not has_setlook() then
+    print("NeonOps: engine build lacks SetLook; first-person pitch/hand IK disabled (rebuild the engine)")
+  end
   load_data()
-  switch_weapon(1)
   spawn_weapon_models()
+  switch_weapon_by_id(selectedWeaponId)
+  spawn_rig()
+  swayYaw, swayPitch = 0, 0
+  recoilPitch, adsBlend, switchT, landDip = 0, 0, 0, 0
   fxLights, fxTimers = {}, {}
   for i = 1, FX_COUNT do
     fxLights[i] = SpawnPrefab("muzzle_flash", { x = 0, y = -100, z = 0 })
@@ -587,6 +704,12 @@ function on_start(e)
   end
   bossLight = SpawnPrefab("muzzle_flash", { x = 0, y = -100, z = 0 })
   park_fx_light(bossLight)
+  viewLight = SpawnPrefab("muzzle_flash", { x = 0, y = -100, z = 0 })
+  if viewLight ~= nil then
+    SetEntityComponentField(viewLight, "light", "color", { r = 0.86, g = 0.92, b = 1.0, a = 1 })
+    SetEntityComponentField(viewLight, "light", "intensity", 0.9)
+    SetEntityComponentField(viewLight, "light", "radius", 3.2)
+  end
   UIShow("assets/ui/game_hud.ui.json")
   UISetVisible("Hud", true)
   UISetVisible("PauseMenu", false)
@@ -613,6 +736,7 @@ local function update_player(dt)
   hitMarker = math.max(0, hitMarker - dt)
   muzzleFlash = math.max(0, muzzleFlash - dt)
   recoil = math.max(0, recoil - dt * 7)
+  switchT = math.max(0, switchT - dt)
   hitImpact = math.max(0, hitImpact - dt)
   shakeT = math.max(0, shakeT - dt)
   spreadHeat = math.max(0, spreadHeat - dt * 0.35)
@@ -630,8 +754,10 @@ local function update_player(dt)
 
   aiming = InputMouseDown("right")
   local sens = settings.mouseSensitivity * (aiming and 0.55 or 1)
-  lookYaw = lookYaw - InputMouseX() * sens
-  lookPitch = clamp(lookPitch + InputMouseY() * sens, -1.25, 1.25)
+  mouseDX = InputMouseX()
+  mouseDY = InputMouseY()
+  lookYaw = lookYaw - mouseDX * sens
+  lookPitch = clamp(lookPitch + mouseDY * sens, -1.25, 1.25)
 
   local cy = lookYaw
   local fwd = { x = -math.sin(cy), z = -math.cos(cy) }
@@ -657,6 +783,7 @@ local function update_player(dt)
     yvel = 7.5
     grounded = false
   end
+  local wasAir = not grounded
   if not grounded then
     yvel = yvel - 20 * dt
   end
@@ -664,6 +791,7 @@ local function update_player(dt)
   if pos.y <= 0 then
     pos.y = 0
     yvel = 0
+    if wasAir then landDip = 0.075 end
     grounded = true
   end
   pos.x = clamp(pos.x + dx * speed * dt, -29, 29)
@@ -717,29 +845,188 @@ local function update_camera()
   end
 end
 
-local function update_viewmodel()
-  local e = weapon and gunModels[weapon.id]
-  if e == nil then return end
-  local pos = GetPosition(player)
-  if pos == nil then return end
+local function axes(yaw, pitch)
+  local cp = math.cos(pitch)
+  local f = { x = -math.sin(yaw) * cp, y = -math.sin(pitch), z = -math.cos(yaw) * cp }
+  local r = { x = math.cos(yaw), y = 0, z = -math.sin(yaw) }
+  local u = vnorm(vcross(r, f))
+  return f, r, u
+end
 
-  local fwd = forward_dir(lookYaw, lookPitch)
-  local right = { x = math.cos(lookYaw), y = 0, z = -math.sin(lookYaw) }
-  local eye = { x = pos.x, y = pos.y + EYE_H, z = pos.z }
-  local kick = recoil * 0.12
-  local dist = (aiming and 0.52 or 0.62) - kick
-  local side = aiming and 0.0 or 0.22
-  local drop = aiming and -0.18 or -0.22
-  local bobX = math.sin(bobTime) * bobAmount * 0.012
-  local bobY = math.cos(bobTime * 1.6) * bobAmount * 0.010
-  if reloadTime > 0 then drop = drop - 0.12 end
-  local p = {
-    x = eye.x + fwd.x * dist + right.x * side + bobX,
-    y = eye.y + fwd.y * dist + drop + bobY,
-    z = eye.z + fwd.z * dist + right.z * side,
+-- Analytic two-bone IK: elbow + clamped end effector.
+local function solve_ik(root, target, pole, l1, l2)
+  local to = vsub(target, root)
+  local dist = vlen(to)
+  local dir = dist > 1e-5 and vmul(to, 1.0 / dist) or { x = 0, y = 0, z = -1 }
+  local d = clamp(dist, math.abs(l1 - l2) + 1e-4, l1 + l2)
+  local poleDir = vsub(pole, root)
+  local proj = vsub(poleDir, vmul(dir, vdot(poleDir, dir)))
+  if vlen(proj) < 1e-5 then proj = vcross(dir, { x = 0, y = 1, z = 0 }) end
+  proj = vnorm(proj)
+  local cosA = clamp((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1, 1)
+  local sinA = math.sqrt(math.max(0, 1 - cosA * cosA))
+  local elbow = vadd(root, vadd(vmul(dir, l1 * cosA), vmul(proj, l1 * sinA)))
+  return elbow, vadd(root, vmul(dir, d))
+end
+
+local function place_limb(e, from, to, thickness)
+  if e == nil then return end
+  local d = vsub(to, from)
+  local len = vlen(d)
+  if len < 1e-4 then return end
+  SetPosition(e, from)
+  SetLook(e, d.x, d.y, d.z)
+  SetScale(e, thickness, thickness, len)
+end
+
+local function gun_point(localv, G, f, r, u)
+  return {
+    x = G.x + r.x * localv.x * GUN_SCALE + u.x * localv.y * GUN_SCALE - f.x * localv.z * GUN_SCALE,
+    y = G.y + r.y * localv.x * GUN_SCALE + u.y * localv.y * GUN_SCALE - f.y * localv.z * GUN_SCALE,
+    z = G.z + r.z * localv.x * GUN_SCALE + u.z * localv.y * GUN_SCALE - f.z * localv.z * GUN_SCALE,
   }
-  SetPosition(e, p)
-  SetRotationY(e, lookYaw)
+end
+
+-- Current first-person weapon frame (also used by fire_weapon for the muzzle
+-- position): recoil pitch, sway, bob, ADS blend, reload and switch animation.
+viewmodel_transform = function()
+  local pos = GetPosition(player)
+  if pos == nil then return nil end
+  local eye = { x = pos.x, y = pos.y + EYE_H, z = pos.z }
+  local reloadT = 0
+  if reloadTime > 0 and reloadDuration > 0 then
+    reloadT = clamp(1 - reloadTime / reloadDuration, 0, 1)
+  end
+  local reloadArc = math.sin(math.pi * reloadT)
+  local raise = switchT > 0 and (switchT / SWITCH_TIME) or 0
+  local kick = recoil * (weapon and weapon.recoilKick or 0.03)
+
+  local sprint = (ActionDown("sprint") and bobAmount > 0.2 and not aiming) and 1 or 0
+  local yawOffset = swayYaw + reloadArc * 0.20 + raise * 0.20
+  local pitch = clamp(lookPitch + swayPitch + recoilPitch, -1.35, 1.35)
+  local f, r, u = axes(lookYaw + yawOffset, pitch)
+
+  local ads = adsBlend
+  local dist = lerp(0.50, 0.34, ads) - kick - raise * 0.05
+  local side = lerp(0.16, 0.05, ads) - sprint * 0.05
+  local drop = lerp(-0.16, -0.13, ads) - raise * 0.34 - landDip
+  drop = drop - reloadArc * 0.11 - sprint * 0.06
+
+  local bobX = math.sin(bobTime) * bobAmount * 0.012
+  local bobY = math.cos(bobTime * 1.6) * bobAmount * 0.008
+  local breath = math.sin(clock * 1.7) * 0.0035
+  local G = {
+    x = eye.x + f.x * dist + r.x * (side + bobX) + u.x * (drop + bobY + breath),
+    y = eye.y + f.y * dist + r.y * (side + bobX) + u.y * (drop + bobY + breath),
+    z = eye.z + f.z * dist + r.z * (side + bobX) + u.z * (drop + bobY + breath),
+  }
+  return { eye = eye, pos = G, f = f, r = r, u = u, ads = ads, reloadT = reloadT }
+end
+
+viewmodel_muzzle = function()
+  local t = viewmodel_transform()
+  if t == nil then return nil end
+  local localMuzzle = weapon and weapon.muzzle or { x = 0, y = 0.005, z = -0.9 }
+  return gun_point(localMuzzle, t.pos, t.f, t.r, t.u)
+end
+
+viewmodel_ejection_port = function()
+  local t = viewmodel_transform()
+  if t == nil then return nil end
+  return gun_point({ x = 0.05, y = 0.02, z = -0.04 }, t.pos, t.f, t.r, t.u)
+end
+
+update_viewmodel = function(dt)
+  if weapon == nil then
+    set_rig_visible(false)
+    if viewLight ~= nil then park_fx_light(viewLight) end
+    return
+  end
+  local e = gunModels[weapon.id]
+  local pos = GetPosition(player)
+  if e == nil or pos == nil then
+    set_rig_visible(false)
+    if viewLight ~= nil then park_fx_light(viewLight) end
+    return
+  end
+  set_rig_visible(true)
+
+  -- Weapon lag: the viewmodel trails the fast mouse delta, then settles.
+  local targetYaw = clamp(mouseDX * 0.00035, -0.05, 0.05)
+  local targetPitch = clamp(-mouseDY * 0.00030, -0.05, 0.05)
+  local follow = math.min(1, dt * 10)
+  swayYaw = swayYaw + (targetYaw - swayYaw) * follow
+  swayPitch = swayPitch + (targetPitch - swayPitch) * follow
+  recoilPitch = recoilPitch + (0 - recoilPitch) * math.min(1, dt * 12)
+  landDip = landDip + (0 - landDip) * math.min(1, dt * 9)
+  local adsTarget = aiming and 1 or 0
+  adsBlend = adsBlend + (adsTarget - adsBlend) * math.min(1, dt * 14)
+
+  local t = viewmodel_transform()
+  if t == nil then return end
+  SetPosition(e, t.pos)
+  if not has_setlook() then
+    SetRotationY(e, lookYaw)
+    set_rig_visible(false)
+    return
+  end
+  SetLook(e, t.f.x, t.f.y, t.f.z)
+  if viewLight ~= nil then
+    SetPosition(viewLight, {
+      x = t.eye.x + t.f.x * 0.85 + t.u.x * 0.18,
+      y = t.eye.y + t.f.y * 0.85 + t.u.y * 0.18,
+      z = t.eye.z + t.f.z * 0.85 + t.u.z * 0.18,
+    })
+    SetEntityComponentField(viewLight, "light", "intensity", 0.9)
+  end
+
+  local f, r, u = t.f, t.r, t.u
+  local gripRight = weapon.gripRight or { x = 0, y = -0.13, z = 0.03 }
+  local gripLeft = weapon.gripLeft or { x = 0, y = 0.0, z = -0.56 }
+  local gripR = gun_point(gripRight, t.pos, f, r, u)
+
+  -- Reload choreography: the support hand leaves the handguard, meets the
+  -- magazine well, pulls the magazine down, then returns.
+  local leftLocal = gripLeft
+  if reloadTime > 0 then
+    local magLocal = weapon.magGrip or { x = 0, y = -0.18, z = -0.22 }
+    local t1 = smoothstep((t.reloadT - 0.04) / 0.30)
+    local t2 = smoothstep((t.reloadT - 0.36) / 0.20)
+    local t3 = smoothstep((t.reloadT - 0.62) / 0.30)
+    leftLocal = vlerp(gripLeft, magLocal, t1)
+    leftLocal = vadd(leftLocal, { x = 0, y = -0.10 * t2, z = 0 })
+    if t3 > 0 then leftLocal = vlerp(leftLocal, gripLeft, t3) end
+  end
+  local gripL = gun_point(leftLocal, t.pos, f, r, u)
+
+  -- Shoulders come from the camera frame (stable) rather than the weapon.
+  local camF, camR, camU = axes(lookYaw, lookPitch)
+  local eye = t.eye
+  local shR = vadd(eye, vadd(vmul(camR, 0.28), vadd(vmul(camU, -0.38), vmul(camF, 0.02))))
+  local shL = vadd(eye, vadd(vmul(camR, -0.26), vadd(vmul(camU, -0.38), vmul(camF, 0.04))))
+  local poleR = vadd(shR, vadd(vmul(camR, 0.16), vmul(camU, -0.40)))
+  local poleL = vadd(shL, vadd(vmul(camR, -0.17), vmul(camU, -0.40)))
+
+  local wristR = vsub(gripR, vmul(f, 0.06))
+  local wristL = vsub(gripL, vmul(f, 0.07))
+  local elbowR = solve_ik(shR, wristR, poleR, UPPER_LEN, FORE_LEN)
+  local elbowL = solve_ik(shL, wristL, poleL, UPPER_LEN, FORE_LEN)
+
+  place_limb(rig.upperR, shR, elbowR, 0.72)
+  place_limb(rig.foreR, elbowR, wristR, 0.72)
+  place_limb(rig.upperL, shL, elbowL, 0.72)
+  place_limb(rig.foreL, elbowL, wristL, 0.72)
+
+  if rig.handR ~= nil then
+    SetPosition(rig.handR, gripR)
+    SetLook(rig.handR, f.x, f.y, f.z)
+    SetScale(rig.handR, 0.9, 0.9, 0.9)
+  end
+  if rig.handL ~= nil then
+    SetPosition(rig.handL, gripL)
+    SetLook(rig.handL, f.x, f.y, f.z)
+    SetScale(rig.handL, 0.9, 0.9, 0.9)
+  end
 end
 
 local function enemy_hitscan(origin, dir, range, damage)
@@ -1217,7 +1504,7 @@ function on_update(e, dt)
     update_waves(dt)
     update_pickups(dt)
     update_camera()
-    update_viewmodel()
+    update_viewmodel(dt)
     update_hud()
 
     if (GetHealth(player) or 0) <= 0 then
@@ -1232,6 +1519,10 @@ function on_update(e, dt)
       enter_pause(false)
     elseif UIClicked("RestartLevel") then
       restart_level()
+    elseif UIClicked("ChangeLoadout") then
+      campaignNext = levelCfg.scene or "assets/scenes/level_01.json"
+      save_game()
+      ChangeScene("assets/scenes/loadout.json")
     elseif UIClicked("QuitToMenu") then
       ChangeScene("assets/scenes/menu.json")
     end
@@ -1244,7 +1535,9 @@ function on_update(e, dt)
   elseif state == "victory" then
     if UIClicked("NextLevel") or ActionPressed("restart") then
       if NEXT_SCENE ~= "" then
-        ChangeScene(NEXT_SCENE)
+        campaignNext = NEXT_SCENE
+        save_game()
+        ChangeScene("assets/scenes/loadout.json")
       else
         ChangeScene("assets/scenes/menu.json")
       end
@@ -1266,7 +1559,7 @@ function on_render()
 
     -- Reload progress arc under the crosshair (subtle, only while reloading).
     if reloadTime > 0 and weapon ~= nil then
-      local total = 1.35
+      local total = reloadDuration
       local frac = 1 - clamp(reloadTime / total, 0, 1)
       local rw = 70
       DrawRect(cx - rw / 2, cy + 26, rw, 5, 0.03, 0.05, 0.09, 0.8)

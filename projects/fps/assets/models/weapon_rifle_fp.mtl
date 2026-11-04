@@ -1,36 +1,54 @@
 # weapon_rifle_fp.mtl - generated
-newmtl body
-Kd 0.220 0.240 0.280
+newmtl alu
+Kd 0.225 0.235 0.250
 Ka 0 0 0
 Ks 0 0 0
 illum 1
 
-newmtl dark
-Kd 0.130 0.140 0.170
+newmtl alu_dark
+Kd 0.120 0.128 0.140
 Ka 0 0 0
 Ks 0 0 0
 illum 1
 
-newmtl grip
-Kd 0.160 0.130 0.100
+newmtl poly
+Kd 0.052 0.055 0.062
 Ka 0 0 0
 Ks 0 0 0
 illum 1
 
-newmtl mag
-Kd 0.320 0.360 0.420
+newmtl poly_grey
+Kd 0.110 0.115 0.125
 Ka 0 0 0
 Ks 0 0 0
 illum 1
 
-newmtl acc
-Kd 0.250 0.850 0.950
+newmtl steel
+Kd 0.160 0.170 0.190
 Ka 0 0 0
 Ks 0 0 0
 illum 1
 
-newmtl sight
-Kd 1.600 0.220 0.120
+newmtl bore
+Kd 0.012 0.012 0.014
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl lens
+Kd 0.035 0.100 0.115
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl dot
+Kd 1.350 0.090 0.050
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl mark
+Kd 0.620 0.630 0.660
 Ka 0 0 0
 Ks 0 0 0
 illum 1

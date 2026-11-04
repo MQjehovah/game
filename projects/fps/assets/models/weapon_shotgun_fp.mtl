@@ -1,30 +1,60 @@
 # weapon_shotgun_fp.mtl - generated
-newmtl body
-Kd 0.450 0.300 0.160
+newmtl recv
+Kd 0.105 0.110 0.120
 Ka 0 0 0
 Ks 0 0 0
 illum 1
 
-newmtl dark
-Kd 0.130 0.140 0.170
+newmtl barrel
+Kd 0.155 0.162 0.175
 Ka 0 0 0
 Ks 0 0 0
 illum 1
 
-newmtl grip
-Kd 0.160 0.130 0.100
+newmtl poly
+Kd 0.055 0.057 0.062
 Ka 0 0 0
 Ks 0 0 0
 illum 1
 
-newmtl pump
-Kd 0.320 0.360 0.420
+newmtl fde
+Kd 0.360 0.300 0.210
 Ka 0 0 0
 Ks 0 0 0
 illum 1
 
-newmtl acc
-Kd 0.980 0.720 0.150
+newmtl fde_dark
+Kd 0.250 0.205 0.145
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl steel
+Kd 0.180 0.188 0.200
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl brass
+Kd 0.630 0.475 0.185
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl hull
+Kd 0.520 0.070 0.055
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl bore
+Kd 0.010 0.010 0.012
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl bead
+Kd 0.800 0.620 0.250
 Ka 0 0 0
 Ks 0 0 0
 illum 1

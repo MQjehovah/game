@@ -1,36 +1,66 @@
 # weapon_sniper_fp.mtl - generated
-newmtl body
-Kd 0.300 0.340 0.300
+newmtl chassis
+Kd 0.135 0.142 0.152
 Ka 0 0 0
 Ks 0 0 0
 illum 1
 
-newmtl dark
-Kd 0.130 0.140 0.170
+newmtl chassis_l
+Kd 0.195 0.205 0.218
 Ka 0 0 0
 Ks 0 0 0
 illum 1
 
-newmtl grip
-Kd 0.160 0.130 0.100
+newmtl poly
+Kd 0.050 0.052 0.058
 Ka 0 0 0
 Ks 0 0 0
 illum 1
 
-newmtl scope
-Kd 0.130 0.140 0.170
+newmtl fde
+Kd 0.345 0.288 0.205
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl fde_dark
+Kd 0.235 0.192 0.135
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl steel
+Kd 0.165 0.175 0.192
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl alu_dark
+Kd 0.105 0.112 0.122
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl bore
+Kd 0.010 0.010 0.012
 Ka 0 0 0
 Ks 0 0 0
 illum 1
 
 newmtl lens
-Kd 0.300 1.700 1.900
+Kd 0.030 0.085 0.105
 Ka 0 0 0
 Ks 0 0 0
 illum 1
 
-newmtl mag
-Kd 0.320 0.360 0.420
+newmtl dot
+Kd 1.300 0.080 0.050
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl mark
+Kd 0.620 0.630 0.655
 Ka 0 0 0
 Ks 0 0 0
 illum 1

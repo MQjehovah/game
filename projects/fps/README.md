@@ -5,9 +5,18 @@
 ## 游戏循环
 
 - 主菜单：开始任务、设置（鼠标灵敏度、音乐、音效）、持久化到 `save.json`
+- 准备场景（Loadout）：`START MISSION` 后先进入军械准备舱，职业化 UI 展示武器数据与玩法定位；
+  1-4 / Q / A-D 切换主武器，转台实时旋转展示所选枪械模型，`DEPLOY` 带着选择进入任务
+  （暂停菜单也可 `CHANGE LOADOUT`，通关后进入下一关前同样会回到准备场景）
 - 三个关卡：`Perimeter Breach` -> `Sector Hold` -> `Command Core`，各配昼夜主题氛围
   （黎明 / 黄昏 / 夜战 + 四角信标塔点光 + 围墙），由场景 `environment.useAtmosphere` 驱动
-- 武器系统：突击步枪 / 战术 SMG / 霰弹枪 / 狙击枪，弹药、换弹、散布、射速、伤害均由 `assets/data/weapons.json` 驱动（第一人称模型由 `tools/gen_fps_models.py` 程序生成的多材质 OBJ 提供：机匣/护木/弹匣/准星分色）
+- 武器系统：突击步枪 / 战术 SMG / 霰弹枪 / 狙击枪，弹药、换弹、散布、射速、伤害均由 `assets/data/weapons.json` 驱动；
+  第一人称模型由 `tools/gen_fps_models.py` 程序生成，走写实军械风格：AR 系机匣 + M-LOK 护木 + LPVO、微冲消音器 + 折叠托、
+  泵动霰弹枪 + 散热护罩 + 侧挂弹架、栓动狙击枪 + 重型枪管 + 大型瞄镜 + 两脚架；材质区分哑光铝、磷化钢、聚合物、FDE、黄铜与镜片，
+  倒角机加工边、皮卡汀尼齿、弹匣底板等细节；每把枪的弹匣/备弹独立保存，切换武器不会补满子弹
+- 第一人称手部 IK：`game.lua` 用双骨骼解析 IK 驱动上臂/前臂，左右手分别锁定枪械握把与护木/前握把；
+  支持武器摆动滞后、呼吸/行走摇摆、落地缓冲、开镜过渡、后坐力抬枪、换弹时副手抓弹匣、切枪抬枪动画
+  与近景补光；手部与手臂模型同样由 `tools/gen_fps_models.py` 生成
 - 敌人系统：无人机 / 炮台 / 重型单位 / 自爆 Sapper / 精英 Juggernaut，属性由 `assets/data/enemies.json` 驱动；低模机器人军团（`enemy_*.obj`：四旋翼无人机、双管哨炮、自爆球、双足重甲、攻城 Juggernaut）
 - 敌人 AI：群体分离（不堆叠）、绕掩体转向、朝向玩家；炮台三连发点射并转向瞄准；Boss 35% 血量狂暴（提速 + 射速加快）
 - 波次导演：`assets/data/levels.json` 定义每关掩体（科技箱 + 护墩混排）、敌人生成节奏（最终关有 Boss 波）
@@ -26,6 +35,7 @@
 - Space：跳跃
 - Shift：冲刺
 - P：暂停（结算界面按 Enter 重开 / 继续）
+- 准备场景：1-4 / Q / A-D 选择武器，Enter 或 `DEPLOY` 出发，P 返回主菜单
 
 ## 运行
 
@@ -33,7 +43,11 @@
 .\build\neon_editor.exe --project projects\fps
 ```
 
-在编辑器里如果直接按播放，会从主菜单场景开始；点击 `START MISSION` 进入第一关。若只想直接验证射击，先打开 `assets/scenes/level_01.json`，再按 `F5` 播放。
+在编辑器里如果直接按播放，会从主菜单场景开始；点击 `START MISSION` 进入准备场景，选好武器后 `DEPLOY` 进入第一关。若只想直接验证射击，先打开 `assets/scenes/level_01.json`，再按 `F5` 播放；只想验证准备场景，打开 `assets/scenes/loadout.json` 按 `F5`。
+
+> 枪口随视角俯仰、手部 IK 依赖当前引擎的 `SetLook` 绑定。若日志出现
+> `engine build lacks SetLook; ...`，说明运行的是旧引擎二进制，请用仓库当前源码重新构建
+> `neon_editor` / `neon_game`；旧构建会自动退化为只水平旋转、不显示手臂。
 
 打包运行（上线路径）：
 
@@ -67,14 +81,18 @@ python tools\update_fps_scenes.py  &REM 三关场景：纹理/围墙/信标塔/�
 
 模型为低多边形 OBJ+MTL 多材质（每部件 Kd 颜色，加载器平面着色）。地面单位模型
 脚底创作在 y=-1（实体生成于 y=1，脚底贴地）；飞行单位以原点为体心。
-换真实美术资产时保持文件名与朝向（ muzzle/-Z、模型正面 +Z）即可无缝替换。
+第一人称枪械枪口朝 -Z、握把靠近原点；手臂段是沿 -Z 的单位长度管体（脚本用
+`SetScale` 的 Z 分量拉伸到 IK 解出的骨长），手掌以握把为中心造型。
+换真实美术资产时保持文件名与朝向（muzzle/-Z、模型正面 +Z）即可无缝替换。
 
 ## 结构
 
 - `assets/scenes/menu.json`：主菜单场景
+- `assets/scenes/loadout.json`：军械准备舱（转台展示 + 换枪）
 - `assets/scenes/level_01.json` 等：三个关卡场景
 - `assets/scripts/menu.lua`：菜单、设置、存档
-- `assets/scripts/game.lua`：FPS 核心玩法
-- `assets/data/*.json`：武器、敌人、关卡数据
-- `assets/ui/*.ui.json`：菜单、HUD、暂停、结算界面
-- `assets/prefabs/*.json`：敌人、掩体、拾取物预制体
+- `assets/scripts/loadout.lua`：准备场景、武器选择、转台展示、部署
+- `assets/scripts/game.lua`：FPS 核心玩法、双骨骼手部 IK 与第一人称动画
+- `assets/data/*.json`：武器（含握把/枪口/后坐力参数）、敌人、关卡数据
+- `assets/ui/*.ui.json`：菜单、准备场景、HUD、暂停、结算界面
+- `assets/prefabs/*.json`：敌人、掩体、拾取物、武器、手臂/手掌预制体

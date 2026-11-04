@@ -1,0 +1,13 @@
+# hand_right_fp.mtl - generated
+newmtl glove
+Kd 0.360 0.310 0.230
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl pad
+Kd 0.155 0.148 0.130
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
