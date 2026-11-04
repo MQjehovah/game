@@ -42,6 +42,13 @@ function avgTirePressure()
   return s / 4
 end
 
+-- 启动电瓶老化：点火/供电变弱，动力略降（0% 时 ×0.85）
+function batteryPowerScale(value)
+  local b = value or 100
+  if b >= 40 then return 1.0 end
+  return 0.85 + 0.15 * b / 40
+end
+
 -- 胎压不足滚动阻力变大：极速略降（1.6bar 时 ×0.925）
 function tirePressureSpeedScale(p)
   local v = p or 2.4
@@ -1024,6 +1031,17 @@ function updateDrive(dt)
   local coldF = engineColdPowerScale(engineTemp)
   maxSp = maxSp * coldF
   acc = acc * (0.80 + 0.20 * coldF)
+  -- 电瓶老化：点火/供电变弱，动力略降
+  local batF = batteryPowerScale((parts and parts.battery) or 100)
+  maxSp = maxSp * batF
+  acc = acc * batF
+  if ((parts and parts.battery) or 100) < 15 and not rv.starterBatteryWarned then
+    rv.starterBatteryWarned = true
+    toast.text = "电瓶老化——启动无力、动力下降，到工作台修电瓶"
+    toast.t = 3.4
+  elseif ((parts and parts.battery) or 100) > 35 then
+    rv.starterBatteryWarned = false
+  end
   -- 引擎濒临报废：只能龟速，必须先修
   if (parts.engine or 100) < 10 then
     maxSp = math.min(maxSp, 1.6)

@@ -1879,6 +1879,19 @@ function runSelfTest()
                      base, edge, low, floorV))
   end
 
+  -- 电瓶老化：低于 40% 动力略降，0% 时 ×0.85
+  do
+    local full = batteryPowerScale(100)
+    local mid = batteryPowerScale(40)
+    local low = batteryPowerScale(20)
+    local empty = batteryPowerScale(0)
+    ok(r, "battery power scale",
+       full == 1.0 and mid == 1.0 and low < 1.0 and empty < low and
+       math.abs(empty - 0.85) < 1e-6,
+       string.format("100=%.2f 40=%.2f 20=%.3f 0=%.2f",
+                     full, mid, low, empty))
+  end
+
   -- 胎压偏低预警阈值（1.95bar 以下）
   do
     ok(r, "tire pressure warning",
