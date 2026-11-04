@@ -4109,6 +4109,25 @@ function runSelfTest()
        string.format("north=%s east=%s", tostring(north), tostring(east)))
   end
 
+  -- 废弃邮局邮箱：首次翻找给金属+补给，第二次为空
+  do
+    local km = materials.metal or 0
+    local kc = inv.canned
+    local kt, kv = toast.text, toast.t
+    local nd = { id = "poi_mail", mailbox = { x = 0, z = 0, taken = false } }
+    local first = lootMailbox(nd)
+    local taken = nd.mailbox.taken == true
+    local gotMetal = (materials.metal or 0) - km
+    local second = lootMailbox(nd)
+    materials.metal = km
+    inv.canned = kc
+    toast.text, toast.t = kt, kv
+    ok(r, "mailbox loot",
+       first and taken and gotMetal >= 1 and gotMetal <= 3 and second == false,
+       string.format("taken=%s metal=%d second=%s", tostring(taken),
+                     gotMetal, tostring(second)))
+  end
+
   -- 地图标记：搭车客/抛锚车会出现在路边事件列表，已搜完的抛锚车不显示
   do
     local kh, ks = hitchhiker, strandedCar

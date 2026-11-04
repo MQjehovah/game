@@ -1445,6 +1445,8 @@ function spawnRuinFor(nd)
     if box ~= nil then SetScale(box, 0.52, 0.86, 0.46) end
     local flag = SpawnPrefab("rv_panel_dark", { x = cx - 2.5, y = 1.28, z = cz + 2.80 })
     if flag ~= nil then SetScale(flag, 0.06, 0.30, 0.18) end
+    -- 可查看一次的邮箱（首次打开给补给，之后为空）
+    nd.mailbox = { x = cx - 2.5, z = cz + 3.05, taken = false }
     for i = 1, 2 do
       local crate = SpawnPrefab("rv_cargo_crate", {
         x = cx + 2.1 + i * 0.75, y = 0.28, z = cz + 2.7 })

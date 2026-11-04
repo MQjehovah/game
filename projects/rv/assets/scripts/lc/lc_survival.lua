@@ -1724,6 +1724,37 @@ function lootStrandedCar()
   return true
 end
 
+-- 废弃邮局邮箱：首次查看给少量金属和随机补给，之后为空
+function lootMailbox(nd)
+  local mb = nd and nd.mailbox
+  if mb == nil or mb.taken then
+    toast.text = "邮箱已经空了"
+    toast.t = 2.0
+    return false
+  end
+  mb.taken = true
+  local got = {}
+  local metal = 1 + math.random(0, 2)
+  materials.metal = (materials.metal or 0) + metal
+  got[#got + 1] = "金属+" .. metal
+  local r = math.random()
+  if r < 0.35 then
+    materials.cloth = (materials.cloth or 0) + 1
+    got[#got + 1] = "布料+1"
+  elseif r < 0.65 then
+    addItem("canned", 1)
+    got[#got + 1] = "罐头+1"
+  else
+    addItem("bait", 1)
+    got[#got + 1] = "鱼饵+1"
+  end
+  if PlaySfx then PlaySfx("pickup") end
+  toast.text = "邮箱里翻出：" .. table.concat(got, " ")
+  toast.t = 3.2
+  if addJournal ~= nil then addJournal("查看了废弃邮局的邮箱", "explore") end
+  return true
+end
+
 -- 帮助路边搭车客：给 5L 燃料，换回金属与一件随机补给
 function helpHitchhiker()
   if hitchhiker == nil then return false end

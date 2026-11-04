@@ -320,6 +320,22 @@ function updateInteraction()
     end
   end
 
+  -- 废弃邮局邮箱：走近按 E 翻找一次补给
+  for _, nd in ipairs(NODES) do
+    local mb = nd.mailbox
+    if mb ~= nil then
+      local dx, dz = mb.x - player.x, mb.z - player.z
+      local d = math.sqrt(dx * dx + dz * dz)
+      if d < 3.2 and forwardDot(dx, dz, d) > 0.05 then
+        nearAction = { kind = "mailbox",
+                       verb = mb.taken and "邮箱（空）" or "查看邮箱",
+                       detail = mb.taken and "已经翻过了" or "E 翻找邮件",
+                       x = mb.x, z = mb.z, node = nd }
+        return
+      end
+    end
+  end
+
   if nearRv() then
     if hasItem("fuelcan", 1) and (fuel or 0) < fuelMax() - 0.5 then
       nearAction = { kind = "refuel", verb = "加注燃油",
@@ -439,6 +455,10 @@ function doInteract()
     elseif repairWaterTower ~= nil then
       repairWaterTower()
     end
+    updateInteraction()
+    return true
+  elseif nearAction.kind == "mailbox" then
+    lootMailbox(nearAction.node)
     updateInteraction()
     return true
   elseif nearAction.kind == "refuel" then
