@@ -598,6 +598,7 @@ local function pushState()
     goal = goalOut,
     relay = relayDone and 2 or ((radioMastFixed and 1) or 0),
     tower = waterTowerFixed and 1 or 0,
+    pump = fuelPumpFixed and 1 or 0,
     fire = campfireOn and 1 or 0,
     fireFuel = math.floor(campfireFuelMin or 0),
   })
@@ -948,6 +949,23 @@ local function serverHandleCommand(clientId, a)
     if okTower then
       coop.saveDirty = true
       pushState()
+    end
+  elseif t == "fuelpump" then
+    local nd = nodeById ~= nil and nodeById("gasstop") or nil
+    if nd ~= nil then
+      local dx, dz = rv.x - nd.x, rv.z - nd.z
+      if dx * dx + dz * dz < 12 * 12 then
+        local okPump = false
+        if repairFuelPumpAt ~= nil then okPump = repairFuelPumpAt(nd) end
+        print(string.format("[coop-pump] ok=%s fixed=%s",
+                            tostring(okPump), tostring(fuelPumpFixed)))
+        if okPump then
+          coop.saveDirty = true
+          pushState()
+        end
+      else
+        setToast("把房车开到加油站才能修油泵")
+      end
     end
   elseif t == "refuel_can" then
     local before = fuel or 0
@@ -1588,6 +1606,20 @@ local function serverUpdate(dt)
     if repairWaterTower ~= nil then okTower = repairWaterTower() end
     print(string.format("[coop-tower] demo ok=%s fixed=%s water=%.0f",
                         tostring(okTower), tostring(waterTowerFixed), water or 0))
+    pushState()
+  end
+
+  -- Test-only co-op fuel pump: park at the gas station, give materials, repair.
+  if coop.fuelPumpDemo and not coop.fuelPumpDemoDone and coop.autoT >= 3.0 then
+    coop.fuelPumpDemoDone = true
+    local nd = nodeById ~= nil and nodeById("gasstop") or nil
+    if nd ~= nil then rv.x, rv.z = nd.x, nd.z end
+    materials.metal = (materials.metal or 0) + 10
+    materials.electronics = (materials.electronics or 0) + 5
+    local okPump = false
+    if repairFuelPumpAt ~= nil then okPump = repairFuelPumpAt(nd) end
+    print(string.format("[coop-pump] demo ok=%s fixed=%s",
+                        tostring(okPump), tostring(fuelPumpFixed)))
     pushState()
   end
 
@@ -2261,6 +2293,9 @@ local function applyState(s)
   if s.tower ~= nil then
     waterTowerFixed = (s.tower == 1)
   end
+  if s.pump ~= nil then
+    fuelPumpFixed = (s.pump == 1)
+  end
   if s.fire ~= nil and setCampfireLit ~= nil then
     local lit = (s.fire == 1 or s.fire == true)
     if lit ~= campfireOn then setCampfireLit(lit) end
@@ -2643,6 +2678,7 @@ local function clientUpdate(dt)
       if ActionPressed("n") then Rpc("game_cmd", { type = "mast_repair" }) end
       if ActionPressed("p") then Rpc("game_cmd", { type = "ping" }) end
       if ActionPressed("u") then Rpc("game_cmd", { type = "watertower" }) end
+      if ActionPressed("y") then Rpc("game_cmd", { type = "fuelpump" }) end
       if ActionPressed("t") then Rpc("game_cmd", { type = "firewood" }) end
       if ActionPressed("v") then Rpc("game_cmd", { type = "berry" }) end
       if ActionPressed("z") then Rpc("game_cmd", { type = "pond_trap" }) end
@@ -3162,6 +3198,7 @@ function coopInitWorld(role)
     coop.towerDemo = readFlag("coop_tower.txt")
     coop.highRiskDemo = readFlag("coop_highrisk.txt")
     coop.smokeDemo = readFlag("coop_smoke.txt")
+    coop.fuelPumpDemo = readFlag("coop_pump.txt")
     coop.offerDemo = readFlag("coop_offer.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
@@ -3297,6 +3334,7 @@ function coopInitWorld(role)
     coop.towerDemo = readFlag("coop_tower.txt")
     coop.highRiskDemo = readFlag("coop_highrisk.txt")
     coop.smokeDemo = readFlag("coop_smoke.txt")
+    coop.fuelPumpDemo = readFlag("coop_pump.txt")
     coop.offerDemo = readFlag("coop_offer.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
