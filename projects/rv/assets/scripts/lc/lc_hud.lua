@@ -725,6 +725,25 @@ function drawMinimap(vw, vh)
       end
     end
   end
+  -- 路边事件：搭车客（青）/ 抛锚车（橙）
+  for _, e in ipairs((roadEventMarkers and roadEventMarkers()) or {}) do
+    local dx, dz = e.x - rv.x, e.z - rv.z
+    local d = math.sqrt(dx * dx + dz * dz)
+    local px2, py2
+    if d <= range then
+      px2, py2 = cx + dx * scale, cy - dz * scale
+    elseif d > 0.01 then
+      px2 = cx + dx / d * (size * 0.5 - 10)
+      py2 = cy - dz / d * (size * 0.5 - 10)
+    end
+    if px2 ~= nil then
+      if e.kind == "hitchhiker" then
+        DrawCircle(px2, py2, 3.5, 1.5, 0.45, 0.92, 0.95, 1, false)
+      else
+        DrawCircle(px2, py2, 3.0, 1.5, 0.95, 0.62, 0.30, 1, false)
+      end
+    end
+  end
   DrawLine(cx, cy, cx + math.sin(rv.yaw) * 10,
            cy - math.cos(rv.yaw) * 10, 2, 1.0, 0.85, 0.35, 1)
   DrawCircle(cx, cy, 3, 2, 1.0, 0.85, 0.35, 1, true)

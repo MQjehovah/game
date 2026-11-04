@@ -3772,6 +3772,26 @@ function runSelfTest()
                      (materials.metal or 0) - sm, tostring(cleared)))
   end
 
+  -- 地图标记：搭车客/抛锚车会出现在路边事件列表，已搜完的抛锚车不显示
+  do
+    local kh, ks = hitchhiker, strandedCar
+    hitchhiker = { x = 1, z = 2 }
+    strandedCar = { x = 3, z = 4, looted = false }
+    local markers = roadEventMarkers()
+    local hasH, hasS = false, false
+    for _, m in ipairs(markers) do
+      if m.kind == "hitchhiker" then hasH = true end
+      if m.kind == "stranded" then hasS = true end
+    end
+    strandedCar.looted = true
+    local afterLoot = roadEventMarkers()
+    hitchhiker, strandedCar = kh, ks
+    ok(r, "road event markers",
+       hasH and hasS and #markers == 2 and #afterLoot == 1,
+       string.format("h=%s s=%s count=%d looted=%d", tostring(hasH),
+                     tostring(hasS), #markers, #afterLoot))
+  end
+
   -- 按位置找最近可取补给箱（联机服务器用）
   do
     local c = roadCaches and roadCaches[1] or nil

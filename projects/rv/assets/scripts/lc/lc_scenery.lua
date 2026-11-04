@@ -2302,6 +2302,18 @@ function despawnStrandedCar()
   strandedCar = nil
 end
 
+-- 地图上要标出的路边事件（搭车客 / 抛锚车）
+function roadEventMarkers()
+  local out = {}
+  if hitchhiker ~= nil then
+    out[#out + 1] = { x = hitchhiker.x, z = hitchhiker.z, kind = "hitchhiker" }
+  end
+  if strandedCar ~= nil and not strandedCar.looted then
+    out[#out + 1] = { x = strandedCar.x, z = strandedCar.z, kind = "stranded" }
+  end
+  return out
+end
+
 -- 路牌笔记：在各地 POI 附近放一张可阅读的纸片（已读的隐藏）
 function spawnLoreNotes()
   for _, n in ipairs(loreNotes or {}) do Despawn(n.ent) end
