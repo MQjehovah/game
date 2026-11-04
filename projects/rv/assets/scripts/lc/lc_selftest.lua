@@ -4926,6 +4926,21 @@ function runSelfTest()
                      catRain, catClear, catNight, jiClear, jiRain))
   end
 
+  -- 鱼种名册：新增狗鱼/鲟鱼，尺寸区间与权重有效
+  do
+    local names = {}
+    local valid = #FISH_SPECIES >= 8
+    for _, sp in ipairs(FISH_SPECIES) do
+      names[sp.name] = true
+      if not (sp.min < sp.max and (sp.w or 0) > 0) then valid = false end
+    end
+    ok(r, "fish roster",
+       valid and names["狗鱼"] == true and names["鲟鱼"] == true,
+       string.format("species=%d dogfish=%s sturgeon=%s",
+                     #FISH_SPECIES, tostring(names["狗鱼"]),
+                     tostring(names["鲟鱼"])))
+  end
+
   -- 旅行日志：记录、封顶与内容
   do
     local keep = journal
