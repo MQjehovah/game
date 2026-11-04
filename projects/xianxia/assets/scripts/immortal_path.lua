@@ -1,11 +1,11 @@
--- 仙山古道 vertical slice: third-person cultivator on a cliff path.
--- The script owns the orbit framing (cameraMode="script") so the third-person
--- distance/pitch stay stable; mouse deltas drive the orbit. Movement samples
--- GetGroundHeight, so the same script works on a flat or sculpted heightfield.
+-- 仙山古道 vertical slice: third-person cultivator on a cliff ledge.
+-- The script owns the orbit framing (cameraMode="script"); mouse deltas drive
+-- the orbit. Movement samples GetGroundHeight, and a few additive motes add
+-- life to the misty cliff air.
 
 local hero = nil
-local lookYaw = 0.0
-local lookPitch = 0.24
+local lookYaw = 0.06
+local lookPitch = 0.16
 local yvel = 0.0
 local grounded = true
 local facing = 0.0
@@ -13,6 +13,12 @@ local moveSpeed = 4.6
 local runSpeed = 7.2
 local tablet = { x = 0.0, z = -32.0 }
 local hintCooldown = 0.0
+local moteClock = 0.0
+local mistClock = 0.0
+local cloudClock = 0.0
+local petalClock = 0.0
+local clock = 0.0
+local animState = ""
 
 local function clamp(v, lo, hi)
   if v < lo then return lo end
@@ -37,10 +43,12 @@ function on_start(e)
   SetVar("cameraMode", "script")
   SetVar("cameraYaw", lookYaw)
   SetVar("cameraPitch", lookPitch)
-  SetVar("cameraDist", 5.2)
-  SetVar("cameraFocus", { x = 0.0, y = groundAt(0.0, -20.0) + 1.2, z = -20.0 })
+  SetVar("cameraDist", 3.5)
+  SetVar("cameraFocus", { x = 0.0, y = groundAt(0.0, -20.0) + 1.15, z = -20.0 })
   SpawnFloatText(0.0, groundAt(0.0, -20.0) + 2.6, -20.0,
                  "WASD 行走 · Shift 疾行 · Space 跳跃 · F 感悟", false, 3.0)
+  PlayAnimation(hero, "idle_in_raw", true, 0.2)
+  animState = "idle_in_raw"
 end
 
 function on_update(ent, dt)
@@ -48,13 +56,14 @@ function on_update(ent, dt)
   local p = GetPosition(hero)
   if p == nil then return end
   hintCooldown = math.max(0.0, hintCooldown - dt)
+  clock = clock + dt
 
   lookYaw = lookYaw - InputMouseX() * 0.004
   lookPitch = clamp(lookPitch + InputMouseY() * 0.004, -0.30, 0.95)
   SetVar("cameraMode", "script")
   SetVar("cameraYaw", lookYaw)
   SetVar("cameraPitch", lookPitch)
-  SetVar("cameraDist", 5.2)
+  SetVar("cameraDist", 3.5)
 
   local cy = lookYaw
   local ix = ActionAxis("move_strafe")
@@ -92,9 +101,12 @@ function on_update(ent, dt)
     end
   end
 
-  p.x = clamp(p.x + dx * speed * dt, -16.0, 16.0)
+  -- Keep the player on the ledge; the left side is a cloud-sea drop.
+  p.x = clamp(p.x + dx * speed * dt, -1.9, 4.8)
   p.z = clamp(p.z + dz * speed * dt, -38.0, 38.0)
-  if grounded then p.y = groundAt(p.x, p.z) end
+  if grounded then
+    p.y = groundAt(p.x, p.z) + math.abs(math.sin(clock * 9.0)) * 0.015 * len
+  end
   SetPosition(hero, p)
 
   if len > 0.01 then
@@ -102,7 +114,116 @@ function on_update(ent, dt)
     SetRotationY(hero, facing)
   end
 
-  SetVar("cameraFocus", { x = p.x, y = p.y + 1.15, z = p.z })
+  SetVar("cameraFocus", { x = p.x, y = p.y + 1.12, z = p.z })
+
+  local nextAnim = "idle_in_raw"
+  if not grounded then
+    nextAnim = "idle_in_raw"
+  elseif len > 0.01 then
+    nextAnim = (speed > moveSpeed) and "run2" or "run"
+  end
+  if nextAnim ~= animState then
+    PlayAnimation(hero, nextAnim, true, 0.16)
+    animState = nextAnim
+  end
+
+  -- A sparse stream of pale motes drifting over the cliff edge.
+  moteClock = moteClock - dt
+  if moteClock <= 0.0 then
+    moteClock = 0.45
+    local mx = p.x + (math.random() - 0.5) * 16.0
+    local mz = p.z + (math.random() - 0.5) * 18.0
+    local my = groundAt(mx, mz) + 0.8 + math.random() * 3.5
+    EmitParticles({
+      pos = { x = mx, y = my, z = mz },
+      count = 1,
+      lifeMin = 2.2,
+      lifeMax = 4.5,
+      sizeStart = 0.035,
+      sizeEnd = 0.10,
+      color = { r = 0.62, g = 0.76, b = 0.95, a = 0.32 },
+      colorEnd = { r = 0.70, g = 0.82, b = 1.0, a = 0.0 },
+      speedMin = 0.02,
+      speedMax = 0.14,
+      gravity = 0.01,
+      additive = true,
+      emissive = 0.8,
+      texture = "assets/sprites/glow.png",
+    })
+  end
+
+  -- Slow, very soft mist banks drifting up from the cloud sea on the left.
+  mistClock = mistClock - dt
+  if mistClock <= 0.0 then
+    mistClock = 0.38
+    EmitParticles({
+      pos = { x = -4.0 - math.random() * 5.0,
+              y = -2.0 + math.random() * 2.5,
+              z = p.z - 8.0 + (math.random() - 0.5) * 24.0 },
+      count = 1,
+      lifeMin = 6.0,
+      lifeMax = 10.0,
+      sizeStart = 4.0,
+      sizeEnd = 9.0,
+      color = { r = 0.92, g = 0.96, b = 0.98, a = 0.12 },
+      colorEnd = { r = 0.92, g = 0.96, b = 0.98, a = 0.0 },
+      speedMin = 0.02,
+      speedMax = 0.10,
+      gravity = 0.01,
+      additive = false,
+      emissive = 0.0,
+      texture = "assets/sprites/glow.png",
+    })
+  end
+
+  -- Heavy, slow cloud banks fill the void beyond the left cliff. Big soft
+  -- sprites overlapping at different depths read as a rolling cloud sea.
+  cloudClock = cloudClock - dt
+  if cloudClock <= 0.0 then
+    cloudClock = 0.30
+    EmitParticles({
+      pos = { x = p.x - 10.0 + (math.random() - 0.5) * 12.0,
+              y = 0.4 + math.random() * 4.0,
+              z = p.z - 3.0 - math.random() * 28.0 },
+      count = 1,
+      lifeMin = 9.0,
+      lifeMax = 16.0,
+      sizeStart = 7.0,
+      sizeEnd = 16.0,
+      color = { r = 0.95, g = 0.98, b = 1.0, a = 0.16 },
+      colorEnd = { r = 0.94, g = 0.97, b = 1.0, a = 0.0 },
+      speedMin = 0.05,
+      speedMax = 0.22,
+      gravity = 0.0,
+      additive = false,
+      emissive = 0.0,
+      texture = "assets/textures/cloud_soft.png",
+    })
+  end
+
+  -- A few pale petals drifting down through the pines.
+  petalClock = petalClock - dt
+  if petalClock <= 0.0 then
+    petalClock = 0.22
+    EmitParticles({
+      pos = { x = p.x + (math.random() - 0.5) * 10.0,
+              y = p.y + 3.0 + math.random() * 3.0,
+              z = p.z + (math.random() - 0.5) * 12.0 },
+      count = 1,
+      lifeMin = 3.0,
+      lifeMax = 5.5,
+      sizeStart = 0.045,
+      sizeEnd = 0.018,
+      color = { r = 0.98, g = 0.82, b = 0.84, a = 0.8 },
+      colorEnd = { r = 0.95, g = 0.72, b = 0.76, a = 0.0 },
+      speedMin = 0.05,
+      speedMax = 0.25,
+      gravity = -0.35,
+      additive = false,
+      emissive = 0.0,
+      texture = "assets/sprites/glow.png",
+    })
+  end
 
   local ddx = p.x - tablet.x
   local ddz = p.z - tablet.z
