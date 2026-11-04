@@ -164,7 +164,7 @@ function maintenanceRows()
   local armor = (upgrades and upgrades.armor) or 0
   row("装甲", string.format("Lv%d", armor), true)
   local dirt = (veh and veh.dirt) or rv.dirt or 0
-  row("清洁", string.format("%.0f%%", dirt * 100), dirt < 0.6)
+  row("清洁", string.format("%.0f%%", (1 - dirt) * 100), dirt < 0.6)
   return rows
 end
 
@@ -326,6 +326,12 @@ end
 function dirtFuelScale(value)
   local v = math.max(0, math.min(1, value or 0))
   return 1.0 + 0.04 * v
+end
+
+-- 车身太脏提示（积灰 >=80% 时提示洗车）
+function dirtWarningText(value)
+  if (value or 0) < 0.8 then return nil end
+  return "车身太脏了——油耗上升，到营地/加油站洗车"
 end
 
 -- 每米积灰量：泥泞/泥土/碎石/草地更脏，雨天更明显
@@ -1206,6 +1212,14 @@ function updateDrive(dt)
     toast.t = 3.5
   elseif fuel > fuelMax() * 0.5 then
     fuelWarned = false
+  end
+  local dirtWarn = dirtWarningText(rv.dirt)
+  if dirtWarn ~= nil and not rv.dirtWarned then
+    rv.dirtWarned = true
+    toast.text = dirtWarn
+    toast.t = 3.4
+  elseif (rv.dirt or 0) < 0.5 then
+    rv.dirtWarned = false
   end
   -- 胎压偏低：提前提示充气，避免直接爆胎
   local minP = 2.4

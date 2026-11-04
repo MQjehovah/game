@@ -983,7 +983,13 @@ function drawDriveHud()
   DrawText(string.format("机油 %.0f%%", oil),
            px + 14, py + 200, 11, orr, og, ob, 1)
   DrawText(string.format("冷却液 %.0f%%", cool),
-           px + 92, py + 200, 11, cr, cg, cb, 1)
+           px + 76, py + 200, 11, cr, cg, cb, 1)
+  local dirt = rv.dirt or 0
+  local dr, dg, db = 0.74, 0.80, 0.72
+  if dirt >= 0.8 then dr, dg, db = 1.0, 0.45, 0.30
+  elseif dirt >= 0.6 then dr, dg, db = 0.95, 0.78, 0.35 end
+  DrawText(string.format("清洁 %.0f%%", (1 - dirt) * 100),
+           px + 150, py + 200, 11, dr, dg, db, 1)
 
   drawNeedsPanel(vw - 230, 10, 220)
   drawCompass(vw)

@@ -2167,6 +2167,15 @@ function runSelfTest()
                      mud / road, rain / road, dirty, tostring(okWash), washCost))
   end
 
+  -- 车身太脏提示：>=80% 才提示，干净时返回 nil
+  do
+    local dirty = dirtWarningText(0.85)
+    local clean = dirtWarningText(0.4)
+    ok(r, "dirt warning",
+       dirty ~= nil and dirty:find("洗车", 1, true) ~= nil and clean == nil,
+       string.format("dirty=%s clean=%s", tostring(dirty), tostring(clean)))
+  end
+
   -- 保养警示：全部良好为 false，任意一项低则 true
   do
     local ko, kc = oilLife, coolant
