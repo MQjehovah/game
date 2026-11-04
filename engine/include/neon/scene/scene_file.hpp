@@ -666,6 +666,13 @@ struct SceneTerrain {
     float size = 60.0f;
     float heightScale = 1.0f;
     std::vector<float> heights;
+    // Procedural world mode: when true the runtime ignores the heightfield and
+    // builds a `world::TerrainWorld` (infinite biome terrain) seeded by
+    // worldSeed. segments/size/heights become optional in the scene JSON.
+    bool procedural = false;
+    uint32_t worldSeed = 1337;
+    float terrainViewDistance = 2048.0f;
+    float terrainCellSize = 1.0f;
     // G2-3 chunked LOD: when chunkGridDiv > 0 the runtime renders the terrain
     // as gridDiv x gridDiv patches, each with its own LodChain (near = dense,
     // far = coarse) instead of one monolithic mesh. 0 keeps the old single-mesh

@@ -18,6 +18,7 @@
 #include "neon/gfx/font.hpp"
 #include "neon/gfx/material.hpp"
 #include "neon/gfx/mesh.hpp"
+#include "neon/gfx/terrain_streamer.hpp"
 #include "neon/gfx/trail.hpp"
 #include "neon/math/bvh.hpp"
 #include "neon/nav/nav_grid.hpp"
@@ -195,6 +196,12 @@ public:
     // Forwards to uiSystem_ (UiSystem; Task 11).
     void DrawUI(gfx::Renderer& renderer);
     void Stop();
+
+    // World ground height at a WORLD (x,z). Uses the procedural terrain world
+    // when the scene's terrain component set `procedural: true`; otherwise
+    // falls back to the legacy SceneTerrain heightfield (0 when neither
+    // exists). This is the same value GetGroundHeight exposes to scripts.
+    float GroundHeight(float x, float z);
 
     // --- M1: per-entity animation + world-screen HUD anchors ---------------
     // Plays a named clip (substring, case-insensitive) on a skinned entity's
@@ -555,6 +562,14 @@ void ResolveEnvironmentResources();
     // projectiles_/sceneParticles_/scriptCanvas_/hiddenEntities_/uiScale_/uiOffset_
     // in as call parameters; the sprite hook + PlayAnimation skinned check forward
     // to SetSpriteFrames/SetSpriteSheet/AdvanceSprites/HasSkinned.
+    // Procedural terrain world (SceneTerrain.procedural). Null for scenes that
+    // use the legacy heightfield; the streamer keeps a quadtree LOD window
+    // around the draw camera and owns the chunk meshes.
+    std::unique_ptr<world::TerrainWorld> terrainWorld_;
+    gfx::TerrainStreamer terrainStreamer_;
+    gfx::Material terrainMaterial_;
+    gfx::Renderer* lastRenderer_ = nullptr;
+
     DrawSystem drawSystem_;
     // P1-3 tweens: Lua `Tween(ent, prop, from, to, time, easing)` calls append
     // here; TweenSystem advances them every frame and writes into the entity's

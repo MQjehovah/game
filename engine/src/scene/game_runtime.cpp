@@ -334,6 +334,29 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     LoadLocales(); // Loc() string tables (best effort; missing dir = no-op)
     auto inst = Instantiate(world_, parsed.Value(), prefabs_.Library(), compReg_);
     if (!inst.Ok()) return core::Status::Err("runtime: " + inst.Error());
+    // Procedural terrain opt-in: the first SceneTerrain with `procedural: true`
+    // replaces the heightfield with an infinite seeded biome world.
+    terrainWorld_.reset();
+    {
+        auto terrainView = world_.ViewAll<SceneTerrain>();
+        for (size_t i = 0; i < terrainView.Size(); ++i) {
+            ecs::Entity ent = world_.EntityAt<SceneTerrain>(i);
+            const SceneTerrain* terr = world_.Get<SceneTerrain>(ent);
+            if (!terr || !terr->procedural) continue;
+            world::TerrainWorldConfig worldCfg;
+            worldCfg.seed = terr->worldSeed;
+            terrainWorld_ = std::make_unique<world::TerrainWorld>(std::move(worldCfg));
+            gfx::TerrainStreamerConfig streamCfg;
+            streamCfg.viewDistance = terr->terrainViewDistance;
+            if (terr->terrainCellSize > 0.01f) {
+                const float chunk = world::TerrainChunkSize(0);
+                streamCfg.cells = static_cast<int>(chunk / terr->terrainCellSize);
+                if (streamCfg.cells < 4) streamCfg.cells = 4;
+            }
+            terrainStreamer_.Configure(terrainWorld_.get(), streamCfg);
+            break;
+        }
+    }
     const scene::SceneFile& sceneFile = parsed.Value();
     if (sceneFile.hasEnvironment) {
         ecs::Entity e = world_.Create();
@@ -450,25 +473,12 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
     scriptCtx_.findEntity = [this](const std::string& name) {
         return FindNamedEntity(name);
     };
-    // GetGroundHeight(x, z): sample the first scene terrain's world Y at a
-    // WORLD (x,z). The terrain heightmap is stored in local [-size/2, size/2]
-    // coordinates, so we offset by the terrain entity's world position before
-    // sampling. Returns 0 when no terrain/heightmap exists.
+    // GetGroundHeight(x, z): procedural world height when the scene opted in,
+    // otherwise the first SceneTerrain heightfield's world Y at (x,z). The
+    // heightmap is stored in local [-size/2, size/2] coordinates, so we offset
+    // by the terrain entity's world position before sampling.
     scriptCtx_.groundHeight = [this](float x, float z) -> float {
-        auto view = world_.ViewAll<SceneTerrain>();
-        for (size_t i = 0; i < view.Size(); ++i) {
-            ecs::Entity ent = world_.EntityAt<SceneTerrain>(i);
-            const SceneTerrain* terr = world_.Get<SceneTerrain>(ent);
-            if (!terr || terr->heights.empty() || terr->segments < 1) continue;
-            const SceneTransform* t = world_.Get<SceneTransform>(ent);
-            const float localX = x - (t ? t->pos.x : 0.0f);
-            const float localZ = z - (t ? t->pos.z : 0.0f);
-            return gfx::SampleTerrainHeight(terr->heights, terr->segments, terr->size,
-                                            localX, localZ) *
-                       terr->heightScale +
-                   (t ? t->pos.y : 0.0f);
-        }
-        return 0.0f;
+        return GroundHeight(x, z);
     };
     // SpawnSprite: create a renderable sprite entity (2D games). The texture
     // resolves at draw time through the same path as scene sprites, so dynamic
@@ -1003,6 +1013,10 @@ void GameRuntime::Stop() {
         hosts_.js->Shutdown();
         hosts_.js.reset();
     }
+    if (terrainWorld_ && lastRenderer_) terrainStreamer_.Clear(*lastRenderer_);
+    terrainStreamer_ = gfx::TerrainStreamer{};
+    terrainWorld_.reset();
+    lastRenderer_ = nullptr;
     world_.Clear();
     physics_.Clear();
     scriptCtx_ = script::ScriptContext{};
@@ -1206,6 +1220,24 @@ void GameRuntime::SetPostFx(bool ssao, bool volumetric, bool ssr,
     postSsrIntensity_ = ssrIntensity;
 }
 
+float GameRuntime::GroundHeight(float x, float z) {
+    if (terrainWorld_) return terrainWorld_->Height(x, z);
+    auto view = world_.ViewAll<SceneTerrain>();
+    for (size_t i = 0; i < view.Size(); ++i) {
+        ecs::Entity ent = world_.EntityAt<SceneTerrain>(i);
+        const SceneTerrain* terr = world_.Get<SceneTerrain>(ent);
+        if (!terr || terr->heights.empty() || terr->segments < 1) continue;
+        const SceneTransform* t = world_.Get<SceneTransform>(ent);
+        const float localX = x - (t ? t->pos.x : 0.0f);
+        const float localZ = z - (t ? t->pos.z : 0.0f);
+        return gfx::SampleTerrainHeight(terr->heights, terr->segments, terr->size,
+                                        localX, localZ) *
+                   terr->heightScale +
+               (t ? t->pos.y : 0.0f);
+    }
+    return 0.0f;
+}
+
 void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                        float previewZoom) {
     if (!running_ || !cfg_.assets) return; // sim-only runtime draws nothing
@@ -1224,11 +1256,14 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
     // (world_/scriptCtx_/hosts_/hiddenEntities_/uiScale_/uiOffset_ + the post-FX
     // toggles from SetPostFx) are wired in as parameters; the runtime keeps the
     // public entry point so the editor/player call sites are unchanged.
+    DrawSystem::DrawParams params{previewZoom, postSsao_, postVolumetric_, postSsr_,
+                                  postSsaoIntensity_, postVolumetricIntensity_,
+                                  postSsrIntensity_};
+    params.terrainStreamer = terrainWorld_ ? &terrainStreamer_ : nullptr;
+    params.terrainMaterial = terrainWorld_ ? &terrainMaterial_ : nullptr;
+    lastRenderer_ = &renderer;
     drawSystem_.Draw(
-        renderer, camera,
-        DrawSystem::DrawParams{previewZoom, postSsao_, postVolumetric_, postSsr_,
-                               postSsaoIntensity_, postVolumetricIntensity_,
-                               postSsrIntensity_},
+        renderer, camera, params,
         world_, scriptCtx_, hosts_.lua.get(), hosts_.js.get(), hiddenEntities_,
         entityHighlights_, hud_, sceneTree_, animations_, projectiles_, sceneParticles_, trails_,
         scriptCanvas_, uiScale_, uiOffset_);

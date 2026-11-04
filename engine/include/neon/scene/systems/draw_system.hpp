@@ -41,6 +41,7 @@ class AssetManager;
 namespace neon::gfx {
 struct Camera;
 class Renderer;
+class TerrainStreamer;
 class TrailSystem;
 }
 namespace neon::script {
@@ -76,6 +77,10 @@ public:
         // render their own free/orbit camera set this false so Draw uses the
         // camera they pass in.
         bool useSceneCamera = true;
+        // Optional procedural terrain: drawn after the camera/shadow/light
+        // setup and before the entity draw list. Null keeps the legacy path.
+        gfx::TerrainStreamer* terrainStreamer = nullptr;
+        gfx::Material* terrainMaterial = nullptr;
     };
 
     // 运行时持有的共享状态（Start 时由 GameRuntime 注入；ChangeScene 复用时刷新）。
