@@ -1141,6 +1141,11 @@ function on_start()
       pyaw = dirYaw(0, -14.5)
     end
   end
+  if startMode == "tableview" then
+    clock = 12 * 60
+    px, pz = 4.4, 9.2
+    pyaw = dirYaw(0.1, -4.2)
+  end
   if startMode == "poleview" then
     -- Test-only: roadside utility pole on the north stretch of the highway.
     clock = 12 * 60
@@ -1246,6 +1251,7 @@ function on_start()
   elseif startMode == "townview" then player.pitch = 0.20
   elseif startMode == "watertower" then player.pitch = 0.14
   elseif startMode == "poleview" then player.pitch = 0.06
+  elseif startMode == "tableview" then player.pitch = -0.10
   elseif startMode == "wildlife" then player.pitch = -0.06
   elseif startMode == "rabbitview" or startMode == "duckview" then
     player.pitch = -0.16
