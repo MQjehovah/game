@@ -4487,6 +4487,16 @@ function runSelfTest()
                      tostring(hasA), tostring(hasNap), tostring(hasFire)))
   end
 
+  -- 帮助面板布局：两栏累计行数不超出面板高度
+  do
+    local ph, lineH, colLines = helpPanelLayout()
+    local maxLines = math.max(colLines[1], colLines[2])
+    ok(r, "help layout",
+       ph <= 700 and maxLines > 0 and ph >= 82 + maxLines * lineH,
+       string.format("ph=%d lines=%d/%d lineH=%d", ph, colLines[1],
+                     colLines[2], lineH))
+  end
+
   -- 联机随身物资摘要：包含热饭/净水/烤鱼/修理包/燃油罐/烟熏鱼
   do
     local km, kw, kf = inv.meal, inv.water, inv.fish

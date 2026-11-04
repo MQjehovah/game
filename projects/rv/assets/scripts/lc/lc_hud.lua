@@ -1704,12 +1704,27 @@ function helpText()
   return table.concat(parts, "\n")
 end
 
+-- 帮助面板布局：按列累计行数，避免章节互相覆盖
+function helpPanelLayout()
+  local colLines = { 0, 0 }
+  for i, sec in ipairs(HELP_SECTIONS) do
+    local col = (i - 1) % 2 + 1
+    colLines[col] = colLines[col] + 1 + #sec.lines +
+                    (colLines[col] > 0 and 1 or 0)
+  end
+  local maxLines = math.max(colLines[1], colLines[2])
+  local lineH = 19
+  local ph = 82 + maxLines * lineH + 36
+  return ph, lineH, colLines
+end
+
 function drawHelp()
   if not helpOpen then return end
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
-  local pw, ph = 860, 500
+  local pw = 860
+  local ph, lineH = helpPanelLayout()
   local px = math.floor((vw - pw) * 0.5)
   local py = math.floor((vh - ph) * 0.5)
   DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.95)
@@ -1717,15 +1732,16 @@ function drawHelp()
   drawTextCentered("操作说明", vw * 0.5, py + 12, 20, 0.98, 0.90, 0.68, 1)
   DrawText("P / E 关闭", px + pw - 100, py + 16, 12, 0.68, 0.70, 0.64, 1)
   local colW = (pw - 48) * 0.5
+  local colOff = { 0, 0 }
   for i, sec in ipairs(HELP_SECTIONS) do
     local col = (i - 1) % 2
-    local row = math.floor((i - 1) / 2)
     local x = px + 24 + col * (colW + 24)
-    local y = py + 52 + row * 210
+    local y = py + 52 + colOff[col + 1] * lineH
     DrawText(sec.title, x, y, 15, 0.96, 0.84, 0.56, 1)
     for j, line in ipairs(sec.lines) do
-      DrawText(line, x + 6, y + 28 + (j - 1) * 22, 12, 0.80, 0.82, 0.76, 1)
+      DrawText(line, x + 6, y + 26 + (j - 1) * lineH, 12, 0.80, 0.82, 0.76, 1)
     end
+    colOff[col + 1] = colOff[col + 1] + 1 + #sec.lines + 1
   end
   drawTextCentered("提示：营地油/水免费；加油站加油消耗金属；夜间/雨天送达有额外报酬",
                    vw * 0.5, py + ph - 30, 12, 0.82, 0.76, 0.54, 1)
