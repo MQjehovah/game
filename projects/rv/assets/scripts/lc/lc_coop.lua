@@ -1398,6 +1398,7 @@ local function serverUpdate(dt)
     coop.vehDemoDone = true
     dur, parts.engine, parts.tires, parts.battery = 72, 60, 55, 80
     engineTemp = 95
+    rv.blowout, rv.blowoutWheel = true, 2
     print(string.format("[coop-veh] demo token=%s",
                         vehicleConditionToken and vehicleConditionToken() or "-"))
     pushState()
@@ -3123,9 +3124,14 @@ function coopDrawHud()
            coop.invMeal or 0, coop.invWater or 0),
            26, 128, 12, 0.80, 0.82, 0.76, 1)
   if coop.veh ~= nil then
-    DrawText(string.format("车况  车体%d%% 引擎%d%% 轮胎%d%% 电瓶%d%% 水温%d°C",
+    local blow = ""
+    if coop.veh.blowout then
+      local names = { "左前", "右前", "左后", "右后" }
+      blow = "  爆胎:" .. (names[coop.veh.blowoutWheel or 1] or "?")
+    end
+    DrawText(string.format("车况  车体%d%% 引擎%d%% 轮胎%d%% 电瓶%d%% 水温%d°C%s",
              coop.veh.dur, coop.veh.engine, coop.veh.tires,
-             coop.veh.battery, coop.veh.temp),
+             coop.veh.battery, coop.veh.temp, blow),
              26, 146, 11, 0.74, 0.80, 0.72, 1)
   end
 

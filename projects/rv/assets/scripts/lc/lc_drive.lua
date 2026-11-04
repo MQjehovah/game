@@ -91,6 +91,8 @@ function vehicleConditionToken()
     out[#out + 1] = string.format("%.0f",
       (rv.tireWear or {})[i] or ((parts and parts.tires) or 100))
   end
+  out[#out + 1] = rv.blowout and "1" or "0"
+  out[#out + 1] = tostring(rv.blowoutWheel or 0)
   return table.concat(out, ":")
 end
 
@@ -111,6 +113,8 @@ function parseVehicleCondition(str)
       v.temps[i] = out[10 + i] or 22
       v.wear[i] = out[14 + i] or 100
     end
+    v.blowout = (out[19] or 0) == 1
+    v.blowoutWheel = (out[20] ~= nil and out[20] > 0) and out[20] or nil
   end
   return v
 end

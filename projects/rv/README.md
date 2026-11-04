@@ -948,8 +948,8 @@
   `[coop-chains] demo on=false`，验证联机防滑链由服务端权威切换。
 - `coop_wood.txt`：服务端 3s 站到营地柴堆旁取木材，日志
   `[coop-wood] demo ok=true wood=40 cd=60`，验证联机柴堆补给。
-- `coop_veh.txt`：服务端 3s 写入车况并广播，日志
-  `[coop-veh] demo token=72:60:55:80:95:0:...`，验证联机车况/四轮数据同步。
+- `coop_veh.txt`：服务端 3s 写入车况并广播（含爆胎轮位），日志
+  `[coop-veh] demo token=72:60:55:80:95:0:...:1:2`，验证联机车况/四轮/爆胎同步。
 - `coop_maint.txt`：客户端 3s 按 O 打开保养面板，日志
   `[coop-maint] client open=true rows=8`，验证联机客机也能看车况。
 - `coop_campfire.txt`：服务端 3s 点燃篝火并烤鱼，日志
@@ -1106,10 +1106,10 @@ POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃
   客户端合作 HUD 显示 `今日目标 jobs 1/2`；服务器日志可直接看到
   `goal=jobs:0:2:0`，合作 smoke 通过。
 - **车况同步**：`game_state.veh` 为
-  `dur:engine:tires:battery:temp:brake:p1..p4:t1..t4:w1..w4`，
-  客机 HUD 显示 `车况 车体x% 引擎x% 轮胎x% 电瓶x% 水温x°C`，
-  并把刹车热与四轮胎压/胎温/磨损同步给客机（保养面板数据一致）；
-  服务器日志 `[coop-veh] demo token=72:60:55:80:95:0:...`，
+  `dur:engine:tires:battery:temp:brake:p1..p4:t1..t4:w1..w4:blowout:wheel`，
+  客机 HUD 显示 `车况 车体x% 引擎x% 轮胎x% 电瓶x% 水温x°C`，爆胎时追加
+  `爆胎:左前` 等轮位；刹车热与四轮胎压/胎温/磨损也会同步（保养面板数据一致）；
+  服务器日志 `[coop-veh] demo token=72:60:55:80:95:0:...:1:2`，
   客机按 `O` 也能打开保养面板（用同步来的车况数据），
   自检 `vehicle condition sync`。
 - **联机天气/夜幕对齐**：合作客户端现在也会绘制雨幕、闪电、夜幕与星空
