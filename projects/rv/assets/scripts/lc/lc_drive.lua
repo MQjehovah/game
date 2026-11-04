@@ -71,11 +71,12 @@ function oilEngineWearRate(oilValue)
   return (15 - o) * 0.0015
 end
 
--- 换机油费用：按缺失比例每 25% 收 1 金属（至少 1）
+-- 换机油费用：按缺失比例每 25% 收 1 金属（至少 1），老顾客有折扣
 function oilChangeCost()
   local miss = 100 - (oilLife or 100)
   if miss <= 0.5 then return 0 end
-  return math.max(1, math.ceil(miss / 25))
+  return discountedServiceCost(math.max(1, math.ceil(miss / 25)),
+                               jobDelivered)
 end
 
 -- 统一设置机油寿命（联机客机按服务器值同步）

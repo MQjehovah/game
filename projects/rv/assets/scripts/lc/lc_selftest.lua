@@ -1964,6 +1964,8 @@ function runSelfTest()
   do
     local kb, ke, kt = dur, parts.engine, parts.tires
     local kbat, km = parts.battery, materials.metal or 0
+    local sj = jobDelivered
+    jobDelivered = 0
     dur, parts.engine, parts.tires, parts.battery = 100, 40, 100, 100
     local cost = repairServiceCost()
     materials.metal = 5
@@ -1972,6 +1974,7 @@ function runSelfTest()
     local gotMetal = materials.metal or 0
     dur, parts.engine, parts.tires = kb, ke, kt
     parts.battery, materials.metal = kbat, km
+    jobDelivered = sj
     ok(r, "gas station repair",
        cost == 3 and repaired and gotEngine == 65 and
        gotMetal == 5 - cost,
@@ -4529,6 +4532,19 @@ function runSelfTest()
        c50 < c0,
        string.format("1/%.2f 5/%.2f 15/%.2f 30/%.2f 50/%.2f cost %d->%d",
                      new, regular, trusted, veteran, legend, c0, c50))
+  end
+
+  -- 老顾客维修折扣：机油/快速维修基础价越高，折扣越明显
+  do
+    local c0 = discountedServiceCost(20, 0)
+    local c15 = discountedServiceCost(20, 15)
+    local c50 = discountedServiceCost(20, 50)
+    local s0 = discountedServiceCost(4, 0)
+    local s50 = discountedServiceCost(4, 50)
+    ok(r, "service loyalty discount",
+       c0 == 20 and c15 < c0 and c50 < c15 and c50 >= 16 and s50 < s0,
+       string.format("0=%d 15=%d 50=%d | base4 %d->%d",
+                     c0, c15, c50, s0, s50))
   end
 
   -- 低油量导航：最近加油站的距离

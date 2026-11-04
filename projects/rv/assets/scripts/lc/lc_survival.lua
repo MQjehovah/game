@@ -455,14 +455,24 @@ end
 
 -- 到站补给：营地免费加满；加油站按油量缺口收金属（每 15L 1 金属，至少 1）
 -- 返回 ok, cost, note；金属不足时不加油、不扣材料。
--- 老顾客加油折扣：跑单越多，加油站每 15L 的收费越低（最低 8 折）
-function fuelLoyaltyDiscount(delivered)
+-- 老顾客折扣：跑单越多，加油站服务越便宜（最低 8 折）
+function loyaltyDiscount(delivered)
   local n = delivered or 0
   if n >= 50 then return 0.80 end
   if n >= 30 then return 0.85 end
   if n >= 15 then return 0.90 end
   if n >= 5 then return 0.95 end
   return 1.0
+end
+
+function fuelLoyaltyDiscount(delivered)
+  return loyaltyDiscount(delivered)
+end
+
+-- 按基础价格和跑单数算折后金属价（至少 1）
+function discountedServiceCost(base, delivered)
+  if (base or 0) <= 0 then return 0 end
+  return math.max(1, math.floor((base or 0) * loyaltyDiscount(delivered) + 0.5))
 end
 
 function fuelServiceCost(need, delivered)
@@ -2475,7 +2485,7 @@ function serviceClinicAtRv()
   return true, 1, "诊所包扎：生命 +30"
 end
 
--- 加油站快速维修：最差部件 <70% 时修 +25%，按缺失每 25% 收 1 金属
+-- 加油站快速维修：最差部件 <70% 时修 +25%，按缺失每 25% 收 1 金属（老顾客折扣）
 function repairServiceCost()
   local worst, val = nil, 101
   for _, p in ipairs(REPAIR_PARTS or {}) do
@@ -2483,7 +2493,8 @@ function repairServiceCost()
     if v < val then worst, val = p.id, v end
   end
   if worst == nil or val >= 70 then return 0 end
-  return math.max(1, math.ceil((100 - val) / 25))
+  return discountedServiceCost(math.max(1, math.ceil((100 - val) / 25)),
+                               jobDelivered)
 end
 
 function serviceRepairAtGasstop()
