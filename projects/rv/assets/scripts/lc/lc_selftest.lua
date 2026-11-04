@@ -3110,6 +3110,17 @@ function runSelfTest()
        string.format("cab=%d chase=%d clear=%d", cab, chase, clear))
   end
 
+  -- 车体受损时挡风玻璃裂纹条数递增
+  do
+    local okD = windshieldCrackCount(80)
+    local mid = windshieldCrackCount(40)
+    local low = windshieldCrackCount(20)
+    local bad = windshieldCrackCount(5)
+    ok(r, "windshield cracks",
+       okD == 0 and mid == 3 and low == 6 and bad == 9,
+       string.format("80=%d 40=%d 20=%d 5=%d", okD, mid, low, bad))
+  end
+
   -- 雨刷：在 -0.20~0.42 之间来回摆动
   do
     local a0 = wiperAngle(0)

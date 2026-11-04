@@ -95,6 +95,15 @@ function windshieldDropCount()
   return 0
 end
 
+-- 车体受损时挡风玻璃的裂纹条数（驾驶席视角视觉反馈）
+function windshieldCrackCount(durValue)
+  local d = durValue or 100
+  if d >= 50 then return 0 end
+  if d >= 25 then return 3 end
+  if d >= 10 then return 6 end
+  return 9
+end
+
 -- 挡风玻璃积雪数量：仅雪天 + 驾驶席视角
 function windshieldSnowCount()
   if weather == "snow" and phase == "driving" and driveView == "cab" then
@@ -363,5 +372,17 @@ function drawWeatherOverlay()
   elseif weather == "fog" then
     DrawRect(0, 0, vw, vh, 0.72, 0.75, 0.79, 0.24)
     DrawRect(0, 0, vw, vh, 0.85, 0.87, 0.89, 0.08)
+  end
+  -- 车体受损：驾驶席挡风玻璃裂纹
+  if driveView == "cab" and phase == "driving" and dur ~= nil and dur < 50 then
+    local cracks = windshieldCrackCount(dur)
+    for i = 1, cracks do
+      local x = (i * 149 + 37) % vw
+      local y = (i * 83 + 41) % vh
+      local len = 14 + (i % 4) * 6
+      DrawLine(x, y, x + len, y + len * 0.5, 1, 0.10, 0.11, 0.13, 0.32)
+      DrawLine(x + len, y + len * 0.5, x + len * 1.6, y - len * 0.3, 1,
+               0.10, 0.11, 0.13, 0.28)
+    end
   end
 end
