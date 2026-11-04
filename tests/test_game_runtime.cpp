@@ -1231,3 +1231,26 @@ TEST(GameRuntimeLoadsKenneyPreviewScene) {
     // 所有 mesh 引用都是 kenney 村庄资产或已知类型。
     // (结构验证已足够; 实际渲染/贴图由 KenneyColormapExternalImage 覆盖。)
 }
+
+TEST(GameRuntimeProceduralTerrainGroundHeight) {
+    test::HeadlessAssetFixture fix;
+    scene::GameRuntime runtime;
+    const char* scene =
+        R"({"entities":[{"name":"ground","components":{
+            "transform":{"pos":[0,0,0]},
+            "terrain":{"procedural":true,"worldSeed":1337,
+                       "terrainViewDistance":512,"terrainCellSize":1.0}}}]})";
+    scene::GameRuntimeConfig cfg;
+    cfg.assets = &fix.assets;
+    CHECK(runtime.Start(scene, cfg).Ok());
+    auto view = runtime.World().ViewAll<scene::SceneTerrain>();
+    CHECK_EQ(view.Size(), 1u);
+    const scene::SceneTerrain* t = runtime.World().Get<scene::SceneTerrain>(
+        runtime.World().EntityAt<scene::SceneTerrain>(0));
+    CHECK(t != nullptr);
+    CHECK(t->procedural);
+    CHECK_EQ(t->worldSeed, 1337u);
+    CHECK(std::isfinite(runtime.GroundHeight(0.0f, 0.0f)));
+    CHECK(runtime.GroundHeight(0.0f, 800.0f) > 30.0f);
+    runtime.Stop();
+}

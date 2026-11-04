@@ -208,6 +208,7 @@ function saveLayout(silent)
                  wetness = wetness or 0 },
     inventory = inv, water = water,
     day = day, clock = clock, modules = rows, pois = generatedPois,
+    world = { seed = WORLD_SEED or 1337 },
     weather = { id = weather, t = weatherT, next = weatherNext,
                 forecast = weatherNextId },
     lights = { interior = interiorLightsOn and 1 or 0,
@@ -306,6 +307,11 @@ function loadLayout()
     toast.t = 2.5
     return
   end
+  if type(data.world) == "table" and tonumber(data.world.seed) ~= nil then
+    WORLD_SEED = tonumber(data.world.seed)
+  else
+    WORLD_SEED = WORLD_SEED or 1337   -- v5 老档：默认种子
+  end
   if type(data.materials) == "table" then
     for k, v in pairs(data.materials) do
       materials[k] = math.max(materials[k] or 0, v or 0)
@@ -340,8 +346,15 @@ function loadLayout()
     generatedPois = {}
     for _, p in ipairs(data.pois) do
       if type(p) == "table" and p.id and nodeById(p.id) == nil then
-        local nd = { id = p.id, name = p.name or p.id, x = tonumber(p.x) or 0,
-                     z = tonumber(p.z) or 0, danger = tonumber(p.danger) or 1,
+        -- Old saves may hold POIs on what is now a mountainside; relocate them
+        -- to the nearest flat spot before spawning the y=0 shell.
+        local px, pz = tonumber(p.x) or 0, tonumber(p.z) or 0
+        if safePoiGround ~= nil then
+          local sx, sz = safePoiGround(px, pz)
+          if sx ~= nil then px, pz = sx, sz end
+        end
+        local nd = { id = p.id, name = p.name or p.id, x = px,
+                     z = pz, danger = tonumber(p.danger) or 1,
                      loot = p.loot or { cloth = { 1, 2 } },
                      links = p.links or {}, generated = true }
         NODES[#NODES + 1] = nd
@@ -632,8 +645,13 @@ function on_start()
   -- tools/gen_rv_terrain.py; lc_terrain samples the same grid. The visible mesh
   -- is split into 4x4 chunks so each has a distance LOD chain (4 m near,
   -- 8 m / 12 m far) and can be frustum-culled independently.
-  local span = 72.0
   terrainChunks = {}
+  if WORLD_PROCEDURAL then
+    -- 引擎 TerrainStreamer 负责地面；隐藏旧的 60x60 Ground 板。
+    local g = FindNamedEntity("Ground")
+    if g ~= nil then SetVisible(g, false) end
+  else
+  local span = 72.0
   for iz = 0, 3 do
     for ix = 0, 3 do
       local cx = -144.0 + span * (ix + 0.5)
@@ -653,6 +671,7 @@ function on_start()
     end
   end
   if updateTerrainLod ~= nil then updateTerrainLod(0, true) end
+  end -- WORLD_PROCEDURAL
   spawnMarkers()
   if spawnCampProps ~= nil then spawnCampProps() end
   if spawnBirds ~= nil then spawnBirds() end
@@ -679,6 +698,7 @@ function on_start()
       -- Test-only: the sculpted lathed sink basin in front of the camera.
       SpawnPrefab("rv_furn_sink", { x = 5.0, y = 0.0, z = 1.8 })
     end
+
     -- Test-only: start in the outside chase camera (autopilot screenshots).
     if startMode == "chase" or startMode == "tiretest" or
        startMode == "northdrive" then

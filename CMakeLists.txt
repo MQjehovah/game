@@ -79,6 +79,11 @@ add_library(neon_core STATIC
   engine/src/net/socket.cpp
   engine/src/net/reliable.cpp
   engine/src/nav/nav_grid.cpp
+  engine/src/world/noise.cpp
+  engine/src/world/biome.cpp
+  engine/src/world/world_features.cpp
+  engine/src/world/terrain_world.cpp
+  engine/src/world/terrain_chunk.cpp
   engine/src/kernel/registry.cpp
   engine/src/plugin/plugin.cpp
   engine/src/plugin/native.cpp
@@ -117,6 +122,7 @@ add_library(neon_gfx STATIC
   engine/src/gfx/scene_state.cpp
   engine/src/gfx/shadow_system.cpp
   engine/src/gfx/terrain.cpp
+  engine/src/gfx/terrain_streamer.cpp
   engine/src/gfx/light_probe.cpp
   engine/src/gfx/particles.cpp
   engine/src/gfx/trail.cpp
@@ -156,6 +162,7 @@ add_library(neon_scene STATIC
   engine/src/scene/game_manifest.cpp
   engine/src/scene/fog_of_war.cpp
   engine/src/scene/game_runtime.cpp
+  engine/src/scene/terrain_layers.cpp
   engine/src/scene/game_runtime_combat.cpp
   engine/src/scene/game_runtime_content.cpp
   engine/src/scene/systems/animation_system.cpp
@@ -769,6 +776,13 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_asset_importer.cpp
   tests/test_bvh.cpp
   tests/test_terrain.cpp
+tests/test_world_noise.cpp
+tests/test_biome.cpp
+tests/test_world_features.cpp
+tests/test_terrain_world.cpp
+tests/test_terrain_chunk.cpp
+tests/test_terrain_material.cpp
+tests/test_terrain_streamer.cpp
   tests/test_light_probe.cpp
   tests/test_ssao.cpp
   tests/test_volumetric.cpp
@@ -883,3 +897,4 @@ if(MINGW)
   neon_copy_runtime_dlls(neon_tests)
   neon_copy_runtime_dlls(neon_server)
 endif()
+

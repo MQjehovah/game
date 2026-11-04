@@ -20,6 +20,7 @@
 #include "neon/core/result.hpp"
 #include "neon/core/rng.hpp"
 #include "neon/gfx/renderer.hpp"
+#include "neon/gfx/terrain_streamer.hpp"
 #include "neon/gfx/trail.hpp"
 #include "neon/gfx/scene_props.hpp"
 #include "neon/gfx/terrain.hpp"
@@ -1345,6 +1346,14 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
             }
         }
         renderer.DrawSky();
+    }
+    // Procedural terrain: after the resolved camera, shadow cascades and sky /
+    // light uniforms are live, and before the opaque entity draw list so
+    // normal depth ordering applies.
+    if (params.terrainStreamer != nullptr && params.terrainMaterial != nullptr) {
+        params.terrainStreamer->Update(renderer, cam.position, 1.0f / 60.0f);
+        params.terrainStreamer->Draw(renderer, cam.ViewProjection(drawAspect),
+                                     *params.terrainMaterial);
     }
     // Scripts may have spawned/despawned sprite entities since the last frame.
     Build(world, anims);

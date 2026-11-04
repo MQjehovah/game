@@ -23,6 +23,17 @@ struct Material {
     TextureHandle grassTex;
     Color dirtColor{0.50f, 0.42f, 0.28f, 1.0f};
     Color rockColor{0.55f, 0.52f, 0.48f, 1.0f};
+    // Layered terrain (lit_terrain_layers): three 2D texture arrays shared by
+    // every chunk (albedo / normal / packed roughness+AO). `terrainLayers`
+    // selects which four array slices this chunk samples; `terrainUvScale`
+    // is the per-layer world-space tiling. terrainSnowLine > 0 adds a snow
+    // layer above that world Y.
+    TextureHandle terrainAlbedoArray;
+    TextureHandle terrainNormalArray;
+    TextureHandle terrainOrmArray;
+    int terrainLayers[4] = {0, 1, 2, 3};
+    float terrainUvScale[4] = {0.25f, 0.25f, 0.1f, 0.1f};
+    float terrainSnowLine = 0.0f;
     Color tint{1.0f, 1.0f, 1.0f, 1.0f};
     float shininess = 24.0f;
     float metallic = 0.0f;

@@ -1,0 +1,60 @@
+{
+  "layers": [
+    {
+      "name": "grass",
+      "albedo": "grass/albedo.jpg",
+      "normal": "grass/normal.jpg",
+      "orm": "grass/orm.jpg",
+      "uvScale": 0.22
+    },
+    {
+      "name": "rock",
+      "albedo": "rock/albedo.jpg",
+      "normal": "rock/normal.jpg",
+      "orm": "rock/orm.jpg",
+      "uvScale": 0.12
+    },
+    {
+      "name": "snow",
+      "albedo": "snow/albedo.jpg",
+      "normal": "snow/normal.jpg",
+      "orm": "snow/orm.jpg",
+      "uvScale": 0.18
+    },
+    {
+      "name": "dirt",
+      "albedo": "dirt/albedo.jpg",
+      "normal": "dirt/normal.jpg",
+      "orm": "dirt/orm.jpg",
+      "uvScale": 0.2
+    },
+    {
+      "name": "forest",
+      "albedo": "forest/albedo.jpg",
+      "normal": "forest/normal.jpg",
+      "orm": "forest/orm.jpg",
+      "uvScale": 0.24
+    },
+    {
+      "name": "gravel",
+      "albedo": "gravel/albedo.jpg",
+      "normal": "gravel/normal.jpg",
+      "orm": "gravel/orm.jpg",
+      "uvScale": 0.16
+    },
+    {
+      "name": "hardpan",
+      "albedo": "hardpan/albedo.jpg",
+      "normal": "hardpan/normal.jpg",
+      "orm": "hardpan/orm.jpg",
+      "uvScale": 0.14
+    },
+    {
+      "name": "cliff",
+      "albedo": "cliff/albedo.jpg",
+      "normal": "cliff/normal.jpg",
+      "orm": "cliff/orm.jpg",
+      "uvScale": 0.1
+    }
+  ]
+}

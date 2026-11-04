@@ -1011,3 +1011,31 @@ set NEON_SHADOW_DEBUG=1   :: 直接输出级联阴影因子（白=受光，黑=�
 - skyTop/skyHorizon 仅在 useAtmosphere=true 时生效（否则用硬编码默认天），
   自定义天色但不开启 atmosphere 的场景两端一致地被忽略（不算分歧，属设计
   门槛，但作者容易踩）。
+
+## P1 分层地形 shader（OpenGL）
+
+```bat
+build\release\neon_game.exe --scene projects\rv\assets\scenes\garage.json --scripts projects\rv --screenshot shots\p1_shader.png 30
+```
+
+预期：控制台无 `shader compile failed`；截图非纯色（此时场景还没切到新地形，材质层次在 P1 验收时看）。
+
+## P1 连续生物群系地形（OpenGL）
+
+验收命令：
+
+```bat
+build\release\neon_game.exe --scene projects\rv\assets\scenes\garage.json --scripts projects\rv --screenshot shots\p1_camp.png 120 --smoke-test 200
+```
+
+已记录证据：`docs/visual_acceptance/p1_camp_textured.png`（营地，2K 扫描地表 + 8 层 texture array）。
+
+数值证据（Lua selftest，`projects/rv/selftest_on.txt`）：
+- `terrain world` PASS：camp=0.00 north=89.91 far=1.10（确定性 + 有限 + 北侧雪山抬升）
+- `pois grounded` PASS：worst=depot 1.13m
+- `rv wheels grounded` PASS（视觉轮胎贴地，不再下陷）
+- `slope traction` PASS：flat=1.00 d30=0.78 d50=0.00
+
+已知未完成/未修：
+- 远端 POI（雪原/林场/矿场）延后到 POI 作者化批次；当前地形已连续，但远端还没有目的地。
+- 部分旧玩法 selftest（coffee / repair / free placement / poi first-visit / map fog / radio）在本次环境仍失败，与本批地形改动无直接关系，待单独排查。

@@ -1140,8 +1140,19 @@ function updateDrive(dt)
     local hb = terrainHeight(rv.x - gfx * 2.0, rv.z - gfz * 2.0) or 0
     grade = (hf - hb) / 4.0
   end
-  maxSp = maxSp * slopeSpeedScale(grade)
-  acc = acc * slopeAccelScale(grade)
+  -- Uphill uses the steep-terrain curve (25/35/45 deg); downhill keeps the
+  -- original (small boost) model. Using both curves uphill double-counted the
+  -- penalty.
+  local hillF
+  if grade > 0 then
+    hillF = slopeFactorFromGradient(grade)
+    maxSp = maxSp * hillF
+    acc = acc * (0.55 + 0.45 * hillF)
+  else
+    hillF = slopeSpeedScale(grade)
+    maxSp = maxSp * hillF
+    acc = acc * slopeAccelScale(grade)
+  end
   -- 冷车动力受限：水温上来前别急着飙
   local coldF = engineColdPowerScale(engineTemp)
   maxSp = maxSp * coldF
@@ -1371,7 +1382,8 @@ function updateDrive(dt)
     if rv.speed > 0.05 then
       rv.speed = math.max(0.0, rv.speed - brakeRate(ratio, brakeHeat, weather) * dt)
     else
-      rv.speed = math.max(-DRIVE.reverseMax, rv.speed - acc * 0.6 * dt)
+      local revCap = DRIVE.reverseMax * slopeFactorFromGradient(math.abs(grade or 0))
+      rv.speed = math.max(-revCap, rv.speed - acc * 0.6 * dt)
     end
   else
     local mag = math.abs(rv.speed) - DRIVE.drag * dt

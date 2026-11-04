@@ -3,6 +3,11 @@
 
 function cellIndex(cx, cz) return cz * GW + cx end
 
+-- World ground height (procedural terrain when available, legacy fallback).
+function groundAt(x, z)
+  return terrainHeight(x, z)
+end
+
 -- 世界点 -> 房车局部（逆旋转 -yaw）再落格：房车停在任意位置/朝向都能放置
 function worldToCell(x, z)
   local dx, dz = x - rv.x, z - rv.z
@@ -107,6 +112,22 @@ POI_DOOR_HALF = 0.72
 function poiCenter(nd)
   if nd == nil then return nil end
   return nd.x + 6.5, nd.z + 6.5
+end
+
+-- Saved/generated POIs were authored for a flat world. If one lands on a new
+-- hill, find the nearest effectively-flat spot so its y=0 shell and props do
+-- not sink into a mountainside. Returns nil when no spot is found.
+function safePoiGround(x, z)
+  if math.abs(groundAt(x, z)) <= 1.0 then return x, z end
+  for r = 4, 160, 4 do
+    local steps = math.max(8, math.floor(r * 1.6))
+    for i = 0, steps - 1 do
+      local a = i * math.pi * 2 / steps
+      local nx, nz = x + math.cos(a) * r, z + math.sin(a) * r
+      if math.abs(groundAt(nx, nz)) <= 0.8 then return nx, nz end
+    end
+  end
+  return nil
 end
 
 -- Axis-separated wall collision for the POI shell: side/back walls always

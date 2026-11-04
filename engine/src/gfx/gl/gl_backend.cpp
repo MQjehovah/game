@@ -21,6 +21,7 @@ constexpr gl::GLenum UnsignedShort = 0x1403;
 constexpr gl::GLenum UnsignedInt = 0x1405;
 constexpr gl::GLenum Float = 0x1406;
 constexpr gl::GLenum Texture2D = 0x0DE1;
+constexpr gl::GLenum Texture2DArray = 0x8C1A;
 constexpr gl::GLenum Rgba = 0x1908;
 constexpr gl::GLenum Rgba8 = 0x8058;
 constexpr gl::GLenum Rgba16f = 0x881A;
@@ -125,6 +126,10 @@ struct GLTexture {
     gl::GLuint id = 0;
     int width = 0;
     int height = 0;
+    // GL_TEXTURE_2D or GL_TEXTURE_2D_ARRAY: BindTexture must target the same
+    // binding point the texture was created on, or sampler2DArray reads a
+    // stale 2D binding (black terrain).
+    gl::GLenum target = glc::Texture2D;
 };
 
 struct GLRenderTarget {
@@ -705,20 +710,22 @@ public:
         // Raw binds below land on whatever unit is active: drop the per-unit
         // cache so a later BindTexture is not wrongly skipped.
         InvalidateTextureBindings();
-        g.BindTexture(glc::Texture2D, id);
+        const int layers = desc.layers > 1 ? desc.layers : 1;
+        const gl::GLenum target = layers > 1 ? glc::Texture2DArray : glc::Texture2D;
+        g.BindTexture(target, id);
         const gl::GLenum wrap = desc.wrap == Wrap::Repeat ? glc::Repeat : glc::ClampToEdge;
-        g.TexParameteri(glc::Texture2D, glc::TextureWrapS, wrap);
-        g.TexParameteri(glc::Texture2D, glc::TextureWrapT, wrap);
+        g.TexParameteri(target, glc::TextureWrapS, wrap);
+        g.TexParameteri(target, glc::TextureWrapT, wrap);
         // Mipmapped textures sample the generated mip chain (trilinear): the
         // old plain-Linear min filter allocated + generated mips but never
         // sampled them, so GL sharpen-aliased at distance while the Vulkan
         // sampler (LINEAR mip mode) filtered properly - the measured 13.7%
         // GL/VK pixel divergence on textured surfaces (sky matched exactly).
-        g.TexParameteri(glc::Texture2D, glc::TextureMinFilter,
+        g.TexParameteri(target, glc::TextureMinFilter,
                         desc.filter == Filter::Nearest
                             ? glc::Nearest
                             : (desc.mipmaps ? glc::LinearMipmapLinear : glc::Linear));
-        g.TexParameteri(glc::Texture2D, glc::TextureMagFilter,
+        g.TexParameteri(target, glc::TextureMagFilter,
                         desc.filter == Filter::Nearest ? glc::Nearest : glc::Linear);
 
         // Allocate immutable storage (loaded from the ICD via wglGetProcAddress,
@@ -731,16 +738,24 @@ public:
                 ++levels;
             }
         }
-        g.TexStorage2D(glc::Texture2D, levels, glc::Rgba8, desc.width, desc.height);
-        CheckError("CreateTexture.TexStorage2D");
-        g.TexSubImage2D(glc::Texture2D, 0, 0, 0, desc.width, desc.height, glc::Rgba,
-                        glc::UnsignedByte, desc.rgba);
-        CheckError("CreateTexture.TexSubImage2D");
-        if (desc.mipmaps) {
-            g.GenerateMipmap(glc::Texture2D);
+        if (layers > 1) {
+            g.TexStorage3D(target, levels, glc::Rgba8, desc.width, desc.height, layers);
+            CheckError("CreateTexture.TexStorage3D");
+            g.TexSubImage3D(target, 0, 0, 0, 0, desc.width, desc.height, layers,
+                            glc::Rgba, glc::UnsignedByte, desc.rgba);
+            CheckError("CreateTexture.TexSubImage3D");
+        } else {
+            g.TexStorage2D(target, levels, glc::Rgba8, desc.width, desc.height);
+            CheckError("CreateTexture.TexStorage2D");
+            g.TexSubImage2D(target, 0, 0, 0, desc.width, desc.height, glc::Rgba,
+                            glc::UnsignedByte, desc.rgba);
+            CheckError("CreateTexture.TexSubImage2D");
         }
-        g.BindTexture(glc::Texture2D, 0);
-        textures_[++nextTextureId_] = GLTexture{id, desc.width, desc.height};
+        if (desc.mipmaps) {
+            g.GenerateMipmap(target);
+        }
+        g.BindTexture(target, 0);
+        textures_[++nextTextureId_] = GLTexture{id, desc.width, desc.height, target};
         return {nextTextureId_};
     }
 
@@ -1101,6 +1116,8 @@ public:
         auto& g = gl::GetGL();
         auto it = textures_.find(texture.id);
         const gl::GLuint id = it != textures_.end() ? it->second.id : 0;
+        const gl::GLenum target =
+            it != textures_.end() ? it->second.target : glc::Texture2D;
         // Materials re-bind the same albedo/MR/AO/white textures every draw;
         // skip the ActiveTexture+BindTexture round trip when the unit already
         // holds the texture. unitKnown_ is invalidated wherever the backend
@@ -1109,7 +1126,7 @@ public:
             unitTex_[slot] == id)
             return;
         g.ActiveTexture(glc::Texture0 + static_cast<gl::GLenum>(slot));
-        g.BindTexture(glc::Texture2D, id);
+        g.BindTexture(target, id);
         if (slot >= 0 && slot < kMaxTextureUnits) {
             unitKnown_[slot] = true;
             unitTex_[slot] = id;

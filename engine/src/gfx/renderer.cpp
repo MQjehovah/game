@@ -178,6 +178,7 @@ void Renderer::InitBuiltinResources() {
     createShader("lit_skinned", kLitVertexShader, kLitFragmentShader, "#define SKINNED 1\n");
     shaders_["unlit"] = backend_->CreateShader(kUnlitVertexShader, kUnlitFragmentShader, "unlit");
     createShader("lit_terrain", kLitVertexShader, kLitFragmentShader, "#define TERRAIN_SPLAT 1\n");
+    createShader("lit_terrain_layers", kLitVertexShader, kLitFragmentShader, "#define TERRAIN_LAYERS 1\n");
     shaders_["lines"] = backend_->CreateShader(kLineVertexShader, kLineFragmentShader, "lines");
     createShader("gbuffer", kLitVertexShader, kLitFragmentShader, "#define GBUFFER 1\n");
     createShader("gbuffer_skinned", kLitVertexShader, kLitFragmentShader,
@@ -1409,9 +1410,39 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
     backend_->SetUniformInt("uAlbedo", 0);
     // G4 terrain splatmap: bind the grass texture + dirt/rock colors when the
     // terrain shader variant is active (other shaders ignore these uniforms).
-    backend_->BindTexture(1, material.grassTex.Valid() ? material.grassTex : white_);
-    backend_->SetUniformInt("uGrassTex", 1);
-    backend_->SetUniformInt("uHasGrassTex", material.grassTex.Valid() ? 1 : 0);
+    // Layered terrain reuses units 1/2/3 for its three texture arrays: the
+    // legacy splat path only needs unit 1 (grass albedo), and a terrain
+    // material does not sample metallic-roughness/occlusion, so no extra
+    // sampler slots are needed (the backend only exposes 25).
+    const bool terrainLayers = material.terrainAlbedoArray.Valid();
+    backend_->BindTexture(1, terrainLayers
+                                 ? material.terrainAlbedoArray
+                                 : (material.grassTex.Valid() ? material.grassTex : white_));
+    if (terrainLayers) {
+        backend_->SetUniformInt("uTerrainAlbedo", 1);
+        backend_->BindTexture(2, material.terrainNormalArray.Valid()
+                                     ? material.terrainNormalArray
+                                     : white_);
+        backend_->SetUniformInt("uTerrainNormal", 2);
+        backend_->BindTexture(3, material.terrainOrmArray.Valid()
+                                     ? material.terrainOrmArray
+                                     : white_);
+        backend_->SetUniformInt("uTerrainOrm", 3);
+        backend_->SetUniformInt("uHasTerrainLayers", 1);
+        for (int i = 0; i < 4; ++i) {
+            const char* layerNames[4] = {"uTerrainLayer0", "uTerrainLayer1",
+                                         "uTerrainLayer2", "uTerrainLayer3"};
+            const char* uvNames[4] = {"uTerrainUvScale0", "uTerrainUvScale1",
+                                      "uTerrainUvScale2", "uTerrainUvScale3"};
+            backend_->SetUniformInt(layerNames[i], material.terrainLayers[i]);
+            backend_->SetUniformFloat(uvNames[i], material.terrainUvScale[i]);
+        }
+        backend_->SetUniformFloat("uTerrainSnowLine", material.terrainSnowLine);
+    } else {
+        backend_->SetUniformInt("uGrassTex", 1);
+        backend_->SetUniformInt("uHasGrassTex", material.grassTex.Valid() ? 1 : 0);
+        backend_->SetUniformInt("uHasTerrainLayers", 0);
+    }
     backend_->SetUniformVec4("uDirtColor",
                              {material.dirtColor.r, material.dirtColor.g,
                               material.dirtColor.b, material.dirtColor.a});
@@ -1446,9 +1477,11 @@ void Renderer::ApplyMaterial(const Material& material, const math::Mat4& mvp,
                                             material.waterDeep.b, 1.0f});
     backend_->SetUniformVec4("uWaterShallow", {material.waterShallow.r, material.waterShallow.g,
                                                material.waterShallow.b, 1.0f});
-    backend_->BindTexture(2, material.metallicRoughness);
+    if (!terrainLayers) {
+        backend_->BindTexture(2, material.metallicRoughness);
+        backend_->BindTexture(3, material.occlusion);
+    }
     backend_->SetUniformInt("uMR", 2);
-    backend_->BindTexture(3, material.occlusion);
     backend_->SetUniformInt("uOcclusion", 3);
     backend_->BindTexture(4, material.emissive);
     backend_->SetUniformInt("uEmissive", 4);
@@ -1761,6 +1794,10 @@ void Renderer::DrawSphere(const math::Vec3& center, float radius, const Color& c
     ring({1, 0, 0}, {0, 0, 1});
     ring({0, 1, 0}, {0, 0, 1});
     DrawLines(verts.data(), static_cast<uint32_t>(verts.size()), math::Mat4::Identity());
+}
+
+void Renderer::DestroyMesh(const MeshHandle& handle) {
+    if (backend_ && handle.Valid()) backend_->DestroyMesh(handle);
 }
 
 Texture Renderer::CreateTexture(const TextureDesc& desc) {

@@ -55,8 +55,14 @@ local function embankmentHeight(x, z)
   return math.max(0.0, base * taper)
 end
 
--- Bilinear sample of the grid; 0 outside the heightfield extent.
+-- World height at (x, z). The engine's procedural world is authoritative when
+-- the GetGroundHeight binding exists; the legacy JSON heightfield stays as a
+-- fallback for stripped builds and the analytic embankment as the last resort.
 function terrainHeight(x, z)
+  if GetGroundHeight ~= nil then
+    local h = GetGroundHeight(x, z)
+    if h ~= nil then return h end
+  end
   local f = loadField()
   if f == nil then return embankmentHeight(x, z) end
 
@@ -79,6 +85,18 @@ function terrainHeight(x, z)
   return top + (bot - top) * tz
 end
 
+-- Ground contact for the vehicle: the asphalt/gravel slab sits ~7-9 cm above
+-- the terrain, so sampling the terrain alone sinks the tires into the road.
+function driveGroundAt(x, z)
+  local g = terrainHeight(x, z)
+  if distToRoadSq ~= nil then
+    local d2 = distToRoadSq(x, z)
+    if d2 < 12.0 then return g + 0.09 end
+    if d2 < 30.0 then return g + 0.07 end
+  end
+  return g
+end
+
 -- Smoothly approach the sampled terrain height (avoids stair-stepping when
 -- walking or driving over the crest).
 function terrainFollow(current, x, z, dt, rate)
@@ -92,6 +110,23 @@ function terrainSlope(x, z)
   local dx = (terrainHeight(x + e, z) - terrainHeight(x - e, z)) / (2 * e)
   local dz = (terrainHeight(x, z + e) - terrainHeight(x, z - e)) / (2 * e)
   return dx, dz
+end
+
+-- Slope traction: 0-25 deg full speed, 25-35 deg loses up to 45%, 35-45 deg
+-- loses the rest, >45 deg is effectively impassable (the mountain still
+-- exists; physics just refuses to climb it).
+function slopeFactorFromGradient(g)
+  local deg = math.deg(math.atan(g or 0))
+  if deg <= 25.0 then return 1.0 end
+  if deg <= 35.0 then return 1.0 - 0.45 * ((deg - 25.0) / 10.0) end
+  if deg <= 45.0 then return 0.55 * (1.0 - ((deg - 35.0) / 10.0)) end
+  return 0.0
+end
+
+function slopeSpeedFactor(x, z)
+  if terrainSlope == nil then return 1.0 end
+  local dx, dz = terrainSlope(x, z)
+  return slopeFactorFromGradient(math.sqrt(dx * dx + dz * dz))
 end
 
 -- RV pitch/roll from the terrain gradient, damped so it does not jitter.
@@ -409,8 +444,10 @@ function surfaceInfo(x, z)
     if d2 < 12.0 then return "asphalt", SURFACES.asphalt end
     if d2 < 30.0 then return "gravel", SURFACES.gravel end
   end
-  if x > 4.0 and x < 16.0 and z > -25.0 and z < 47.0 and
-     (terrainHeight(x, z) or 0) > 0.12 then
+  -- Roadside dirt shoulder. The old embankment height check no longer applies
+  -- to the procedural world (the camp starts flat), so the strip itself is the
+  -- surface definition.
+  if x > 4.0 and x < 16.0 and z > -25.0 and z < 47.0 then
     return "dirt", SURFACES.dirt
   end
   if ponds ~= nil then
@@ -843,7 +880,7 @@ function updateWheelPrediction(dt)
       local bp = PhysicsGetPosition(wb.body)
       local bv = PhysicsGetVelocity(wb.body)
       if bp ~= nil then
-        local ground = terrainHeight(bp.x, bp.z)
+        local ground = driveGroundAt(bp.x, bp.z)
         local target = ground + SUSP_R
         local vy = bv and bv.y or 0
         local force = SUSP_K * (target - bp.y) - SUSP_C * vy
@@ -967,7 +1004,7 @@ function updateRvPhysics(dt)
       wx, wy, wz = bp.x, bp.y, bp.z
       vp = PhysicsGetPointVelocity and
            PhysicsGetPointVelocity(wb.body, { x = wx, y = wy, z = wz }) or bv
-      ground = terrainHeight(wx, wz)
+      ground = driveGroundAt(wx, wz)
       -- Target the contact height (centre = radius): the tire then presses on
       -- the ground so friction can produce/absorb the wheel spin.
       local targetY = ground + SUSP_R
@@ -997,7 +1034,7 @@ function updateRvPhysics(dt)
       local ox = x1 * cyw + z2 * syw
       local oz = -x1 * syw + z2 * cyw
       wx, wy, wz = p.x + ox, p.y + y2, p.z + oz
-      ground = terrainHeight(wx, wz)
+      ground = driveGroundAt(wx, wz)
       local compression = ground + SUSP_REST - (wy - SUSP_R)
       vp = PhysicsGetPointVelocity and
            PhysicsGetPointVelocity(rvBody, { x = wx, y = wy, z = wz }) or nil

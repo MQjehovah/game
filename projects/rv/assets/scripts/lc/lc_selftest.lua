@@ -430,6 +430,19 @@ function runSelfTest()
   -- Terrain relief: the embankment profile rises away from the road and the
   -- follow helper converges on the sampled height (player/RV ground following).
   if terrainHeight ~= nil and terrainFollow ~= nil then
+    if WORLD_PROCEDURAL then
+      -- Procedural world: deterministic, finite far away, flat camp, and the
+      -- alpine uplift to the north. Old authored-height constants no longer
+      -- apply.
+      local h0 = terrainHeight(0, 0)
+      local hNorth = terrainHeight(0, 800)
+      local hFar = terrainHeight(100000, -100000)
+      local h0b = terrainHeight(0, 0)
+      ok(r, "terrain world",
+         h0 == h0b and math.abs(h0) < 0.6 and hNorth > 30 and
+         hFar == hFar and math.abs(hFar) < 10000,
+         string.format("camp=%.2f north=%.2f far=%.2f", h0, hNorth, hFar))
+    else
     local hFlat = terrainHeight(0, 0)
     local hMid = terrainHeight(16, -2)
     local hTop = terrainHeight(22, -2)
@@ -477,6 +490,57 @@ function runSelfTest()
                        terrainHeight(38, 27), terrainHeight(24, -40),
                        terrainHeight(12, -20), terrainHeight(72, 0),
                        terrainHeight(106, -66), terrainHeight(137, -2)))
+    end
+    end -- WORLD_PROCEDURAL
+    -- Authored POIs sit on the camp plateau in the new world; this pins the
+    -- assumption so a future terrain change cannot quietly bury them.
+    if NODES ~= nil and poiCenter ~= nil then
+      local worst, worstId = 0, ""
+      for _, nd in ipairs(NODES) do
+        local cx, cz = poiCenter(nd)
+        if cx ~= nil then
+          local d = math.abs(terrainHeight(cx, cz))
+          if d > worst then worst, worstId = d, tostring(nd.id) end
+        end
+      end
+      ok(r, "pois grounded", worst < 1.5,
+         string.format("worst=%s %.2fm", worstId, worst))
+    end
+    if safePoiGround ~= nil then
+      local sx, sz = safePoiGround(0, 500)
+      ok(r, "generated poi relocation",
+         sx ~= nil and math.abs(terrainHeight(sx, sz)) <= 0.8,
+         sx and string.format("spot=(%.1f,%.1f) h=%.2f", sx, sz,
+                              terrainHeight(sx, sz)) or "none")
+    end
+    if slopeFactorFromGradient ~= nil then
+      local f0 = slopeFactorFromGradient(0)
+      local f30 = slopeFactorFromGradient(math.tan(math.rad(30)))
+      local f50 = slopeFactorFromGradient(math.tan(math.rad(50)))
+      ok(r, "slope traction",
+         f0 == 1.0 and f30 < 0.80 and f30 > 0.55 and f50 == 0.0,
+         string.format("flat=%.2f d30=%.2f d50=%.2f", f0, f30, f50))
+    end
+    -- Wheels must never be buried by the visible terrain: the physics wheel
+    -- body rests slightly compressed, so the visual tire is clamped to
+    -- ground + WHEEL_RADIUS in lc_vehicle.
+    if rvWheels ~= nil and applyRvTransform ~= nil and GetPosition ~= nil then
+      applyRvTransform()
+      local sunk = nil
+      for i, w in ipairs(rvWheels) do
+        local p = GetPosition(w.ent)
+        if p ~= nil then
+          -- Road slab included: the tire bottom must sit on the asphalt, not
+          -- on the terrain 9 cm below it.
+          local g = driveGroundAt(p.x, p.z)
+          if p.y < g + 0.38 then sunk = i end
+        end
+      end
+      local wp = GetPosition(rvWheels[1].ent)
+      local wg = wp and driveGroundAt(wp.x, wp.z) or 0
+      ok(r, "rv wheels grounded", sunk == nil,
+         sunk and ("wheel " .. sunk .. " sunk")
+              or string.format("tire-bottom offset=%.3fm", (wp and wp.y or 0) - (wg + 0.40)))
     end
     if ReadText ~= nil and Json ~= nil then
       -- Sculpted geometry: the RV shell uses swept wheel-arch lips plus a
@@ -533,7 +597,7 @@ function runSelfTest()
                        sink and (sink.latheSegments or 0) or 0,
                        sink and (sink.verts or 0) or 0))
     end
-    if ReadText ~= nil and Json ~= nil then
+    if ReadText ~= nil and Json ~= nil and not WORLD_PROCEDURAL then
       -- Visible terrain is 16 chunk groups, each with three prefabs (4 m,
       -- 8 m, 12 m) and exactly one visible level chosen by distance.
       local function gltfVerts(txt)
@@ -617,6 +681,14 @@ function runSelfTest()
          terrainChunkStreamed(200, true) and not terrainChunkStreamed(215, true) and
          terrainChunkStreamed(185, false) and not terrainChunkStreamed(200, false),
          "load=190 unload=210")
+    end
+    -- Tilt/suspension math is world-independent: drive it on a synthetic 30%
+    -- east-west slope so these assertions do not depend on authored terrain.
+    local __realTerrainHeight = terrainHeight
+    -- A linear slope fits a plane exactly (zero articulation), so add a small
+    -- bump that only some wheels see to exercise the travel residual.
+    terrainHeight = function(x, z)
+      return x * 0.30 + 0.12 * math.sin(x * 1.7) + (z or 0) * 0.02
     end
     if updateRvTilt ~= nil then
       local kx, kz, ky = rv.x, rv.z, rv.yaw
@@ -711,6 +783,7 @@ function runSelfTest()
       rv.pitch, rv.roll, rv.groundY = kp, kr, kg
       rv.susp = ks
     end
+    terrainHeight = __realTerrainHeight
     -- Physical suspension bridge + attitude round-trip through Jolt.
     if PhysicsApplyImpulse ~= nil and PhysicsGetPointVelocity ~= nil then
       ok(r, "rv physics suspension binding", true,

@@ -98,6 +98,10 @@ public:
                                   const std::string& name = "mesh_lod");
 
     bool Valid() const { return data_ && data_->handle.Valid(); }
+    // Releases the GPU handle through the renderer and drops the CPU copy.
+    // Used by streaming systems that create/destroy meshes at runtime (plain
+    // Mesh destruction intentionally does not touch the backend).
+    void Release(Renderer& renderer);
     // Accessors are null-safe: an invalid (default-constructed) mesh returns
     // empty/invalid values instead of crashing, mirroring TriangleCount().
     const MeshHandle& Handle() const {

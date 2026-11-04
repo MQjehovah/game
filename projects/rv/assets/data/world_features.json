@@ -1,0 +1,27 @@
+{
+  "roads": [
+    { "halfWidth": 4.0, "shoulder": 4.0, "points": [[0, -220], [0, 0]] },
+    { "halfWidth": 4.0, "shoulder": 4.0, "points": [[0, 60], [0, 220]] },
+    { "halfWidth": 4.0, "shoulder": 4.0, "points": [[0, 0], [-64, 44]] },
+    { "halfWidth": 4.0, "shoulder": 4.0, "points": [[0, 0], [-52, 30]] },
+    { "halfWidth": 4.0, "shoulder": 4.0, "points": [[0, 0], [24, -40]] },
+    { "halfWidth": 4.0, "shoulder": 4.0, "points": [[0, 0], [38, 27]] },
+    { "halfWidth": 4.0, "shoulder": 4.0, "points": [[0, 0], [0, 60]] },
+    { "halfWidth": 4.0, "shoulder": 4.0, "points": [[0, 60], [38, 27]] },
+    { "halfWidth": 4.0, "shoulder": 4.0, "points": [[0, 60], [100, -73]] },
+    { "halfWidth": 4.0, "shoulder": 4.0, "points": [[38, 27], [131, -8]] },
+    { "halfWidth": 4.0, "shoulder": 4.0, "points": [[100, -73], [131, -8]] },
+    { "halfWidth": 4.0, "shoulder": 4.0, "points": [[131, -8], [154, -58]] }
+  ],
+  "pads": [
+    { "center": [6.5, 6.5], "radius": 14.0, "falloff": 12.0, "height": 0.0 },
+    { "center": [6.5, 66.5], "radius": 14.0, "falloff": 12.0, "height": 0.0 },
+    { "center": [44.5, 33.5], "radius": 14.0, "falloff": 12.0, "height": 0.0 },
+    { "center": [106.5, -66.5], "radius": 14.0, "falloff": 12.0, "height": 0.0 },
+    { "center": [137.5, -1.5], "radius": 14.0, "falloff": 12.0, "height": 0.0 },
+    { "center": [160.5, -51.5], "radius": 14.0, "falloff": 12.0, "height": 0.0 },
+    { "center": [-57.5, 50.5], "radius": 14.0, "falloff": 12.0, "height": 0.0 },
+    { "center": [-45.5, 36.5], "radius": 14.0, "falloff": 12.0, "height": 0.0 },
+    { "center": [30.5, -33.5], "radius": 14.0, "falloff": 12.0, "height": 0.0 }
+  ]
+}

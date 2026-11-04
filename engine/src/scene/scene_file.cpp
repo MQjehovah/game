@@ -1438,7 +1438,9 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                                                       "vegCount", "vegSeed", "vegSize",
                                                       "vegImpostorDistance", "vegMinHeight",
                                                       "vegMaxHeight", "vegMaxSlope",
-                                                      "vegExcludeRadius", "vegExcludeCenter"},
+                                                      "vegExcludeRadius", "vegExcludeCenter",
+                                                     "procedural", "worldSeed",
+                                                     "terrainViewDistance", "terrainCellSize"},
                                                "terrain", err))
                          return false;
                      SceneTerrain t;
@@ -1476,6 +1478,13 @@ void RegisterBuiltinComponents(ComponentRegistry& reg, assets::AssetManager* ass
                      if (const core::Json* n = data.Get("vegMinHeight")) t.vegMinHeight = static_cast<float>(n->GetNumber());
                      if (const core::Json* n = data.Get("vegMaxHeight")) t.vegMaxHeight = static_cast<float>(n->GetNumber());
                      if (const core::Json* n = data.Get("vegMaxSlope")) t.vegMaxSlope = static_cast<float>(n->GetNumber());
+                     if (const core::Json* p = data.Get("procedural")) t.procedural = p->GetBool();
+                     if (const core::Json* n = data.Get("worldSeed"))
+                         t.worldSeed = static_cast<uint32_t>(n->GetNumber());
+                     if (const core::Json* n = data.Get("terrainViewDistance"))
+                         t.terrainViewDistance = static_cast<float>(n->GetNumber());
+                     if (const core::Json* n = data.Get("terrainCellSize"))
+                         t.terrainCellSize = static_cast<float>(n->GetNumber());
                      world.Add<SceneTerrain>(ent, std::move(t));
                      return true;
                  });
@@ -1882,6 +1891,12 @@ static core::Json SerializeEntityComponents(ecs::World& world, ecs::Entity e) {
         te.object_["segments"] = MakeNumber(t->segments);
         te.object_["size"] = MakeNumber(t->size);
         te.object_["heightScale"] = MakeNumber(t->heightScale);
+        if (t->procedural) {
+            te.object_["procedural"] = MakeBool(true);
+            te.object_["worldSeed"] = MakeNumber(t->worldSeed);
+            te.object_["terrainViewDistance"] = MakeNumber(t->terrainViewDistance);
+            te.object_["terrainCellSize"] = MakeNumber(t->terrainCellSize);
+        }
         core::Json hArr;
         hArr.type_ = core::Json::Type::Array;
         for (float h : t->heights) hArr.array_.push_back(MakeNumber(h));
