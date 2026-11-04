@@ -2147,7 +2147,7 @@ function drawBedMenu()
            0.78, 0.86, 0.92, 1)
 end
 
--- 篝火烹饪菜单：1-5 选择料理，0 / E 关闭
+-- 篝火烹饪菜单：1-N 选择料理，0 / E 关闭
 function drawCampfireMenu()
   if not campfireMenuOpen then return end
   local vp = GetViewportSize()
@@ -2160,8 +2160,8 @@ function drawCampfireMenu()
   DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.94)
   DrawRectOutline(px, py, pw, ph, 0.62, 0.48, 0.30, 0.95)
   drawTextCentered("篝火烹饪", vw * 0.5, py + 12, 20, 0.98, 0.88, 0.64, 1)
-  DrawText("1-5 选择   0 / E 关闭", px + pw - 176, py + 16, 12,
-           0.68, 0.70, 0.64, 1)
+  DrawText(string.format("1-%d 选择   0 / E 关闭", #list),
+           px + pw - 186, py + 16, 12, 0.68, 0.70, 0.64, 1)
   DrawText(string.format("燃料 %.0f 分钟", campfireFuelMin or 0),
            px + 22, py + 44, 12, 0.80, 0.82, 0.72, 1)
   local yy = py + 70

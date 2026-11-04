@@ -2702,6 +2702,30 @@ function runSelfTest()
                      got, leftRaw, fuelUsed))
   end
 
+  -- 篝火鱼汤：烤鱼 x1 + 20L 水 → 鱼汤
+  do
+    local keepOn, keepFuel = campfireOn, campfireFuelMin
+    local kfish, ksoup = inv.fish, inv.fishsoup or 0
+    local kw, kg = water, dailyGoal
+    local kt, kv = toast.text, toast.t
+    setCampfireLit(true)
+    campfireFuelMin, dailyGoal = 500, nil
+    inv.fish, inv.fishsoup, water = 1, 0, 60
+    local canSoup = campfireCan("soup")
+    local cooked = campfireCook("soup")
+    local got = inv.fishsoup or 0
+    local leftFish = inv.fish or 0
+    local leftWater = water or 0
+    inv.fish, inv.fishsoup = kfish, ksoup
+    water, dailyGoal = kw, kg
+    campfireOn, campfireFuelMin = keepOn, keepFuel
+    toast.text, toast.t = kt, kv
+    ok(r, "campfire soup",
+       canSoup and cooked and got == 1 and leftFish == 0 and
+       math.abs(leftWater - 40) < 1e-6,
+       string.format("got=%d fish=%d water=%.0f", got, leftFish, leftWater))
+  end
+
   -- 篝火烹饪消耗燃料：每次 10 游戏分钟
   do
     local keepOn, keepFuel = campfireOn, campfireFuelMin

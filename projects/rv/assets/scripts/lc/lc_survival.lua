@@ -1743,6 +1743,9 @@ function campfireCan(kind)
     return hasItem("coffee", 1) and (water or 0) >= 15
   end
   if kind == "smoke" then return (inv.rawfish or 0) >= 2 end
+  if kind == "soup" then
+    return hasItem("fish", 1) and (water or 0) >= 20
+  end
   return false
 end
 
@@ -1750,6 +1753,7 @@ end
 function campfireRecipeList()
   return {
     { kind = "fish",   label = "烤鱼（生鱼 x1）" },
+    { kind = "soup",   label = "鱼汤（烤鱼 x1 + 20L 水）" },
     { kind = "water",  label = "煮沸浑水（+15L 净水）" },
     { kind = "stew",   label = "浆果炖肉（生食材 + 野浆果 x2）" },
     { kind = "meal",   label = "热饭（生食材 x1）" },
@@ -1770,6 +1774,12 @@ function campfireCook(kind)
     addItem("fish", 1)
     if addDailyProgress ~= nil then addDailyProgress("cook", 1) end
     toast.text = "篝火烤好一条鱼（烤鱼 +1）"
+  elseif kind == "soup" then
+    takeItem("fish", 1)
+    useWater(20)
+    addItem("fishsoup", 1)
+    if addDailyProgress ~= nil then addDailyProgress("cook", 1) end
+    toast.text = "篝火煮好一锅鱼汤（+1，饥饿 -35 口渴 -20）"
   elseif kind == "water" then
     takeItem("dirtywater", 1)
     addWater(15)
