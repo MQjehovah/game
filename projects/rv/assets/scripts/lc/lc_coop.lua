@@ -1452,6 +1452,18 @@ local function serverUpdate(dt)
     pushState()
   end
 
+  -- Test-only co-op water tower: give materials, repair, log water.
+  if coop.towerDemo and not coop.towerDemoDone and coop.autoT >= 3.0 then
+    coop.towerDemoDone = true
+    materials.metal = (materials.metal or 0) + 10
+    materials.wood = (materials.wood or 0) + 10
+    local okTower = false
+    if repairWaterTower ~= nil then okTower = repairWaterTower() end
+    print(string.format("[coop-tower] demo ok=%s fixed=%s water=%.0f",
+                        tostring(okTower), tostring(waterTowerFixed), water or 0))
+    pushState()
+  end
+
   -- Test-only co-op clinic: wound the player, give cloth/water, park at clinic.
   if coop.clinicDemo and not coop.clinicDemoDone and coop.autoT >= 3.0 then
     coop.clinicDemoDone = true
@@ -2917,6 +2929,7 @@ function coopInitWorld(role)
     coop.campfireDemo = readFlag("coop_campfire.txt")
     coop.napDemo = readFlag("coop_nap.txt")
     coop.clinicDemo = readFlag("coop_clinic.txt")
+    coop.towerDemo = readFlag("coop_tower.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -3048,6 +3061,7 @@ function coopInitWorld(role)
     coop.campfireDemo = readFlag("coop_campfire.txt")
     coop.napDemo = readFlag("coop_nap.txt")
     coop.clinicDemo = readFlag("coop_clinic.txt")
+    coop.towerDemo = readFlag("coop_tower.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
