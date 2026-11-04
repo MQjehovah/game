@@ -2515,6 +2515,18 @@ function runSelfTest()
        string.format("rate=%.0f/s emitted=%d", rate, got))
   end
 
+  -- 夜间篝火烟味：火点着 + 夜里 + 35m 内才会招来感染者
+  do
+    local night = campfireSmokeRisk(true, true, 10)
+    local day = campfireSmokeRisk(true, false, 10)
+    local far = campfireSmokeRisk(true, true, 60)
+    local off = campfireSmokeRisk(false, true, 10)
+    ok(r, "campfire smoke risk",
+       night == true and day == false and far == false and off == false,
+       string.format("night=%s day=%s far=%s off=%s", tostring(night),
+                     tostring(day), tostring(far), tostring(off)))
+  end
+
   -- 篝火火星：燃烧时持续升起
   do
     local keepT, keepC = emberT, emberCount

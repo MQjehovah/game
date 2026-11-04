@@ -975,6 +975,11 @@ function campfireWarmthMinutes(current)
   return math.max(current or 0, 20)
 end
 
+-- 夜间守在点燃的篝火旁（35m 内）烟味会招来零星感染者
+function campfireSmokeRisk(fireOn, night, dist)
+  return fireOn == true and night == true and (dist or 999) <= 35
+end
+
 -- 长线收尾：修好无线电塔后，去废弃小镇恢复信号中继
 RELAY_REWARD = { metal = 10, electronics = 5, fuel = 30 }
 
@@ -1116,6 +1121,24 @@ function updateSurvival(dt)
      campfireWarmthNear(player.x, player.z, campfire.x, campfire.z,
                         campfireOn ~= false) then
     warmthMin = math.max(warmthMin or 0, 20)
+  end
+  -- 夜间篝火的烟味会招来感染者（只在玩家守在火边时）
+  if coopRole == nil and onFoot and not buildMode and campfire ~= nil and
+     campfireSmokeRisk(campfireOn ~= false,
+                       isNight ~= nil and isNight(),
+                       math.sqrt((player.x - campfire.x) ^ 2 +
+                                 (player.z - campfire.z) ^ 2)) then
+    rv.campfireDangerT = (rv.campfireDangerT or 0) + dt
+    if rv.campfireDangerT >= 180 then
+      rv.campfireDangerT = 0
+      if math.random() < 0.25 and spawnDriveHorde ~= nil then
+        spawnDriveHorde(1)
+        toast.text = "篝火的烟味引来了感染者——先躲进车里，或远离篝火"
+        toast.t = 4.0
+      end
+    end
+  else
+    rv.campfireDangerT = 0
   end
 
   if needs.hunger <= 0 or needs.thirst <= 0 then
