@@ -5529,6 +5529,16 @@ function runSelfTest()
        tostring(text))
   end
 
+  -- 环境气温：白天比夜里高，雪天明显更低
+  do
+    local noon = ambientTempC(12 * 60, "clear")
+    local night = ambientTempC(0, "clear")
+    local snow = ambientTempC(12 * 60, "snow")
+    ok(r, "ambient temperature",
+       noon > night and snow < noon and snow <= noon - 10,
+       string.format("noon=%d night=%d snow=%d", noon, night, snow))
+  end
+
   -- 天气影响步行速度：雪地最慢、雨天略慢、晴天正常
   do
     local snow = walkSpeedScale("snow")

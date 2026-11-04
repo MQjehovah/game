@@ -319,15 +319,29 @@ function weatherHoursLeft()
   return left / 60
 end
 
--- 地图/广播用的天气预报文案
+-- 环境气温（°C）：昼夜 + 天气修正，仅用于氛围显示
+function ambientTempC(clockMinutes, weatherValue)
+  local h = ((clockMinutes or 480) / 60) % 24
+  local t = 0.5 + 0.5 * math.sin((h - 8) / 24 * math.pi * 2)
+  local base = 6 + (18 - 6) * t
+  if weatherValue == "snow" then base = base - 12
+  elseif weatherValue == "rain" then base = base - 5
+  elseif weatherValue == "fog" then base = base - 4
+  elseif weatherValue == "cloudy" then base = base - 2 end
+  return math.floor(base + 0.5)
+end
+
+-- 地图/广播用的天气预报文案（含当前气温）
 function weatherForecastText()
   local now = weatherName()
+  local temp = ambientTempC(clock, weather)
   if weatherNextId == nil or WEATHER_NAMES == nil or
      WEATHER_NAMES[weatherNextId] == nil then
-    return string.format("天气 %s", now)
+    return string.format("天气 %s · 气温 %d°C", now, temp)
   end
-  return string.format("天气 %s → %s（约 %.1fh）", now,
-                       WEATHER_NAMES[weatherNextId], weatherHoursLeft())
+  return string.format("天气 %s → %s（约 %.1fh） · 气温 %d°C", now,
+                       WEATHER_NAMES[weatherNextId], weatherHoursLeft(),
+                       temp)
 end
 
 function isRainy()
