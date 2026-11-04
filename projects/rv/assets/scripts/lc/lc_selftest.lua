@@ -4096,6 +4096,17 @@ function runSelfTest()
        string.format("parts=%d colliders=%d props=%d", parts, ids, #driveProps))
   end
 
+  -- 路障有两种外观：倒树（rv_deadtree）/ 废弃车 + 落石
+  do
+    local tree = roadblockLayout("tree", 24, 1)
+    local wreck = roadblockLayout("wreck", 24, -1)
+    local treeOk = #tree == 3 and tree[1].pre == "rv_deadtree"
+    local wreckOk = #wreck == 3 and wreck[1].pre == "rv_wreck"
+    ok(r, "roadblock layout", treeOk and wreckOk,
+       string.format("tree=%s wreck=%s", tostring(treeOk),
+                     tostring(wreckOk)))
+  end
+
   -- 车轮扬尘/胎烟：土路有、沥青无、手刹变胎烟
   do
     local dirt, dirtKind = wheelDustRate("dirt", 8, false)

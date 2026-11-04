@@ -52,16 +52,29 @@ end
 
 -- 路面障碍：倒木/落石/废弃车堵住半幅路，必须打方向绕过；撞上掉耐久。
 -- 静态碰撞盒记在 bodyIds 里，通过后一起移除，避免留下看不见的墙。
+-- 路障布局：约 40% 是倒下的枯树，其余是废弃车 + 落石
+function roadblockLayout(kind, base, side)
+  if kind == "tree" then
+    return {
+      { pre = "rv_deadtree", lx = side * 3.2, lz = base,       sx = 1.3, sy = 0.7, sz = 1.3 },
+      { pre = "rv_deadtree", lx = side * 1.6, lz = base + 1.5, sx = 1.1, sy = 0.6, sz = 1.1 },
+      { pre = "rv_rock",     lx = side * 2.2, lz = base + 2.7, sx = 0.8, sy = 0.7, sz = 0.8 },
+    }
+  end
+  return {
+    { pre = "rv_wreck", lx = side * 3.4, lz = base,        sx = 1.0, sy = 0.9, sz = 1.0 },
+    { pre = "rv_rock",  lx = side * 2.4, lz = base + 1.4,  sx = 1.2, sy = 1.0, sz = 1.2 },
+    { pre = "rv_rock",  lx = side * 1.3, lz = base + 2.6,  sx = 0.9, sy = 0.8, sz = 0.9 },
+  }
+end
+
 function spawnDriveRoadblock()
   local base = 24 + math.random() * 10
   local side = (math.random() < 0.5) and -1 or 1
   local group = { kind = "roadblock", x = 0, z = 0, bodyIds = {},
                   parts = {}, life = 45 }
-  local layout = {
-    { pre = "rv_wreck", lx = side * 3.4, lz = base,        sx = 1.0, sy = 0.9, sz = 1.0 },
-    { pre = "rv_rock",  lx = side * 2.4, lz = base + 1.4,  sx = 1.2, sy = 1.0, sz = 1.2 },
-    { pre = "rv_rock",  lx = side * 1.3, lz = base + 2.6,  sx = 0.9, sy = 0.8, sz = 0.9 },
-  }
+  local layout = roadblockLayout(math.random() < 0.4 and "tree" or "wreck",
+                                 base, side)
   for i, d in ipairs(layout) do
     local wx, wz = rotOf(d.lx, d.lz)
     local e = SpawnPrefab(d.pre, { x = wx, y = -50, z = wz })
