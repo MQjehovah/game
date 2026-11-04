@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <limits>
 #include <vector>
 
 #include "neon/math/vec2.hpp"
@@ -22,6 +23,9 @@ struct PadSpec {
     math::Vec2 center;
     float radius = 12.0f;
     float falloff = 10.0f;
+    // Explicit pad height. NaN (default) means "natural terrain height at the
+    // centre"; authored POIs pass 0 because their props are authored at y=0.
+    float height = std::numeric_limits<float>::quiet_NaN();
 };
 
 struct WorldFeatures {
@@ -48,5 +52,10 @@ FlattenSample SampleFlattening(const WorldFeatures& features, float x, float z,
 
 void AddPad(WorldFeatures& features, math::Vec2 center, float radius,
             float falloff = 10.0f);
+
+// Parses assets/data/world_features.json (roads[] with points/halfWidth/
+// shoulder, pads[] with center/radius/falloff/height). Invalid entries are
+// skipped; a malformed document returns an empty set.
+WorldFeatures LoadWorldFeatures(const std::string& jsonText);
 
 } // namespace neon::world

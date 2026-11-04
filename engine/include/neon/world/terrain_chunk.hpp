@@ -40,6 +40,10 @@ void SelectTerrainChunks(math::Vec2 focus, float viewDistance, int maxLevel,
 struct TerrainChunkMeshData {
     std::vector<TerrainVertex> vertices;
     std::vector<uint32_t> indices;
+    // Dominant-biome tint at the chunk centre; the streamer applies it as the
+    // per-chunk material tint so grassland/forest/badlands read as different
+    // places even before per-biome layer sets land.
+    math::Vec4 tint{1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 // CPU mesh for one chunk: (cells+1)^2 grid vertices plus a downward skirt on

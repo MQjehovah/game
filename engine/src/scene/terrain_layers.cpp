@@ -11,12 +11,12 @@ namespace neon::scene {
 namespace {
 
 bool AppendMap(const core::Json& layer, const char* key,
-               const std::function<std::string(const std::string&)>& resolve,
+               const TerrainDecodeFn& decode,
                std::vector<uint8_t>& out, int& width, int& height) {
     const core::Json* path = layer.Get(key);
     if (path == nullptr || !path->IsString()) return false;
-    const std::string full = resolve(path->GetString());
-    assets::DecodedImage img = assets::DecodeImageFile(full, false);
+    const std::string full = path->GetString();
+    assets::DecodedImage img = decode(full);
     if (img.width <= 0 || img.height <= 0 || img.rgba.empty()) {
         NEON_LOG_ERROR("terrain layers: failed to decode '%s'", full.c_str());
         return false;
@@ -37,7 +37,7 @@ bool AppendMap(const core::Json& layer, const char* key,
 
 TerrainLayerSet LoadTerrainLayers(
     gfx::Renderer& renderer, const std::string& manifestJson,
-    const std::function<std::string(const std::string&)>& resolvePath) {
+    const TerrainDecodeFn& decode) {
     TerrainLayerSet set;
     std::string err;
     const core::Json root = core::Json::Parse(manifestJson, &err);
@@ -54,9 +54,9 @@ TerrainLayerSet LoadTerrainLayers(
     int width = 0, height = 0;
 
     for (const core::Json& layer : layers->Items()) {
-        if (!AppendMap(layer, "albedo", resolvePath, albedo, width, height) ||
-            !AppendMap(layer, "normal", resolvePath, normal, width, height) ||
-            !AppendMap(layer, "orm", resolvePath, orm, width, height)) {
+        if (!AppendMap(layer, "albedo", decode, albedo, width, height) ||
+            !AppendMap(layer, "normal", decode, normal, width, height) ||
+            !AppendMap(layer, "orm", decode, orm, width, height)) {
             return set;
         }
     }

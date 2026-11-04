@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "neon/core/json.hpp"
+
 namespace neon::world {
 namespace {
 
@@ -58,6 +60,14 @@ FlattenSample SampleFlattening(const WorldFeatures& features, float x, float z,
                                const HeightFn& baseHeight) {
     FlattenSample out;
     const math::Vec2 p{x, z};
+    float weightSum = 0.0f;
+    float heightSum = 0.0f;
+
+    auto add = [&](float weight, float height) {
+        if (weight <= 0.0f) return;
+        weightSum += weight;
+        heightSum += weight * height;
+    };
 
     for (const RoadSpec& road : features.roads) {
         math::Vec2 q;
@@ -68,10 +78,7 @@ FlattenSample SampleFlattening(const WorldFeatures& features, float x, float z,
         } else if (road.shoulder > 0.0f && d < road.halfWidth + road.shoulder) {
             weight = 1.0f - SmoothStep(road.halfWidth, road.halfWidth + road.shoulder, d);
         }
-        if (weight > out.weight) {
-            out.weight = weight;
-            out.height = baseHeight ? baseHeight(q.x, q.y) : 0.0f;
-        }
+        add(weight, baseHeight ? baseHeight(q.x, q.y) : 0.0f);
     }
 
     for (const PadSpec& pad : features.pads) {
@@ -84,18 +91,73 @@ FlattenSample SampleFlattening(const WorldFeatures& features, float x, float z,
         } else if (pad.falloff > 0.0f && d < pad.radius + pad.falloff) {
             weight = 1.0f - SmoothStep(pad.radius, pad.radius + pad.falloff, d);
         }
-        if (weight > out.weight) {
-            out.weight = weight;
-            out.height = baseHeight ? baseHeight(pad.center.x, pad.center.y) : 0.0f;
-        }
+        const float target = std::isfinite(pad.height)
+                                 ? pad.height
+                                 : (baseHeight ? baseHeight(pad.center.x, pad.center.y) : 0.0f);
+        add(weight, target);
     }
 
+    if (weightSum > 0.0f) {
+        // Blend overlapping features instead of switching to the strongest
+        // one: an argmax swap makes the surface jump by w * (h1 - h2) at the
+        // crossover. Clamp the blend weight so an overlap never over-flattens
+        // beyond a single feature.
+        out.weight = weightSum > 1.0f ? 1.0f : weightSum;
+        out.height = heightSum / weightSum;
+    }
     return out;
 }
 
 void AddPad(WorldFeatures& features, math::Vec2 center, float radius,
             float falloff) {
     features.pads.push_back({center, radius, falloff});
+}
+
+WorldFeatures LoadWorldFeatures(const std::string& jsonText) {
+    WorldFeatures out;
+    std::string err;
+    const core::Json root = core::Json::Parse(jsonText, &err);
+    if (const core::Json* roads = root.Get("roads")) {
+        if (roads->IsArray()) {
+            for (const core::Json& r : roads->Items()) {
+                RoadSpec road;
+                if (const core::Json* w = r.Get("halfWidth"))
+                    road.halfWidth = static_cast<float>(w->GetNumber(4.0));
+                if (const core::Json* w = r.Get("shoulder"))
+                    road.shoulder = static_cast<float>(w->GetNumber(3.0));
+                if (const core::Json* pts = r.Get("points")) {
+                    if (pts->IsArray()) {
+                        for (const core::Json& p : pts->Items()) {
+                            if (p.IsArray() && p.Size() >= 2 && p.At(0) && p.At(1))
+                                road.points.push_back(
+                                    {static_cast<float>(p.At(0)->GetNumber()),
+                                     static_cast<float>(p.At(1)->GetNumber())});
+                        }
+                    }
+                }
+                if (road.points.size() >= 2) out.roads.push_back(std::move(road));
+            }
+        }
+    }
+    if (const core::Json* pads = root.Get("pads")) {
+        if (pads->IsArray()) {
+            for (const core::Json& p : pads->Items()) {
+                const core::Json* c = p.Get("center");
+                if (c == nullptr || !c->IsArray() || c->Size() < 2) continue;
+                PadSpec pad;
+                pad.center = {static_cast<float>(c->At(0)->GetNumber()),
+                              static_cast<float>(c->At(1)->GetNumber())};
+                if (const core::Json* n = p.Get("radius"))
+                    pad.radius = static_cast<float>(n->GetNumber(12.0));
+                if (const core::Json* n = p.Get("falloff"))
+                    pad.falloff = static_cast<float>(n->GetNumber(10.0));
+                if (const core::Json* n = p.Get("height"))
+                    pad.height = static_cast<float>(n->GetNumber(0.0));
+                out.pads.push_back(pad);
+            }
+        }
+    }
+    return out;
 }
 
 } // namespace neon::world

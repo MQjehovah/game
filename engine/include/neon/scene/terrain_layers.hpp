@@ -3,6 +3,7 @@
 #include <functional>
 #include <string>
 
+#include "neon/assets/async_loader.hpp"
 #include "neon/gfx/backend.hpp"
 
 namespace neon::gfx {
@@ -22,11 +23,14 @@ struct TerrainLayerSet {
     bool Valid() const { return albedo.Valid() && layers > 0; }
 };
 
-// Loads assets/data/terrain_layers.json, decodes the 2K JPG maps and uploads
-// them as three texture arrays. `resolvePath` maps a manifest-relative path
-// (e.g. "grass/albedo.jpg") to a filesystem path under the project.
-TerrainLayerSet LoadTerrainLayers(
-    gfx::Renderer& renderer, const std::string& manifestJson,
-    const std::function<std::string(const std::string&)>& resolvePath);
+// Loads assets/data/terrain_layers.json, decodes the 2K maps and uploads them
+// as three texture arrays. `decode` maps a manifest-relative path (e.g.
+// "grass/albedo.jpg") to decoded pixels; GameRuntime routes it through
+// AssetManager::DecodeImageForPath so packed (VFS-only) builds work too.
+using TerrainDecodeFn = std::function<assets::DecodedImage(const std::string&)>;
+
+TerrainLayerSet LoadTerrainLayers(gfx::Renderer& renderer,
+                                  const std::string& manifestJson,
+                                  const TerrainDecodeFn& decode);
 
 } // namespace neon::scene

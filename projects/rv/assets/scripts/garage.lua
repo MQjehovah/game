@@ -346,8 +346,15 @@ function loadLayout()
     generatedPois = {}
     for _, p in ipairs(data.pois) do
       if type(p) == "table" and p.id and nodeById(p.id) == nil then
-        local nd = { id = p.id, name = p.name or p.id, x = tonumber(p.x) or 0,
-                     z = tonumber(p.z) or 0, danger = tonumber(p.danger) or 1,
+        -- Old saves may hold POIs on what is now a mountainside; relocate them
+        -- to the nearest flat spot before spawning the y=0 shell.
+        local px, pz = tonumber(p.x) or 0, tonumber(p.z) or 0
+        if safePoiGround ~= nil then
+          local sx, sz = safePoiGround(px, pz)
+          if sx ~= nil then px, pz = sx, sz end
+        end
+        local nd = { id = p.id, name = p.name or p.id, x = px,
+                     z = pz, danger = tonumber(p.danger) or 1,
                      loot = p.loot or { cloth = { 1, 2 } },
                      links = p.links or {}, generated = true }
         NODES[#NODES + 1] = nd

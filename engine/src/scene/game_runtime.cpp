@@ -346,6 +346,10 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
             if (!terr || !terr->procedural) continue;
             world::TerrainWorldConfig worldCfg;
             worldCfg.seed = terr->worldSeed;
+            const std::string featuresText =
+                ReadScript(FullScriptPath("assets/data/world_features.json"));
+            if (!featuresText.empty())
+                worldCfg.features = world::LoadWorldFeatures(featuresText);
             terrainWorld_ = std::make_unique<world::TerrainWorld>(std::move(worldCfg));
             gfx::TerrainStreamerConfig streamCfg;
             streamCfg.viewDistance = terr->terrainViewDistance;
@@ -1266,7 +1270,10 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
         if (!manifest.empty()) {
             TerrainLayerSet set = LoadTerrainLayers(
                 renderer, manifest, [this](const std::string& rel) {
-                    return FullScriptPath("assets/textures/terrain/" + rel);
+                    // VFS-aware: packed builds only have the pack, not loose
+                    // files on disk.
+                    return cfg_.assets->DecodeImageForPath(
+                        FullAssetPath("assets/textures/terrain/" + rel), false);
                 });
             if (set.Valid()) {
                 terrainMaterial_.terrainAlbedoArray = set.albedo;

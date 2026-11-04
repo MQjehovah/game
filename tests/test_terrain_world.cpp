@@ -40,3 +40,12 @@ TEST(TerrainWorldRoadStaysFlatAcross) {
             CHECK_NEAR(w.Height(x, z), h0, 0.02f);
     }
 }
+
+TEST(TerrainWorldPoiPadFlattensToAuthoredZero) {
+    neon::world::WorldFeatures f;
+    neon::world::AddPad(f, {160.5f, -51.5f}, 14.0f, 12.0f);
+    f.pads.back().height = 0.0f;
+    neon::world::TerrainWorld w({1337, 1.0f / 420.0f, f, 300.0f});
+    CHECK_NEAR(w.Height(160.5f, -51.5f), 0.0f, 0.01f);
+    CHECK_NEAR(w.Height(160.5f + 5.0f, -51.5f), 0.0f, 0.01f);
+}

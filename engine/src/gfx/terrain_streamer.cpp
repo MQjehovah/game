@@ -29,18 +29,6 @@ void TerrainStreamer::Update(Renderer& renderer, const math::Vec3& focus, float 
     world::SelectTerrainChunks({focus.x, focus.z}, config_.viewDistance, config_.maxLevel,
                                selected_);
 
-    // Unload everything that left the window (and release its GPU handle).
-    for (auto it = chunks_.begin(); it != chunks_.end();) {
-        const bool keep = std::find(selected_.begin(), selected_.end(), it->first) !=
-                          selected_.end();
-        if (!keep) {
-            it->second.mesh.Release(renderer);
-            it = chunks_.erase(it);
-        } else {
-            ++it;
-        }
-    }
-
     missing_.clear();
     for (const auto& key : selected_)
         if (chunks_.find(key) == chunks_.end()) missing_.push_back(key);
@@ -85,11 +73,46 @@ void TerrainStreamer::Update(Renderer& renderer, const math::Vec3& focus, float 
 
         Chunk chunk;
         chunk.mesh = std::move(mesh);
+        chunk.tint = data.tint;
         chunk.level = key.level;
         chunk.x = key.x;
         chunk.z = key.z;
         chunks_.emplace(key, std::move(chunk));
         ++built;
+    }
+
+    // Evict AFTER building, and keep a parent that covers a selected child we
+    // have not built yet. Evicting first left a hole for the frames the
+    // buildsPerFrame budget needed to fill the children.
+    auto chunk_covers = [](const world::TerrainChunkKey& parent,
+                           const world::TerrainChunkKey& child) {
+        const float ps = world::TerrainChunkSize(parent.level);
+        const float cs = world::TerrainChunkSize(child.level);
+        const float px0 = static_cast<float>(parent.x) * ps;
+        const float pz0 = static_cast<float>(parent.z) * ps;
+        const float cx0 = static_cast<float>(child.x) * cs;
+        const float cz0 = static_cast<float>(child.z) * cs;
+        return cx0 >= px0 - 0.01f && cx0 + cs <= px0 + ps + 0.01f &&
+               cz0 >= pz0 - 0.01f && cz0 + cs <= pz0 + ps + 0.01f;
+    };
+    for (auto it = chunks_.begin(); it != chunks_.end();) {
+        bool keep = std::find(selected_.begin(), selected_.end(), it->first) !=
+                    selected_.end();
+        if (!keep) {
+            for (const auto& pending : missing_) {
+                if (chunks_.find(pending) != chunks_.end()) continue;  // built this frame
+                if (chunk_covers(it->first, pending)) {
+                    keep = true;
+                    break;
+                }
+            }
+        }
+        if (keep) {
+            ++it;
+        } else {
+            it->second.mesh.Release(renderer);
+            it = chunks_.erase(it);
+        }
     }
 }
 
@@ -106,7 +129,12 @@ void TerrainStreamer::Draw(Renderer& renderer, const math::Mat4& viewProj,
     material.doubleSided = true;
 
     const math::Mat4 identity = math::Mat4::Identity();
-    for (auto& kv : chunks_) renderer.DrawMesh(kv.second.mesh, material, identity);
+    for (auto& kv : chunks_) {
+        Material chunkMaterial = material;
+        chunkMaterial.tint = Color{kv.second.tint.x, kv.second.tint.y,
+                                   kv.second.tint.z, 1.0f};
+        renderer.DrawMesh(kv.second.mesh, chunkMaterial, identity);
+    }
 }
 
 void TerrainStreamer::Clear(Renderer& renderer) {

@@ -18,7 +18,9 @@ struct TerrainStreamerConfig {
     float viewDistance = 2048.0f;
     size_t maxResident = 256;
     int buildsPerFrame = 2;
-    float skirtDepth = 4.0f;
+    // Must exceed the worst fine-vs-coarse interpolation error at the coarsest
+    // visible LOD (measured ~7 m at 16 m cells on the alpine ridge).
+    float skirtDepth = 16.0f;
 };
 
 // Keeps a quadtree LOD window of terrain chunk meshes alive around the camera.
@@ -37,6 +39,7 @@ public:
 private:
     struct Chunk {
         Mesh mesh;
+        math::Vec4 tint{1.0f, 1.0f, 1.0f, 1.0f};
         int level = 0;
         int x = 0;
         int z = 0;

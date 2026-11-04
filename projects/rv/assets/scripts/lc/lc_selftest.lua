@@ -506,6 +506,13 @@ function runSelfTest()
       ok(r, "pois grounded", worst < 1.5,
          string.format("worst=%s %.2fm", worstId, worst))
     end
+    if safePoiGround ~= nil then
+      local sx, sz = safePoiGround(0, 500)
+      ok(r, "generated poi relocation",
+         sx ~= nil and math.abs(terrainHeight(sx, sz)) <= 0.8,
+         sx and string.format("spot=(%.1f,%.1f) h=%.2f", sx, sz,
+                              terrainHeight(sx, sz)) or "none")
+    end
     if slopeFactorFromGradient ~= nil then
       local f0 = slopeFactorFromGradient(0)
       local f30 = slopeFactorFromGradient(math.tan(math.rad(30)))

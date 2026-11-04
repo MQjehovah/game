@@ -60,7 +60,10 @@ void SelectTerrainChunks(math::Vec2 focus, float viewDistance, int maxLevel,
                                   focus.y - (z0 + size));
         const float dist = std::sqrt(dx * dx + dz * dz);
 
-        if (key.level > 0 && dist < size * 2.0f) {
+        // Small margin (4 m) reduces boundary flapping when the camera jitters
+        // on a ring edge; the streamer additionally keeps a parent alive until
+        // its replacement children are resident.
+        if (key.level > 0 && dist < size * 2.0f + 4.0f) {
             const int l = key.level - 1;
             const int cx = key.x * 2;
             const int cz = key.z * 2;
@@ -88,6 +91,7 @@ void BuildTerrainChunkData(const TerrainWorld& world, const TerrainChunkKey& key
     const float ox = static_cast<float>(key.x) * size;
     const float oz = static_cast<float>(key.z) * size;
     const int stride = cells + 1;
+    out.tint = BiomeTint(world.Weights(ox + size * 0.5f, oz + size * 0.5f));
 
     out.vertices.reserve(static_cast<size_t>(stride * stride) + 4u * stride);
 
