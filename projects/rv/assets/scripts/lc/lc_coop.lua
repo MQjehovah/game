@@ -1717,6 +1717,14 @@ local function serverUpdate(dt)
             did = true
           end
         end
+        if serviceRepairAtGasstop ~= nil then
+          local repOk, repCost = serviceRepairAtGasstop()
+          if repOk and (repCost or 0) > 0 then
+            print(string.format("[coop-service] repair cost=%d metal=%d",
+                                repCost, materials.metal or 0))
+            did = true
+          end
+        end
       end
       if did then
         coop.saveDirty = true

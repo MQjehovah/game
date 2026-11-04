@@ -1874,6 +1874,25 @@ function runSelfTest()
                      full, low, need, tostring(refilled)))
   end
 
+  -- 加油站快速维修：最差部件 <70% 时修 +25%，按缺失收金属
+  do
+    local kb, ke, kt = dur, parts.engine, parts.tires
+    local kbat, km = parts.battery, materials.metal or 0
+    dur, parts.engine, parts.tires, parts.battery = 100, 40, 100, 100
+    local cost = repairServiceCost()
+    materials.metal = 5
+    local repaired, spent, note = serviceRepairAtGasstop()
+    local gotEngine = parts.engine or 0
+    local gotMetal = materials.metal or 0
+    dur, parts.engine, parts.tires = kb, ke, kt
+    parts.battery, materials.metal = kbat, km
+    ok(r, "gas station repair",
+       cost == 3 and repaired and gotEngine == 65 and
+       gotMetal == 5 - cost,
+       string.format("cost=%d engine=%.0f metal=%d", cost, gotEngine,
+                     gotMetal))
+  end
+
   -- 冷却液不足提示：低于 20% 才提示
   do
     local low = coolantLowText(10)

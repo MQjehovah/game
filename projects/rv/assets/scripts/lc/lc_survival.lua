@@ -2147,6 +2147,39 @@ function repairPart(id)
   return true
 end
 
+-- 加油站快速维修：最差部件 <70% 时修 +25%，按缺失每 25% 收 1 金属
+function repairServiceCost()
+  local worst, val = nil, 101
+  for _, p in ipairs(REPAIR_PARTS or {}) do
+    local v = partValue(p.id)
+    if v < val then worst, val = p.id, v end
+  end
+  if worst == nil or val >= 70 then return 0 end
+  return math.max(1, math.ceil((100 - val) / 25))
+end
+
+function serviceRepairAtGasstop()
+  local cost = repairServiceCost()
+  if cost <= 0 then return true, 0, "车况尚可" end
+  if (materials.metal or 0) < cost then
+    return false, cost, string.format("快速维修需要 %d 金属", cost)
+  end
+  local worst, val = nil, 101
+  for _, p in ipairs(REPAIR_PARTS or {}) do
+    local v = partValue(p.id)
+    if v < val then worst, val = p.id, v end
+  end
+  if worst == nil then return true, 0, "车况尚可" end
+  materials.metal = (materials.metal or 0) - cost
+  setPartValue(worst, math.min(100, val + 25))
+  if worst == "tires" then
+    if resetTirePressure ~= nil then resetTirePressure() end
+    if clearBlowout ~= nil then clearBlowout() end
+  end
+  if PlaySfx then PlaySfx("repair") end
+  return true, cost, string.format("快速维修（%d 金属）", cost)
+end
+
 -- 维修当前最差的部件（联机工作台命令复用；满状态时不触发升级）
 function repairWorstPart()
   local target, val = nil, 101

@@ -82,6 +82,14 @@ function setPhase(m)
               toast.text = toast.text .. " · 🧊 " .. (coolNote or "冷却液未补")
             end
           end
+          if atNode == "gasstop" and serviceRepairAtGasstop ~= nil then
+            local repOk, repCost, repNote = serviceRepairAtGasstop()
+            if repOk and (repCost or 0) > 0 then
+              toast.text = toast.text .. " · 🔧 " .. (repNote or "已维修")
+            elseif not repOk then
+              toast.text = toast.text .. " · 🔧 " .. (repNote or "未维修")
+            end
+          end
         end
         -- 首次抵达的一次性补给（每个地点只发一次）
         local visitText = firstVisitBonus ~= nil and firstVisitBonus(nd) or nil
