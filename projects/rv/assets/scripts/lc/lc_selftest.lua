@@ -5326,9 +5326,12 @@ function runSelfTest()
     local rn, rv2 = desiredMusic("parked", "rain", false)
     local wn, wv = desiredMusic("parked", "clear", false)
     local radioN, radioV = desiredMusic("parked", "clear", true)
+    local sn = desiredMusic("parked", "snow", false)
     ok(r, "ambient music", dn == "engine" and rn == "rain" and wn == "wind" and
-       radioN == "radio" and dv > 0 and rv2 > 0 and wv > 0 and radioV > 0,
-       string.format("drive=%s rain=%s clear=%s radio=%s", dn, rn, wn, radioN))
+       radioN == "radio" and sn == "snowwind" and
+       dv > 0 and rv2 > 0 and wv > 0 and radioV > 0,
+       string.format("drive=%s rain=%s clear=%s radio=%s snow=%s",
+                     dn, rn, wn, radioN, sn))
   end
 
   -- 四个电台：1=radio、2=radio2、3=radio3（天气台）、4=radio4（数字台）

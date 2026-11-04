@@ -37,6 +37,7 @@ function desiredMusic(phaseValue, weatherValue, radioIsOn, station, carRadio)
     return radioTrack(station), 0.12
   end
   if weatherValue == "rain" then return "rain", 0.14 end
+  if weatherValue == "snow" then return "snowwind", 0.13 end
   return "wind", 0.10
 end
 

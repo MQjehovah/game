@@ -469,8 +469,9 @@
   截图 `start_mode=map` / `start_mode=lowfuelview`，
   自检 `minimap roads` / `minimap markers` / `map service tags` /
   `road event markers` / `weather forecast text` / `ambient temperature`。
-- **环境音乐**：驻车/荒野风声、上路引擎声、雨天步行雨声、营地收音机，
-  由 `desiredMusic()` 按驾驶/天气/收音机开关自动切换，只在轨道变化时重播；
+- **环境音乐**：驻车/荒野风声、上路引擎声、雨天步行雨声、雪天步行雪风声
+  （`snowwind.wav`）、营地收音机，由 `desiredMusic()` 按驾驶/天气/收音机开关
+  自动切换，只在轨道变化时重播；
   音乐总线默认循环（引擎侧修复 `PlayMusic` 不循环导致风声/引擎声播完即静音的问题），
   引擎音量随车速在 0.60–1.15 之间变化（`engineAudioGain` + `SetBusVolume`）；
   营地木桌上的收音机按 `E` 循环切换：电台 1 → 电台 2 → 电台 3（天气/短波台）
