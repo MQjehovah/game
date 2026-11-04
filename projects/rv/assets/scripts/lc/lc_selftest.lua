@@ -3096,6 +3096,20 @@ function runSelfTest()
        string.format("cab=%d chase=%d clear=%d", cab, chase, clear))
   end
 
+  -- 雪天挡风玻璃积雪：只在驾驶席视角出现
+  do
+    local sw, sp, sv = weather, phase, driveView
+    weather, phase, driveView = "snow", "driving", "cab"
+    local cab = windshieldSnowCount()
+    driveView = "chase"
+    local chase = windshieldSnowCount()
+    weather, driveView = "clear", "cab"
+    local clear = windshieldSnowCount()
+    weather, phase, driveView = sw, sp, sv
+    ok(r, "windshield snow drops", cab == 14 and chase == 0 and clear == 0,
+       string.format("cab=%d chase=%d clear=%d", cab, chase, clear))
+  end
+
   -- 雨刷：在 -0.20~0.42 之间来回摆动
   do
     local a0 = wiperAngle(0)

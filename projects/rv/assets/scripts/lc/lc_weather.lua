@@ -95,6 +95,14 @@ function windshieldDropCount()
   return 0
 end
 
+-- 挡风玻璃积雪数量：仅雪天 + 驾驶席视角
+function windshieldSnowCount()
+  if weather == "snow" and phase == "driving" and driveView == "cab" then
+    return 14
+  end
+  return 0
+end
+
 -- 雨刷角度：驾驶席视角下周期性来回摆动（-0.20 ~ 0.42 rad）
 function wiperAngle(t)
   local period = 1.8
@@ -342,6 +350,13 @@ function drawWeatherOverlay()
       local y = (i * 67 + math.floor(weatherT * 90)) % vh
       local r = 1 + (i % 3) * 0.5
       DrawCircle(x, y, r, 1, 0.92, 0.95, 1.0, 0.55, true)
+    end
+    -- 驾驶席视角：挡风玻璃上的积雪/雪点（雨刷会来回扫过）
+    local snowDrops = windshieldSnowCount and windshieldSnowCount() or 0
+    for i = 1, snowDrops do
+      local x = (i * 157 + math.floor(weatherT * 6)) % vw
+      local y = (i * 97 + math.floor(weatherT * 12)) % vh
+      DrawCircle(x, y, 2 + (i % 3), 1, 0.95, 0.97, 1.0, 0.30, true)
     end
     -- 雪天驾驶席也摆雨刷
     if wipersActive ~= nil then drawWipers(vw, vh) end
