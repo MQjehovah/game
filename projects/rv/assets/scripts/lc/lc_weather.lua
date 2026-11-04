@@ -16,11 +16,12 @@ function weatherDuration()
   return 90 + math.random() * 90
 end
 
--- 电台曲目：1=radio、2=radio2、3=radio3（天气/短波台）
+-- 电台曲目：1=radio、2=radio2、3=radio3（天气/短波台）、4=radio4（数字台）
 function radioTrack(station)
   local s = station or 1
   if s == 2 then return "radio2" end
   if s == 3 then return "radio3" end
+  if s == 4 then return "radio4" end
   return "radio"
 end
 

@@ -4808,28 +4808,31 @@ function runSelfTest()
        string.format("drive=%s rain=%s clear=%s radio=%s", dn, rn, wn, radioN))
   end
 
-  -- 三个电台：1=radio、2=radio2、3=radio3（天气/短波台）
+  -- 四个电台：1=radio、2=radio2、3=radio3（天气台）、4=radio4（数字台）
   do
     local a = desiredMusic("parked", "clear", true, 1)
     local b = desiredMusic("parked", "clear", true, 2)
     local c = desiredMusic("parked", "clear", true, 3)
+    local d = desiredMusic("parked", "clear", true, 4)
     ok(r, "radio stations",
-       a == "radio" and b == "radio2" and c == "radio3",
-       string.format("station1=%s station2=%s station3=%s",
-                     tostring(a), tostring(b), tostring(c)))
+       a == "radio" and b == "radio2" and c == "radio3" and d == "radio4",
+       string.format("1=%s 2=%s 3=%s 4=%s",
+                     tostring(a), tostring(b), tostring(c), tostring(d)))
   end
 
-  -- 驾驶时车载电台：开启后用 radio/radio2/radio3 取代引擎声
+  -- 驾驶时车载电台：开启后用 radio/radio2/radio3/radio4 取代引擎声
   do
     local engine = desiredMusic("driving", "clear", false, 1, false)
     local radio1 = desiredMusic("driving", "clear", false, 1, true)
     local radio2 = desiredMusic("driving", "clear", false, 2, true)
     local radio3 = desiredMusic("driving", "clear", false, 3, true)
+    local radio4 = desiredMusic("driving", "clear", false, 4, true)
     ok(r, "car radio",
        engine == "engine" and radio1 == "radio" and radio2 == "radio2" and
-       radio3 == "radio3",
-       string.format("engine=%s r1=%s r2=%s r3=%s", tostring(engine),
-                     tostring(radio1), tostring(radio2), tostring(radio3)))
+       radio3 == "radio3" and radio4 == "radio4",
+       string.format("engine=%s r1=%s r2=%s r3=%s r4=%s", tostring(engine),
+                     tostring(radio1), tostring(radio2), tostring(radio3),
+                     tostring(radio4)))
   end
 
   -- 收音机广播：开启后按游戏分钟触发，关闭不触发
@@ -4880,6 +4883,26 @@ function runSelfTest()
     ok(r, "weather radio", fired and weatherLine and faster,
        string.format("fired=%s line=%s interval=%.0f", tostring(fired),
                      tostring(weatherLine), newInterval))
+  end
+
+  -- 数字台（电台 4）：播报一串数字
+  do
+    local keepOn, keepStation = radioOn, radioStation
+    local keepT, keepNext = radioBroadcastT, radioBroadcastNext
+    local keepToast, keepTT = toast.text, toast.t
+    local keepFixed, keepJournal = radioMastFixed, journal
+    journal = {}
+    radioMastFixed = true
+    radioOn, radioStation = true, 4
+    radioBroadcastT, radioBroadcastNext = 0, 0.1
+    local fired = updateRadioBroadcast(1)
+    local line = tostring(toast.text)
+    local numbers = line:find("数字台", 1, true) ~= nil
+    radioOn, radioStation = keepOn, keepStation
+    radioBroadcastT, radioBroadcastNext = keepT, keepNext
+    toast.text, toast.t = keepToast, keepTT
+    radioMastFixed, journal = keepFixed, keepJournal
+    ok(r, "numbers station", fired and numbers, line)
   end
 
   -- 收音机按进度播报：无进度返回 nil，有中继时提到中继

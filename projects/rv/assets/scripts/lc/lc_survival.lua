@@ -805,6 +805,14 @@ function updateRadioBroadcast(gm)
     local hrs = (weatherHoursLeft and weatherHoursLeft()) or 0
     line = string.format("天气台：现在%s，稍后转%s（约 %.1f 小时后）。",
                          nowName, nextName, hrs)
+  elseif (radioStation or 1) == 4 then
+    -- 数字台：循环播报一串数字，纯氛围
+    radioBroadcastNext = 50 + math.random() * 40
+    local nums = { "三", "七", "九", "一", "四", "八", "二", "六" }
+    local seq = {}
+    for i = 1, 4 do seq[i] = nums[math.random(1, #nums)] end
+    line = string.format("数字台：（电流声）……%s……重复，%s……",
+                         table.concat(seq, "、"), table.concat(seq, "、"))
   elseif progressLine ~= nil and math.random() < 0.35 then
     line = progressLine
   elseif warn ~= nil and math.random() < 0.5 then

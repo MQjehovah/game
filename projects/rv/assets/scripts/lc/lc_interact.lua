@@ -273,7 +273,7 @@ function updateInteraction()
       if dot > 0.05 then
         nearAction = { kind = "radio",
                        verb = radioOn and "营地收音机 · 关" or "营地收音机 · 开",
-                       detail = "E 循环电台 1/2/3 → 关闭（驻车/步行）",
+                       detail = "E 循环电台 1/2/3/4 → 关闭（驻车/步行）",
                        x = campRadio.x, z = campRadio.z }
         return
       end
@@ -397,7 +397,7 @@ function doInteract()
     if not radioOn then
       radioOn, radioStation = true, 1
       toast.text = "营地收音机 · 电台 1"
-    elseif (radioStation or 1) < 3 then
+    elseif (radioStation or 1) < 4 then
       radioStation = (radioStation or 1) + 1
       toast.text = "营地收音机 · 切换到电台 " .. radioStation
     else
