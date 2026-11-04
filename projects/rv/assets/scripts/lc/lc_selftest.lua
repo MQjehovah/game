@@ -4646,6 +4646,27 @@ function runSelfTest()
                      tostring(second)))
   end
 
+  -- 基础设施进度文案：未开工不显示，1/4 显示进度，终局显示“荒原已恢复”
+  do
+    local kR, kD = radioMastFixed, relayDone
+    local kW, kP, kDone = waterTowerFixed, fuelPumpFixed, wastelandRestored
+    radioMastFixed, relayDone = false, false
+    waterTowerFixed, fuelPumpFixed = false, false
+    wastelandRestored = false
+    local none = infrastructureStatusText()
+    radioMastFixed = true
+    local partial = infrastructureStatusText()
+    wastelandRestored = true
+    local done = infrastructureStatusText()
+    radioMastFixed, relayDone = kR, kD
+    waterTowerFixed, fuelPumpFixed = kW, kP
+    wastelandRestored = kDone
+    ok(r, "infrastructure status",
+       none == nil and partial == "基建 1/4" and done == "荒原已恢复",
+       string.format("none=%s partial=%s done=%s", tostring(none),
+                     tostring(partial), tostring(done)))
+  end
+
   -- 低油量导航：最近加油站的距离
   do
     local sx, sz = rv.x, rv.z

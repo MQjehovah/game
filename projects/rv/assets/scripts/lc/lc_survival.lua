@@ -1108,6 +1108,23 @@ function checkInfrastructureMilestone()
   return true
 end
 
+-- 基础设施进度（顶部状态条用）：未开工返回 nil，完成显示“荒原已恢复”
+function infrastructureCount()
+  local n = 0
+  if radioMastFixed then n = n + 1 end
+  if relayDone then n = n + 1 end
+  if waterTowerFixed then n = n + 1 end
+  if fuelPumpFixed then n = n + 1 end
+  return n
+end
+
+function infrastructureStatusText()
+  if wastelandRestored then return "荒原已恢复" end
+  local n = infrastructureCount()
+  if n <= 0 then return nil end
+  return string.format("基建 %d/4", n)
+end
+
 -- 恢复中继后的每日救援补给（每天一次）
 function grantRelaySupply()
   if not relayDone then return false end

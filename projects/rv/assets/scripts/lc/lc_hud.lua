@@ -1075,6 +1075,10 @@ function drawDriveHud()
   if (wetness or 0) >= 30 then
     top = top .. string.format("   · 湿透 %.0f%%", wetness)
   end
+  if infrastructureStatusText ~= nil then
+    local infra = infrastructureStatusText()
+    if infra ~= nil then top = top .. "   · " .. infra end
+  end
   if maintenanceWarningActive ~= nil and maintenanceWarningActive() then
     top = top .. "   · 保养!"
   end
