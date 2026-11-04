@@ -222,6 +222,8 @@ TRADES = {
     costItem = { berry = 4 }, give = { item = "bait", n = 2 } },
   { id = "metal_spare", name = "金属 x4 → 备胎 x1",
     cost = { metal = 4 }, give = { item = "sparetire", n = 1 } },
+  { id = "fish_metal",  name = "生鱼 x3 → 金属 x2",
+    costItem = { rawfish = 3 }, give = { metal = 2 } },
 }
 
 -- 路牌笔记：散落在各地点的可阅读纸条，集齐有一次性奖励

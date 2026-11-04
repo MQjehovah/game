@@ -4047,6 +4047,22 @@ function runSelfTest()
                      gotTire, leftMetal))
   end
 
+  -- 以物易物：生鱼 x3 → 金属 x2
+  do
+    local km, kr = materials.metal or 0, inv.rawfish or 0
+    materials.metal = 0
+    inv.rawfish = 3
+    local traded = doTrade(8)
+    local gotMetal = materials.metal or 0
+    local leftFish = inv.rawfish or 0
+    local okTrade = traded and gotMetal == 2 and leftFish == 0
+    materials.metal = km
+    inv.rawfish = kr > 0 and kr or nil
+    ok(r, "fish trade", okTrade,
+       string.format("traded=%s metal=%d fish=%d", tostring(traded),
+                     gotMetal, leftFish))
+  end
+
   -- 以物易物：野浆果 x4 → 鱼饵 x2
   do
     local kb, ka = inv.berry or 0, inv.bait or 0

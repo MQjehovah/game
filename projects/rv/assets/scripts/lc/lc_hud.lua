@@ -1938,7 +1938,8 @@ function drawJobPanel()
     yy = yy + 26
     for i, t in ipairs(TRADES) do
       local ok2 = (tradeAvailable == nil) or tradeAvailable(t)
-      local keyLabel = (i <= 6) and tostring(i + 3) or "T"
+      local keyLabel = (i <= 6) and tostring(i + 3)
+                       or (i == 7 and "T" or "Y")
       DrawRect(px + 16, yy - 4, pw - 32, 26,
                ok2 and 0.08 or 0.11, 0.09, 0.06, 0.7)
       DrawText("[" .. keyLabel .. "]", px + 26, yy, 14,
@@ -1948,7 +1949,7 @@ function drawJobPanel()
       yy = yy + 30
     end
   end
-  DrawText("1-3 接单   0 放弃   4-9/T 以物易物   R 刷新(1金属)   E 关闭",
+  DrawText("1-3 接单   0 放弃   4-9/T/Y 以物易物   R 刷新(1金属)   E 关闭",
            px + 20, py + ph - 26, 11, 0.70, 0.72, 0.66, 1)
 end
 
