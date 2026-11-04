@@ -2199,6 +2199,17 @@ function runSelfTest()
                      tostring(fast), tostring(slow)))
   end
 
+  -- 刹车过热尖叫：热量 >0.5 且车速 >2.5 才触发
+  do
+    local cool = brakeSquealActive(0.2, 8)
+    local slow = brakeSquealActive(0.9, 1.5)
+    local hot = brakeSquealActive(0.9, 8)
+    ok(r, "brake squeal",
+       cool == false and slow == false and hot == true,
+       string.format("cool=%s slow=%s hot=%s", tostring(cool),
+                     tostring(slow), tostring(hot)))
+  end
+
   -- 侧风：雨雪天高速才有，晴天/低速没有，幅度受限
   do
     local clear = windActive("clear", 8)

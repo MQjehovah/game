@@ -769,6 +769,11 @@ function tireSquealActive(latG, speed)
   return (latG or 0) > 0.55 and math.abs(speed or 0) > 4.0
 end
 
+-- 刹车尖叫：刹车过热且车速不低时偶发
+function brakeSquealActive(heat, speed)
+  return (heat or 0) > 0.5 and math.abs(speed or 0) > 2.5
+end
+
 -- 左右胎压不均导致轻微跑偏：低压侧滚动阻力更大，车会向低压侧偏
 function tirePullSteer(pressures)
   if pressures == nil then return 0 end
@@ -1128,6 +1133,14 @@ function updateDrive(dt)
     brakeHeat = math.min(1, (brakeHeat or 0) + dt * 0.12)
   else
     brakeHeat = math.max(0, (brakeHeat or 0) - dt * 0.05)
+  end
+  -- 刹车过热时偶发尖叫（1.2s 冷却）
+  rv.brakeSquealCd = math.max(0, (rv.brakeSquealCd or 0) - dt)
+  if rv.brakeSquealCd <= 0 and brakingHard and
+     brakeSquealActive(brakeHeat, rv.speed) then
+    rv.brakeSquealCd = 1.2
+    rv.brakeSqueals = (rv.brakeSqueals or 0) + 1
+    if PlaySfx then PlaySfx("squeal") end
   end
   if (brakeHeat or 0) > 0.7 and not rv.brakeWarned then
     rv.brakeWarned = true
