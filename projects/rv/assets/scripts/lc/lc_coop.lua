@@ -910,6 +910,13 @@ local function serverHandleCommand(clientId, a)
                         tostring(okCamp), tostring(campfireOn),
                         campfireFuelMin or 0))
     if okCamp then pushState() end
+  elseif t == "nap" then
+    local okNap = false
+    if napInBed ~= nil then okNap = napInBed() end
+    print(string.format("[coop-nap] ok=%s clock=%.0f energy=%.0f",
+                        tostring(okNap), (clock or 0) % 1440,
+                        needs.energy or 0))
+    if okNap then pushState() end
   elseif t == "sleep" then
     advanceGameMinutes(360)
     needs.energy = math.min(100, needs.energy + 55)
@@ -1419,6 +1426,17 @@ local function serverUpdate(dt)
     print(string.format("[coop-campfire] demo ok=%s fire=%s fuel=%.0f",
                         tostring(okCamp), tostring(campfireOn),
                         campfireFuelMin or 0))
+    pushState()
+  end
+
+  -- Test-only co-op nap: advance 2 hours.
+  if coop.napDemo and not coop.napDemoDone and coop.autoT >= 3.0 then
+    coop.napDemoDone = true
+    local before = (clock or 0) % 1440
+    local okNap = false
+    if napInBed ~= nil then okNap = napInBed() end
+    print(string.format("[coop-nap] demo ok=%s clock=%.0f->%.0f",
+                        tostring(okNap), before, (clock or 0) % 1440))
     pushState()
   end
 
@@ -2292,6 +2310,7 @@ local function clientUpdate(dt)
     if ActionPressed("1") then Rpc("game_cmd", { type = "eat" }) end
     if ActionPressed("2") then Rpc("game_cmd", { type = "drink" }) end
     if ActionPressed("3") then Rpc("game_cmd", { type = "sleep" }) end
+    if ActionPressed("4") then Rpc("game_cmd", { type = "nap" }) end
     if ActionPressed("0") then Rpc("game_cmd", { type = "job_abandon" }) end
     if ActionPressed("x") then Rpc("game_cmd", { type = "horn" }) end
     if ActionPressed("h") then Rpc("game_cmd", { type = "highbeam" }) end
@@ -2810,6 +2829,7 @@ function coopInitWorld(role)
     coop.woodDemo = readFlag("coop_wood.txt")
     coop.vehDemo = readFlag("coop_veh.txt")
     coop.campfireDemo = readFlag("coop_campfire.txt")
+    coop.napDemo = readFlag("coop_nap.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2939,6 +2959,7 @@ function coopInitWorld(role)
     coop.woodDemo = readFlag("coop_wood.txt")
     coop.vehDemo = readFlag("coop_veh.txt")
     coop.campfireDemo = readFlag("coop_campfire.txt")
+    coop.napDemo = readFlag("coop_nap.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
@@ -3133,8 +3154,8 @@ function coopDrawHud()
     end
     DrawText(text, 26, 314 + (i - 1) * 17, 12, 0.80, 0.82, 0.76, 1)
   end
-  DrawText("WASD 移动  L 车灯  F 驾驶  E 搜箱  1 吃  2 喝  3 睡  G 灶台  R 维修  Q 加油  K 工台  C 做饭  N 修塔  T 添柴  V 采果  Z 鱼笼  J 链条",
-           26, 392, 10, 0.66, 0.68, 0.64, 1)
+  DrawText("WASD 移动  L 车灯  F 驾驶  E 搜箱  1 吃  2 喝  3 睡  4 小睡  G 灶台  R 维修  Q 加油  K 工台  C 做饭  N 修塔  T 添柴  V 采果  Z 鱼笼  J 链条",
+           26, 392, 9, 0.66, 0.68, 0.64, 1)
 
   DrawText(string.format("网络 %s", (GetVar("netConnected") == 1) and "已连接" or "未连接"),
            vw - 170, 22, 12, 0.72, 0.78, 0.76, 1)
