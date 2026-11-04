@@ -83,6 +83,7 @@ add_library(neon_core STATIC
   engine/src/world/biome.cpp
   engine/src/world/world_features.cpp
   engine/src/world/terrain_world.cpp
+  engine/src/world/terrain_chunk.cpp
   engine/src/kernel/registry.cpp
   engine/src/plugin/plugin.cpp
   engine/src/plugin/native.cpp
@@ -777,6 +778,7 @@ tests/test_world_noise.cpp
 tests/test_biome.cpp
 tests/test_world_features.cpp
 tests/test_terrain_world.cpp
+tests/test_terrain_chunk.cpp
   tests/test_light_probe.cpp
   tests/test_ssao.cpp
   tests/test_volumetric.cpp
