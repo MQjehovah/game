@@ -4106,6 +4106,23 @@ function runSelfTest()
        string.format("near=%d tiny=%d", #near, #tiny))
   end
 
+  -- 小地图额外标记：未搜刮补给箱和鱼笼
+  do
+    local kc, kt = roadCaches, pondTrap
+    roadCaches = { { x = 1, z = 2, ready = true },
+                   { x = 3, z = 4, ready = false } }
+    pondTrap = { x = 5, z = 6, ready = true }
+    local m = minimapMarkers()
+    local cacheN, trapN = 0, 0
+    for _, e in ipairs(m) do
+      if e.kind == "cache" then cacheN = cacheN + 1 end
+      if e.kind == "trap" then trapN = trapN + 1 end
+    end
+    roadCaches, pondTrap = kc, kt
+    ok(r, "minimap markers", cacheN == 1 and trapN == 1,
+       string.format("cache=%d trap=%d", cacheN, trapN))
+  end
+
   -- 地图服务标签：营地/加油站/诊所/仓库可识别
   do
     local camp = mapServiceTag({ id = "camp", name = "营地" })

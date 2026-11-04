@@ -644,6 +644,21 @@ function dailyGoalHudText()
                        dailyGoal.target or 0)
 end
 
+-- 小地图额外标记：未搜刮补给箱 / 鱼笼（绘制/自检共用）
+function minimapMarkers()
+  local out = {}
+  for _, c in ipairs(roadCaches or {}) do
+    if c.ready then
+      out[#out + 1] = { kind = "cache", x = c.x, z = c.z }
+    end
+  end
+  if pondTrap ~= nil then
+    out[#out + 1] = { kind = "trap", x = pondTrap.x, z = pondTrap.z,
+                      ready = pondTrap.ready == true }
+  end
+  return out
+end
+
 -- 小地图道路连线：返回两端都在范围内的节点对（绘制/自检共用）
 function minimapRoadPairs(range)
   local out = {}
@@ -793,6 +808,26 @@ function drawMinimap(vw, vh)
         DrawCircle(px2, py2, 3.5, 1.5, 0.45, 0.92, 0.95, 1, false)
       else
         DrawCircle(px2, py2, 3.0, 1.5, 0.95, 0.62, 0.30, 1, false)
+      end
+    end
+  end
+  -- 未搜刮补给箱（琥珀）/ 鱼笼（青绿，可收时实心）
+  for _, m in ipairs((minimapMarkers and minimapMarkers()) or {}) do
+    local dx, dz = m.x - rv.x, m.z - rv.z
+    local d = math.sqrt(dx * dx + dz * dz)
+    local px2, py2
+    if d <= range then
+      px2, py2 = cx + dx * scale, cy - dz * scale
+    elseif d > 0.01 then
+      px2 = cx + dx / d * (size * 0.5 - 10)
+      py2 = cy - dz / d * (size * 0.5 - 10)
+    end
+    if px2 ~= nil then
+      if m.kind == "cache" then
+        DrawCircle(px2, py2, 3.0, 1.5, 0.95, 0.75, 0.35, 1, false)
+      else
+        DrawCircle(px2, py2, 3.2, 1.5, 0.45, 0.90, 0.85,
+                   m.ready and 1 or 0.7, m.ready)
       end
     end
   end
