@@ -81,6 +81,7 @@ add_library(neon_core STATIC
   engine/src/nav/nav_grid.cpp
   engine/src/world/noise.cpp
   engine/src/world/biome.cpp
+  engine/src/world/world_features.cpp
   engine/src/kernel/registry.cpp
   engine/src/plugin/plugin.cpp
   engine/src/plugin/native.cpp
@@ -773,6 +774,7 @@ add_executable(neon_tests tests/test_main.cpp tests/test_serialize.cpp tests/tes
   tests/test_terrain.cpp
 tests/test_world_noise.cpp
 tests/test_biome.cpp
+tests/test_world_features.cpp
   tests/test_light_probe.cpp
   tests/test_ssao.cpp
   tests/test_volumetric.cpp
