@@ -1359,6 +1359,14 @@ function fishingConditionBonus()
 end
 
 -- 鱼类图鉴数据：每种鱼的纪录尺寸/累计条数/尺寸区间
+-- 鱼种出没条件提示（图鉴用）
+function fishSpeciesHint(sp)
+  if sp == nil then return nil end
+  if sp.nightOnly then return "夜间" end
+  if sp.snowOnly then return "雪天" end
+  return nil
+end
+
 function fishBookRows()
   local rows = {}
   for _, sp in ipairs(FISH_SPECIES or {}) do
@@ -1367,6 +1375,7 @@ function fishBookRows()
       record = (fishRecords and fishRecords[sp.name]) or 0,
       count = (fishCounts and fishCounts[sp.name]) or 0,
       min = sp.min, max = sp.max,
+      hint = fishSpeciesHint(sp),
     }
   end
   return rows

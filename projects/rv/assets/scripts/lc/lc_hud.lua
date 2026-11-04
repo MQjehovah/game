@@ -1601,7 +1601,7 @@ function drawFishBook()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
   local rows = (fishBookRows and fishBookRows()) or {}
-  local pw, ph = 600, 300
+  local pw, ph = 600, 130 + #rows * 38
   local px = math.floor((vw - pw) * 0.5)
   local py = math.floor((vh - ph) * 0.5)
   DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.94)
@@ -1620,7 +1620,8 @@ function drawFishBook()
     local caught = (r.count or 0) > 0
     local col = caught and 0.90 or 0.52
     DrawRect(px + 18, yy - 4, pw - 36, 34, caught and 0.08 or 0.10, 0.09, 0.08, 0.7)
-    DrawText(r.name, px + 30, yy, 15, col, col, caught and 0.82 or col, 1)
+    local label = r.name .. (r.hint and (" · " .. r.hint) or "")
+    DrawText(label, px + 30, yy, 14, col, col, caught and 0.82 or col, 1)
     DrawText(string.format("纪录 %s", caught and
              string.format("%.0fcm", r.record) or "—"),
              px + 180, yy + 2, 13, col, col, caught and 0.72 or col, 1)

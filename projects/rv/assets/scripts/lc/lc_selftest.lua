@@ -5579,6 +5579,23 @@ function runSelfTest()
                      tostring(iceClear), tostring(iceSnow)))
   end
 
+  -- 鱼图鉴：10 种、鳗鱼标夜间、冰鱼标雪天
+  do
+    local rows = fishBookRows()
+    local eelHint, iceHint, normalHint = nil, nil, nil
+    for _, row in ipairs(rows) do
+      if row.name == "鳗鱼" then eelHint = row.hint end
+      if row.name == "冰鱼" then iceHint = row.hint end
+      if row.name == "鲫鱼" then normalHint = row.hint end
+    end
+    ok(r, "fish book hints",
+       #rows == #FISH_SPECIES and #rows >= 10 and eelHint == "夜间" and
+       iceHint == "雪天" and normalHint == nil,
+       string.format("rows=%d eel=%s ice=%s normal=%s", #rows,
+                     tostring(eelHint), tostring(iceHint),
+                     tostring(normalHint)))
+  end
+
   -- 旅行日志：记录、封顶与内容
   do
     local keep = journal
