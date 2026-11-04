@@ -141,8 +141,17 @@ void TerrainStreamer::Draw(Renderer& renderer, const math::Mat4& viewProj,
         // Chunk meshes are already in world space (identity transform), so the
         // mesh bounds double as a world AABB. Cull chunks behind / beside the
         // camera: the streamer keeps a square window around the focus, but only
-        // the view frustum needs to be submitted.
-        if (!viewFrustum.Intersects(kv.second.mesh.Bounds())) continue;
+        // the view frustum needs to be submitted. The 8 m margin keeps a chunk
+        // whose bounds are just outside the frustum from popping while the
+        // camera turns (the skirt can still be visible at the edge).
+        math::AABB bounds = kv.second.mesh.Bounds();
+        bounds.min.x -= 2.0f;
+        bounds.min.y -= 2.0f;
+        bounds.min.z -= 2.0f;
+        bounds.max.x += 2.0f;
+        bounds.max.y += 2.0f;
+        bounds.max.z += 2.0f;
+        if (!viewFrustum.Intersects(bounds)) continue;
         Material chunkMaterial = material;
         chunkMaterial.tint = Color{kv.second.tint.x, kv.second.tint.y,
                                    kv.second.tint.z, 1.0f};

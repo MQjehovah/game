@@ -1227,12 +1227,12 @@ void DrawSystem::DrawProceduralScatter(gfx::Renderer& renderer,
     if (!terrainScatter_.grass.empty()) {
         renderer.DrawMeshInstanced(
             scatterGrassMesh_, scatterGrassMat_, terrainScatter_.grass.data(),
-            static_cast<uint32_t>(terrainScatter_.grass.size()));
+            static_cast<uint32_t>(terrainScatter_.grass.size()), false);
     }
     if (!terrainScatter_.rocks.empty()) {
         renderer.DrawMeshInstanced(
             scatterRockMesh_, scatterRockMat_, terrainScatter_.rocks.data(),
-            static_cast<uint32_t>(terrainScatter_.rocks.size()));
+            static_cast<uint32_t>(terrainScatter_.rocks.size()), false);
     }
 }
 

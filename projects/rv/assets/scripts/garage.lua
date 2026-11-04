@@ -1255,6 +1255,10 @@ function on_start()
   elseif startMode == "mastview" or startMode == "mastday" then
     player.pitch = 0.30
   end
+  if startMode == "spin" then
+    local a = tonumber(ReadText("spin_angle.txt") or "0") or 0
+    player.yaw = (rv.yaw or 0) + math.rad(a)
+  end
   SetVar("cameraMouseLock", 1)
   updateInteraction()
 
