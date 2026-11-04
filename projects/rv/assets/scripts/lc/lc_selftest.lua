@@ -4237,6 +4237,20 @@ function runSelfTest()
                      tostring(edge), tostring(full)))
   end
 
+  -- 生命垂危：罗盘标出诊所，并给出提示文案
+  do
+    local low = lowHealthCompassActive(10)
+    local edge = lowHealthCompassActive(30)
+    local healthy = lowHealthCompassActive(80)
+    local hint = lowHealthHintText(20)
+    local none = lowHealthHintText(80)
+    ok(r, "low health hint",
+       low == true and edge == false and healthy == false and
+       hint ~= nil and hint:find("诊所", 1, true) ~= nil and none == nil,
+       string.format("low=%s edge=%s hint=%s", tostring(low),
+                     tostring(edge), tostring(hint)))
+  end
+
   -- 极低油量供油不稳：2% 以上满动力，越低越弱
   do
     local full = fuelStarvationScale(0.10)

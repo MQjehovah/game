@@ -559,6 +559,21 @@ function lowFuelHintText()
                        km, st.name, st.dist, tail)
 end
 
+-- 生命垂危时罗盘是否标出诊所
+function lowHealthCompassActive(healthValue)
+  return (healthValue or 100) < 30
+end
+
+-- 生命垂危提示：指向诊所（停靠可花布料包扎）
+function lowHealthHintText(healthValue)
+  if not lowHealthCompassActive(healthValue) then return nil end
+  local nd = (nodeById ~= nil) and nodeById("clinic") or nil
+  if nd == nil then return nil end
+  local d = math.sqrt((nd.x - (rv.x or 0)) ^ 2 + (nd.z - (rv.z or 0)) ^ 2)
+  return string.format("生命垂危（%.0f%%）——最近诊所 %s %.0fm，停靠可包扎",
+                       healthValue or 0, nd.name, d)
+end
+
 -- 直接吃/喝背包里的东西
 function useItem(id)
   local it = ITEMS[id]
@@ -1052,6 +1067,14 @@ function updateSurvival(dt)
     toast.t = 3.6
   elseif (water or 0) > waterMax() * 0.25 then
     lastWarn.water = false
+  end
+  local hLow = lowHealthHintText(needs.health)
+  if hLow ~= nil and not lastWarn.health then
+    lastWarn.health = true
+    toast.text = hLow
+    toast.t = 4.0
+  elseif (needs.health or 0) > 50 then
+    lastWarn.health = false
   end
 
   -- 雨天接水

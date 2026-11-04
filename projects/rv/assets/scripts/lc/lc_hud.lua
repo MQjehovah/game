@@ -613,6 +613,23 @@ function drawCompass(vw)
       end
     end
   end
+  -- 生命垂危：红色小三角标出最近的诊所
+  if lowHealthCompassActive ~= nil and
+     lowHealthCompassActive(needs and needs.health) and nodeById ~= nil then
+    local nd = nodeById("clinic")
+    if nd ~= nil then
+      local b = dirYaw(nd.x - rv.x, nd.z - rv.z)
+      local d = b - (rv.yaw + (driveLookYaw or 0))
+      while d > math.pi do d = d - 2 * math.pi end
+      while d < -math.pi do d = d + 2 * math.pi end
+      local deg = -math.deg(d)
+      if math.abs(deg) <= 60 then
+        local x = cx + deg / 60 * half
+        DrawLine(x - 4, cy + 2, x, cy + 7, 2, 0.98, 0.42, 0.40, 1)
+        DrawLine(x + 4, cy + 2, x, cy + 7, 2, 0.98, 0.42, 0.40, 1)
+      end
+    end
+  end
 end
 
 -- 今日目标短文案（HUD 用）
