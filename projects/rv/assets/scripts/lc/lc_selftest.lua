@@ -359,15 +359,41 @@ function runSelfTest()
                      tostring(names["林间木屋"]), tostring(names["废弃邮局"])))
   end
 
-  -- 类型化外景装饰：木屋/邮局可识别，普通地点不带装饰
+  -- 类型化外景装饰：木屋/邮局/护林站可识别，普通地点不带装饰
   do
     local cabin = poiDecorStyle("林间木屋 #7")
     local post = poiDecorStyle("废弃邮局 #9")
+    local ranger = poiDecorStyle("林间护林站 #3")
     local plain = poiDecorStyle("路边废宅 #3")
     ok(r, "poi decor style",
-       cabin == "woodcabin" and post == "postoffice" and plain == nil,
-       string.format("cabin=%s post=%s plain=%s", tostring(cabin),
-                     tostring(post), tostring(plain)))
+       cabin == "woodcabin" and post == "postoffice" and
+       ranger == "ranger" and plain == nil,
+       string.format("cabin=%s post=%s ranger=%s plain=%s",
+                     tostring(cabin), tostring(post), tostring(ranger),
+                     tostring(plain)))
+  end
+
+  -- 护林站地图奖励：只揭示 90m 内未探索的程序化地点
+  do
+    local base = visitedCount
+    local a = { id = "selftest_ranger_a", x = 0, z = 0, generated = true }
+    local b = { id = "selftest_ranger_b", x = 50, z = 0, generated = true }
+    local c = { id = "selftest_ranger_c", x = 200, z = 0, generated = true }
+    local d = { id = "selftest_ranger_d", x = 10, z = 0, generated = false }
+    local got = revealNearbyPoisAt(
+      { id = "selftest_ranger", x = 0, z = 0, generated = true }, 90,
+      { a, b, c, d })
+    local aKnown = visitedPois.selftest_ranger_a == true
+    local bKnown = visitedPois.selftest_ranger_b == true
+    local cKnown = visitedPois.selftest_ranger_c
+    local dKnown = visitedPois.selftest_ranger_d
+    visitedPois.selftest_ranger_a, visitedPois.selftest_ranger_b = nil, nil
+    visitedCount = base
+    ok(r, "ranger map reveal",
+       #got == 2 and aKnown and bKnown and not cKnown and not dKnown,
+       string.format("revealed=%d a=%s b=%s c=%s d=%s", #got,
+                     tostring(aKnown), tostring(bKnown), tostring(cKnown),
+                     tostring(dKnown)))
   end
 
   -- 昼夜

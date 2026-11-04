@@ -190,6 +190,30 @@ function mapNodeKnown(nd)
   return visitedPois[nd.id] == true
 end
 
+-- 护林站地图奖励：把附近未探索的程序化地点直接标记到地图上
+function revealNearbyPoisAt(nd, radius, candidates)
+  local out = {}
+  if nd == nil then return out end
+  local r2 = (radius or 90) * (radius or 90)
+  for _, other in ipairs(candidates or NODES or {}) do
+    if other.id ~= nd.id and other.generated and
+       not (visitedPois and visitedPois[other.id]) then
+      local dx = (other.x or 0) - (nd.x or 0)
+      local dz = (other.z or 0) - (nd.z or 0)
+      if dx * dx + dz * dz <= r2 then
+        visitedPois[other.id] = true
+        visitedCount = (visitedCount or 0) + 1
+        out[#out + 1] = other
+      end
+    end
+  end
+  if #out > 0 then
+    if checkMilestones ~= nil then checkMilestones("explore", visitedCount) end
+    if checkExplorationMilestone ~= nil then checkExplorationMilestone() end
+  end
+  return out
+end
+
 -- 首次抵达某个地点的一次性补给：鼓励把地图跑开，而不是只刷营地/加油站。
 -- 返回提示文本；重复抵达返回 nil。
 function firstVisitBonus(nd)
@@ -210,6 +234,13 @@ function firstVisitBonus(nd)
   local fuelGot = math.min(fuelMax() - fuel, 4 + danger * 2)
   if fuelGot > 0 then fuel = fuel + fuelGot end
   if addDailyProgress ~= nil then addDailyProgress("explore", 1) end
-  return string.format("首次抵达 · 补给 金属片+%d 布料+%d 燃料+%dL",
-                       metal, cloth, math.floor(fuelGot + 0.5))
+  local revealText = ""
+  if (nd.name or ""):find("护林") ~= nil then
+    local revealed = revealNearbyPoisAt(nd, 90)
+    if #revealed > 0 then
+      revealText = string.format(" · 护林站地图 +%d 地点", #revealed)
+    end
+  end
+  return string.format("首次抵达 · 补给 金属片+%d 布料+%d 燃料+%dL%s",
+                       metal, cloth, math.floor(fuelGot + 0.5), revealText)
 end
