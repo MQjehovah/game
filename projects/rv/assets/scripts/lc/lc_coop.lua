@@ -1760,6 +1760,21 @@ local function serverUpdate(dt)
             did = true
           end
         end
+        if serviceWashAtGasstop ~= nil then
+          local washOk, washCost = serviceWashAtGasstop()
+          if washOk and (washCost or 0) > 0 then
+            print(string.format("[coop-service] wash cost=%d dirt=%.2f metal=%d",
+                                washCost, rv.dirt or 0, materials.metal or 0))
+            did = true
+          end
+        end
+      elseif stationId == "camp" and washAtCampWithWater ~= nil then
+        local washOk = washAtCampWithWater()
+        if washOk then
+          print(string.format("[coop-service] camp wash water=%.0f dirt=%.2f",
+                              water or 0, rv.dirt or 0))
+          did = true
+        end
       end
       if did then
         coop.saveDirty = true

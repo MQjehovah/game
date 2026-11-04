@@ -20,7 +20,8 @@ placeValid = false
 placeLx, placeLz = 0, 0
 driveView = "cab"             -- 行驶视角 "cab" | "chase"
 atNode = nil                  -- 驻车点在节点旁 = 节点 id（搜刮层激活）
-rv = { x = 0, z = 0, yaw = 0, speed = 0, groundY = 0, pitch = 0, roll = 0 }
+rv = { x = 0, z = 0, yaw = 0, speed = 0, groundY = 0, pitch = 0, roll = 0,
+       dirt = 0 }
 curNode, day, clock = "camp", 1, 8 * 60
 rvBody = nil                  -- RV 动态刚体（Jolt）
 rvParts, rvShell, camEnt, groundEnt = nil, nil, nil, nil

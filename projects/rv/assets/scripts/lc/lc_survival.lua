@@ -2248,6 +2248,16 @@ function repairPart(id)
   return true
 end
 
+-- 营地洗车：积灰 >=50% 时消耗 5L 水清洗
+function washAtCampWithWater()
+  if (rv.dirt or 0) < 0.5 then return false, 0, nil end
+  if (water or 0) < 5 then return false, 5, "水箱水不足（需 5L）" end
+  useWater(5)
+  rv.dirt = 0
+  if PlaySfx then PlaySfx("drink") end
+  return true, 5, "用 5L 水洗车"
+end
+
 -- 诊所包扎：生命 <70% 时花 1 布料 + 2L 水，恢复 +30 生命
 function clinicTreatAvailable()
   return (needs.health or 100) < 70 and (materials.cloth or 0) >= 1

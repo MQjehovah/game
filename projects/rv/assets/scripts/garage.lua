@@ -99,6 +99,20 @@ function setPhase(m)
             toast.text = toast.text .. " · 🩹 " .. (healNote or "未包扎")
           end
         end
+        if atNode == "camp" and washAtCampWithWater ~= nil then
+          local washOk, _, washNote = washAtCampWithWater()
+          if washOk then
+            toast.text = toast.text .. " · 🧼 " .. (washNote or "已洗车")
+          end
+        end
+        if atNode == "gasstop" and serviceWashAtGasstop ~= nil then
+          local washOk, washCost, washNote = serviceWashAtGasstop()
+          if washOk and (washCost or 0) > 0 then
+            toast.text = toast.text .. " · 🧼 " .. (washNote or "已洗车")
+          elseif not washOk then
+            toast.text = toast.text .. " · 🧼 " .. (washNote or "未洗车")
+          end
+        end
         -- 首次抵达的一次性补给（每个地点只发一次）
         local visitText = firstVisitBonus ~= nil and firstVisitBonus(nd) or nil
         if visitText ~= nil then
@@ -181,7 +195,8 @@ function saveLayout(silent)
                 oil = oilLife or 100,
                 coolant = coolant or 100,
                 pressures = rv.tirePressureCold,
-                blowout = rv.blowout and 1 or 0 },
+                blowout = rv.blowout and 1 or 0,
+                dirt = rv.dirt or 0 },
     survival = { health = needs.health, hunger = needs.hunger, thirst = needs.thirst,
                  energy = needs.energy, hygiene = needs.hygiene },
     inventory = inv, water = water,
@@ -380,6 +395,7 @@ function loadLayout()
     if data.vehicle.coolant ~= nil then
       coolant = math.max(0, math.min(100, tonumber(data.vehicle.coolant) or 100))
     end
+    rv.dirt = math.max(0, math.min(1, tonumber(data.vehicle.dirt) or 0))
   end
   if type(data.survival) == "table" then
     needs.health = tonumber(data.survival.health) or needs.health

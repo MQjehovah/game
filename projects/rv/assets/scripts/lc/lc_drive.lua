@@ -108,6 +108,7 @@ function vehicleConditionToken()
   end
   out[#out + 1] = rv.blowout and "1" or "0"
   out[#out + 1] = tostring(rv.blowoutWheel or 0)
+  out[#out + 1] = string.format("%.0f", (rv.dirt or 0) * 100)
   return table.concat(out, ":")
 end
 
@@ -130,6 +131,7 @@ function parseVehicleCondition(str)
     end
     v.blowout = (out[19] or 0) == 1
     v.blowoutWheel = (out[20] ~= nil and out[20] > 0) and out[20] or nil
+    v.dirt = (out[21] or 0) / 100
   end
   return v
 end
@@ -161,6 +163,8 @@ function maintenanceRows()
       (brakeHeat or 0) < 0.7)
   local armor = (upgrades and upgrades.armor) or 0
   row("装甲", string.format("Lv%d", armor), true)
+  local dirt = (veh and veh.dirt) or rv.dirt or 0
+  row("清洁", string.format("%.0f%%", dirt * 100), dirt < 0.6)
   return rows
 end
 
@@ -318,6 +322,42 @@ function surfaceSpeedScale(name)
   return 1.0
 end
 
+-- 车身积灰：越脏风阻越大，最高 +4% 油耗
+function dirtFuelScale(value)
+  local v = math.max(0, math.min(1, value or 0))
+  return 1.0 + 0.04 * v
+end
+
+-- 每米积灰量：泥泞/泥土/碎石/草地更脏，雨天更明显
+function dirtGainPerMeter(surface, weatherValue)
+  local base = 0.00018
+  if surface == "mud" then base = base * 3.0
+  elseif surface == "dirt" then base = base * 1.8
+  elseif surface == "gravel" then base = base * 1.6
+  elseif surface == "grass" then base = base * 1.3 end
+  if weatherValue == "rain" then base = base * 1.3
+  elseif weatherValue == "snow" then base = base * 0.8 end
+  return base
+end
+
+-- 加油站洗车：积灰 >=60% 时收 1 金属
+function washServiceCost()
+  if (rv.dirt or 0) < 0.6 then return 0 end
+  return 1
+end
+
+function serviceWashAtGasstop()
+  local cost = washServiceCost()
+  if cost <= 0 then return true, 0, "车身还算干净" end
+  if (materials.metal or 0) < cost then
+    return false, cost, "洗车需要 1 金属"
+  end
+  materials.metal = (materials.metal or 0) - cost
+  rv.dirt = 0
+  if PlaySfx then PlaySfx("drink") end
+  return true, cost, "洗车完成（1 金属）"
+end
+
 -- 天气对油耗的影响：雨/雪/雾增加行驶阻力与暖风负荷
 function weatherFuelScale(weatherValue)
   if weatherValue == "rain" then return 1.05 end
@@ -349,7 +389,8 @@ function fuelBurnRate(speed, loadRatio, throttle)
               engineOilFuelScale(oilLife) *
               surfaceFuelScale(surfName) *
               engineColdFuelScale(engineTemp) *
-              weatherFuelScale(weather)
+              weatherFuelScale(weather) *
+              dirtFuelScale(rv and rv.dirt or 0)
   if (throttle or 0) > 0 then
     return (idle + VEH.burn * (0.30 + 0.70 * v) * load) * eff
   elseif (throttle or 0) < 0 then
@@ -1366,6 +1407,9 @@ function updateDrive(dt)
   local meters = math.abs(rv.speed) * dt
   if meters > 0 then
     tripDistance = (tripDistance or 0) + meters
+    -- 车身积灰：泥泞/碎石/雨天更脏，洗车可清除
+    rv.dirt = math.min(1, (rv.dirt or 0) +
+      meters * dirtGainPerMeter(surfName, weather))
     if addDailyProgress ~= nil then addDailyProgress("distance", meters) end
     if checkMilestones ~= nil then checkMilestones("distance", tripDistance) end
     if rv.tirePressureCold ~= nil then

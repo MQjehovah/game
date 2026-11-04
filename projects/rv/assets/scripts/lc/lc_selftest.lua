@@ -2110,15 +2110,17 @@ function runSelfTest()
        string.format("token=%s", tostring(token)))
   end
 
-  -- 保养面板数据：8 项、良好时全部 ok、低值时标红、四轮数据
+  -- 保养面板数据：10 项、良好时全部 ok、低值时标红、四轮数据
   do
     local kd, ke, kt = dur, parts.engine, parts.tires
     local kb, ko, kc = parts.battery, oilLife, coolant
     local ktemp, kheat = engineTemp, brakeHeat
+    local kdirt = rv.dirt
     dur, parts.engine, parts.tires, parts.battery = 100, 100, 100, 100
     oilLife, coolant, engineTemp, brakeHeat = 100, 100, 20, 0
+    rv.dirt = 0
     local rows = maintenanceRows()
-    local allOk = #rows == 9
+    local allOk = #rows == 10
     for _, r in ipairs(rows) do
       if not r.ok then allOk = false end
     end
@@ -2131,10 +2133,38 @@ function runSelfTest()
     dur, parts.engine, parts.tires = kd, ke, kt
     parts.battery, oilLife, coolant = kb, ko, kc
     engineTemp, brakeHeat = ktemp, kheat
+    rv.dirt = kdirt
     ok(r, "maintenance panel",
        allOk and flagged and #wheels == 4 and wheels[1].pressure ~= nil,
        string.format("rows=%d ok=%s flagged=%s wheels=%d",
                      #rows, tostring(allOk), tostring(flagged), #wheels))
+  end
+
+  -- 车身积灰：泥泞/雨天更脏，脏车略费油；加油站/营地洗车
+  do
+    local road = dirtGainPerMeter("asphalt", "clear")
+    local mud = dirtGainPerMeter("mud", "clear")
+    local rain = dirtGainPerMeter("asphalt", "rain")
+    local clean = dirtFuelScale(0)
+    local dirty = dirtFuelScale(1)
+    local kd, km, kw = rv.dirt, materials.metal or 0, water
+    rv.dirt, materials.metal = 0.8, 5
+    local okWash, washCost = serviceWashAtGasstop()
+    local washed = (rv.dirt or 0) == 0 and (materials.metal or 0) == 4
+    rv.dirt, materials.metal = 0.1, 5
+    local okSkip, skipCost = serviceWashAtGasstop()
+    rv.dirt, water = 0.7, 20
+    local okCamp = washAtCampWithWater()
+    local campWashed = (rv.dirt or 0) == 0 and math.abs((water or 0) - 15) < 1e-6
+    rv.dirt, water = 0.7, 2
+    local poorCamp = washAtCampWithWater()
+    rv.dirt, materials.metal, water = kd, km, kw
+    ok(r, "vehicle dirt",
+       road > 0 and mud > road and rain > road and clean == 1.0 and
+       dirty > clean and okWash and washCost == 1 and washed and
+       okSkip and skipCost == 0 and okCamp and campWashed and poorCamp == false,
+       string.format("mud/road=%.2f rain/road=%.2f dirtyFuel=%.3f wash=%s/%d",
+                     mud / road, rain / road, dirty, tostring(okWash), washCost))
   end
 
   -- 保养警示：全部良好为 false，任意一项低则 true
