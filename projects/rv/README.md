@@ -335,11 +335,11 @@
   营地、水塘、**worldmap 全部固定公路连接**与所有 POI 占地都压平，
   因此道路和建筑仍然水平；`spawnPonds()` 改为只播种一次，
   POI 自带的水塘不会再把营地/湖边固定水塘挤掉。
-- **程序化地形性能预算**：`garage.json` 里 `TerrainWorld` 使用
-  `terrainViewDistance=320`、`terrainCellSize=3.0`。1m 单元 + 512m 视野会在
-  RTX 2060 上把营地视角压到约 12 FPS；3m/320m（场景雾在 220m 结束）保留
-  地形细节，营地静态实测约 50–60 FPS。自检 `terrain render budget`
-  会锁定这项预算，防止后续把单元尺寸改回 1m。
+- **程序化地形渲染预算**：`garage.json` 里 `TerrainWorld` 使用
+  `terrainViewDistance=512`、`terrainCellSize=2.0`；地形流式器现在对每个
+  chunk 做**视锥剔除**，只提交相机视野内的块。1m 单元会把 RTX 2060 的营地
+  视角压到约 12 FPS；2m/512m 在保持细节和完整视野的同时，营地静态约 54 FPS、
+  夜间驾驶约 75 FPS。自检 `terrain render budget` 锁定 512m / ≥2m 的预算。
   `lc_terrain.lua` 对 JSON 做双线性采样，`terrainHeight(x,z)` 给出任意点
   高度、`terrainSlope(x,z)` 给出梯度；公路段按高度抬升并按坡度倾斜
   （5m 分段、坡度限幅 10°，像切进坡里的土路），新生成的地点会拒绝落在
@@ -1003,6 +1003,14 @@
 # 截图
 .\build\neon_game.exe --scene projects\rv\assets\scenes\garage.json --scripts projects\rv `
   --smoke-test 120 --screenshot out.png 90
+```
+
+资源校验（prefab / glTF / 贴图引用）：
+
+```powershell
+python tools\validate_rv_assets.py
+# scanned 199 JSON files, 156 asset references
+# OK: all referenced RV assets exist
 ```
 
 验证钩子（放在 `projects/rv/` 下）：

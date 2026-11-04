@@ -34,6 +34,9 @@ public:
     void Clear(Renderer& renderer);
 
     size_t Resident() const { return chunks_.size(); }
+    // Number of chunks submitted by the most recent Draw() after frustum
+    // culling; used by the headless culling regression test.
+    size_t DrawnLastFrame() const { return drawnLastFrame_; }
     const TerrainStreamerConfig& Config() const { return config_; }
 
 private:
@@ -53,6 +56,7 @@ private:
     std::unordered_map<world::TerrainChunkKey, Chunk, KeyHash> chunks_;
     std::vector<world::TerrainChunkKey> selected_;
     std::vector<world::TerrainChunkKey> missing_;
+    size_t drawnLastFrame_ = 0;
 };
 
 } // namespace neon::gfx

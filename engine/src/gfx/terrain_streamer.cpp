@@ -129,11 +129,19 @@ void TerrainStreamer::Draw(Renderer& renderer, const math::Mat4& viewProj,
     material.doubleSided = true;
 
     const math::Mat4 identity = math::Mat4::Identity();
+    const math::Frustum& viewFrustum = renderer.ViewFrustum();
+    drawnLastFrame_ = 0;
     for (auto& kv : chunks_) {
+        // Chunk meshes are already in world space (identity transform), so the
+        // mesh bounds double as a world AABB. Cull chunks behind / beside the
+        // camera: the streamer keeps a square window around the focus, but only
+        // the view frustum needs to be submitted.
+        if (!viewFrustum.Intersects(kv.second.mesh.Bounds())) continue;
         Material chunkMaterial = material;
         chunkMaterial.tint = Color{kv.second.tint.x, kv.second.tint.y,
                                    kv.second.tint.z, 1.0f};
         renderer.DrawMesh(kv.second.mesh, chunkMaterial, identity);
+        ++drawnLastFrame_;
     }
 }
 

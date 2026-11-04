@@ -450,7 +450,7 @@ function runSelfTest()
         '"terrainViewDistance"%s*:%s*([%d%.]+)')) or 0
       local cs = scene and tonumber(scene:match(
         '"terrainCellSize"%s*:%s*([%d%.]+)')) or 0
-      ok(r, "terrain render budget", vd > 0 and vd <= 384 and cs >= 3.0,
+      ok(r, "terrain render budget", vd > 0 and vd <= 512 and cs >= 2.0,
          string.format("view=%.0f cell=%.1f", vd, cs))
     else
     local hFlat = terrainHeight(0, 0)
