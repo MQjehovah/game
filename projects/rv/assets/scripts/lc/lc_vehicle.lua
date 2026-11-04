@@ -445,6 +445,12 @@ function updateRvExhaust(dt)
   end
 end
 
+-- 开关车门音效（上下车时播放），rv.doorSounds 供自检计数
+function playDoorSfx()
+  rv.doorSounds = (rv.doorSounds or 0) + 1
+  if PlaySfx then PlaySfx("door") end
+end
+
 -- ===========================================================================
 -- 撞击反馈：车头尘屑 + 少量火花，并给相机一个短促抖动（rv.shakeT）
 -- ===========================================================================

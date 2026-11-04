@@ -2802,6 +2802,17 @@ function runSelfTest()
        string.format("shakeT=%.2f sfx=%s", s, tostring(sfx)))
   end
 
+  -- 开关车门音效：计数递增
+  do
+    local keep = rv.doorSounds
+    rv.doorSounds = 0
+    playDoorSfx()
+    playDoorSfx()
+    local n = rv.doorSounds or 0
+    rv.doorSounds = keep
+    ok(r, "door sfx", n == 2, string.format("sounds=%d", n))
+  end
+
   -- 雨天闪电：触发后闪光计时开始衰减，并累计雷声次数
   do
     local keep = lightningT

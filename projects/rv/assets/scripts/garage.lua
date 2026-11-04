@@ -1629,6 +1629,7 @@ function on_update(ent, dt)
     end
     if ActionPressed("space") then
       cruiseOn, cruiseSpeed = false, 0
+      if playDoorSfx ~= nil then playDoorSfx() end
       setPhase("parked")
     end
     if ActionPressed("x") and honk ~= nil then honk() end

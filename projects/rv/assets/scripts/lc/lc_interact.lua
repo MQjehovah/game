@@ -417,6 +417,7 @@ function doInteract()
     updateInteraction()
     return true
   elseif nearAction.kind == "rv" then
+    if playDoorSfx ~= nil then playDoorSfx() end
     setPhase("driving")
     return true
   end
