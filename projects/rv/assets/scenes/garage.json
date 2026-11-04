@@ -10,8 +10,8 @@
         "terrain": {
           "procedural": true,
           "worldSeed": 1337,
-          "terrainViewDistance": 512,
-          "terrainCellSize": 1.0
+          "terrainViewDistance": 320,
+          "terrainCellSize": 3.0
         }
       },
       "name": "TerrainWorld"

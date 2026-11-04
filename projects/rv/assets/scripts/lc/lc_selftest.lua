@@ -442,6 +442,16 @@ function runSelfTest()
          h0 == h0b and math.abs(h0) < 0.6 and hNorth > 30 and
          hFar == hFar and math.abs(hFar) < 10000,
          string.format("camp=%.2f north=%.2f far=%.2f", h0, hNorth, hFar))
+      -- Rendering budget guard: 1m cells at a 512m view drag the RTX 2060 to
+      -- ~12 FPS. 320m (fog ends at 220m) with 3m cells keeps the ground detailed
+      -- and the frame rate above ~50 FPS in the camp/terrain-heavy view.
+      local scene = ReadText and ReadText("assets/scenes/garage.json") or nil
+      local vd = scene and tonumber(scene:match(
+        '"terrainViewDistance"%s*:%s*([%d%.]+)')) or 0
+      local cs = scene and tonumber(scene:match(
+        '"terrainCellSize"%s*:%s*([%d%.]+)')) or 0
+      ok(r, "terrain render budget", vd > 0 and vd <= 384 and cs >= 3.0,
+         string.format("view=%.0f cell=%.1f", vd, cs))
     else
     local hFlat = terrainHeight(0, 0)
     local hMid = terrainHeight(16, -2)
