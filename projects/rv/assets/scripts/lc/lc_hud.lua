@@ -945,6 +945,9 @@ function drawDriveHud()
   if (brakeHeat or 0) > 0.6 then
     top = top .. string.format("   · 刹车过热 %.0f%%", (brakeHeat or 0) * 100)
   end
+  if maintenanceWarningActive ~= nil and maintenanceWarningActive() then
+    top = top .. "   · 保养!"
+  end
   if cruiseOn then
     top = top .. string.format("   · 定速 %.0f km/h",
                                (cruiseSpeed or 0) * 3.6)

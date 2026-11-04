@@ -143,6 +143,14 @@ function maintenanceRows()
   return rows
 end
 
+-- 是否有需要处理的保养项（HUD 警示用）
+function maintenanceWarningActive()
+  for _, r in ipairs(maintenanceRows()) do
+    if not r.ok then return true end
+  end
+  return false
+end
+
 -- 每轮胎压/胎温（保养面板用）
 function wheelConditionRows()
   local rows = {}

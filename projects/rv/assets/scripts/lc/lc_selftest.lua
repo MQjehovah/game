@@ -2012,6 +2012,22 @@ function runSelfTest()
                      #rows, tostring(allOk), tostring(flagged), #wheels))
   end
 
+  -- 保养警示：全部良好为 false，任意一项低则 true
+  do
+    local ko, kc = oilLife, coolant
+    oilLife, coolant = 100, 100
+    local durKeep = dur
+    dur = 100
+    local okAll = maintenanceWarningActive()
+    oilLife = 10
+    local warned = maintenanceWarningActive()
+    oilLife, coolant = ko, kc
+    dur = durKeep
+    ok(r, "maintenance warning",
+       okAll == false and warned == true,
+       string.format("ok=%s warned=%s", tostring(okAll), tostring(warned)))
+  end
+
   -- 保养花费提示：需要保养时列出费用，全部良好时返回 nil
   do
     local ko, kc, kp = oilLife, coolant, rv.tirePressureCold
