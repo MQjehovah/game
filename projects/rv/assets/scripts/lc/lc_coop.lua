@@ -558,6 +558,7 @@ local function pushState()
     jobsDone = jobDelivered,
     goal = goalOut,
     relay = relayDone and 2 or ((radioMastFixed and 1) or 0),
+    tower = waterTowerFixed and 1 or 0,
     fire = campfireOn and 1 or 0,
     fireFuel = math.floor(campfireFuelMin or 0),
     oil = math.floor(oilLife or 100),
@@ -844,6 +845,15 @@ local function serverHandleCommand(clientId, a)
                         tostring(okRep), before,
                         (parts and parts.engine) or 0, inv.repairkit or 0))
     pushState()
+  elseif t == "watertower" then
+    local okTower = false
+    if repairWaterTower ~= nil then okTower = repairWaterTower() end
+    print(string.format("[coop-tower] ok=%s fixed=%s",
+                        tostring(okTower), tostring(waterTowerFixed)))
+    if okTower then
+      coop.saveDirty = true
+      pushState()
+    end
   elseif t == "refuel_can" then
     local before = fuel or 0
     local okFuel = false
@@ -1804,6 +1814,25 @@ local function serverUpdate(dt)
     end
   end
 
+  -- 合作服务器：修好水塔后停稳在镇上自动补水
+  coop.towerCd = (coop.towerCd or 0) - dt
+  if coop.towerCd <= 0 and waterTowerFixed and
+     math.abs(rv.speed or 0) < 0.4 then
+    local townNd = nodeById ~= nil and nodeById("town") or nil
+    if townNd ~= nil then
+      local tdx, tdz = rv.x - townNd.x, rv.z - townNd.z
+      if tdx * tdx + tdz * tdz < 13 * 13 then
+        coop.towerCd = 4.0
+        if (water or 0) < waterMax() - 0.5 then
+          water = waterMax()
+          print(string.format("[coop-tower] refill water=%.1f", water))
+          coop.saveDirty = true
+          pushState()
+        end
+      end
+    end
+  end
+
   -- 合作服务器：修好无线电塔并停稳在废弃小镇时完成信号中继
   if radioMastFixed and not relayDone and math.abs(rv.speed or 0) < 0.4 then
     local nd = nodeById("town")
@@ -2033,6 +2062,9 @@ local function applyState(s)
   end
   if s.relay ~= nil then
     coop.relay = tonumber(s.relay) or 0
+  end
+  if s.tower ~= nil then
+    waterTowerFixed = (s.tower == 1)
   end
   if s.fire ~= nil and setCampfireLit ~= nil then
     local lit = (s.fire == 1 or s.fire == true)
@@ -2373,6 +2405,7 @@ local function clientUpdate(dt)
     if ActionPressed("c") then Rpc("game_cmd", { type = "cook" }) end
     if ActionPressed("n") then Rpc("game_cmd", { type = "mast_repair" }) end
     if ActionPressed("p") then Rpc("game_cmd", { type = "ping" }) end
+    if ActionPressed("u") then Rpc("game_cmd", { type = "watertower" }) end
     if ActionPressed("t") then Rpc("game_cmd", { type = "firewood" }) end
     if ActionPressed("v") then Rpc("game_cmd", { type = "berry" }) end
     if ActionPressed("z") then Rpc("game_cmd", { type = "pond_trap" }) end

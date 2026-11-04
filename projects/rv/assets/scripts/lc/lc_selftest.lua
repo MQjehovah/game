@@ -5016,6 +5016,29 @@ function runSelfTest()
        string.format("towers=%d parts=%d", n, parts))
   end
 
+  -- 水塔修复：材料足够时修复并一次性补水，重复修复返回 false
+  do
+    local kfix = waterTowerFixed
+    local km, kw = materials.metal or 0, materials.wood or 0
+    local kwater = water
+    waterTowerFixed = false
+    materials.metal, materials.wood, water = 10, 10, 20
+    local okFix = repairWaterTower()
+    local fixed = waterTowerFixed == true
+    local gotWater = water or 0
+    local spentMetal = materials.metal or 0
+    local spentWood = materials.wood or 0
+    local again = repairWaterTower()
+    waterTowerFixed, materials.metal, materials.wood = kfix, km, kw
+    water = kwater
+    ok(r, "water tower repair",
+       okFix and fixed and math.abs(gotWater - 40) < 1e-6 and
+       spentMetal == 5 and spentWood == 6 and again == false,
+       string.format("fixed=%s water=%.0f metal=%d wood=%d again=%s",
+                     tostring(fixed), gotWater, spentMetal, spentWood,
+                     tostring(again)))
+  end
+
   -- 货箱按货物类型换颜色
   do
     local med = jobCargoPrefab and jobCargoPrefab("med")

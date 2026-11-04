@@ -113,6 +113,12 @@ function setPhase(m)
             toast.text = toast.text .. " · 🧼 " .. (washNote or "未洗车")
           end
         end
+        if atNode == "town" and waterTowerFixed then
+          if (water or 0) < waterMax() - 0.5 then
+            water = waterMax()
+            toast.text = toast.text .. " · 🚰 水塔供水"
+          end
+        end
         -- 首次抵达的一次性补给（每个地点只发一次）
         local visitText = firstVisitBonus ~= nil and firstVisitBonus(nd) or nil
         if visitText ~= nil then
@@ -234,6 +240,7 @@ function saveLayout(silent)
       loreDone = loreRewardDone and true or false,
       windmillUpgraded = windmillUpgraded and true or false,
       radioMastFixed = radioMastFixed and true or false,
+      waterTowerFixed = waterTowerFixed and true or false,
       relayDone = relayDone and true or false,
       relaySupplyDay = relaySupplyDay or 0,
       campfireFuel = campfireFuelMin or 0,
@@ -454,6 +461,7 @@ function loadLayout()
       end
     end
     radioMastFixed = data.progress.radioMastFixed == true
+    waterTowerFixed = data.progress.waterTowerFixed == true
     relayDone = data.progress.relayDone == true
     relaySupplyDay = tonumber(data.progress.relaySupplyDay) or 0
     if data.progress.campfireFuel ~= nil then

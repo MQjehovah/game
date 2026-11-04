@@ -300,6 +300,26 @@ function updateInteraction()
     end
   end
 
+  if nearestWaterTower ~= nil then
+    local tw, twd = nearestWaterTower(player.x, player.z)
+    if tw ~= nil and twd < 4.5 then
+      local dx, dz = tw.x - player.x, tw.z - player.z
+      if forwardDot(dx, dz, twd) > 0.05 then
+        if waterTowerFixed then
+          nearAction = { kind = "watertower", verb = "小镇水塔 · 已修好",
+                         detail = "E 查看供水（镇上停靠自动补水）",
+                         x = tw.x, z = tw.z }
+        else
+          nearAction = { kind = "watertower", verb = "修水塔",
+                         detail = string.format("E 消耗 金属5 木材4（现有 %d/%d）",
+                           materials.metal or 0, materials.wood or 0),
+                         x = tw.x, z = tw.z }
+        end
+        return
+      end
+    end
+  end
+
   if nearRv() then
     if hasItem("fuelcan", 1) and (fuel or 0) < fuelMax() - 0.5 then
       nearAction = { kind = "refuel", verb = "加注燃油",
@@ -410,6 +430,15 @@ function doInteract()
     return true
   elseif nearAction.kind == "mast" then
     if repairRadioMast ~= nil then repairRadioMast() end
+    updateInteraction()
+    return true
+  elseif nearAction.kind == "watertower" then
+    if waterTowerFixed then
+      toast.text = "水塔已修好——停到镇上会自动补水"
+      toast.t = 2.4
+    elseif repairWaterTower ~= nil then
+      repairWaterTower()
+    end
     updateInteraction()
     return true
   elseif nearAction.kind == "refuel" then

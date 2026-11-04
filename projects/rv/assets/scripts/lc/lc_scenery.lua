@@ -1138,6 +1138,52 @@ function repairRadioMast()
   return true
 end
 
+-- 长线目标：用金属/木材修好小镇水塔，镇上停靠可免费补水
+WATER_TOWER_COST = { metal = 5, wood = 4 }
+
+function nearestWaterTower(px, pz)
+  local best, bestD = nil, math.huge
+  for _, tw in ipairs(waterTowers or {}) do
+    local d = math.sqrt((tw.x - (px or 0)) ^ 2 + (tw.z - (pz or 0)) ^ 2)
+    if d < bestD then best, bestD = tw, d end
+  end
+  return best, bestD
+end
+
+function repairWaterTower()
+  local px = (player and player.x) or rv.x or 0
+  local pz = (player and player.z) or rv.z or 0
+  local tw = nearestWaterTower(px, pz)
+  if tw == nil then
+    toast.text = "附近没有可修的水塔"
+    toast.t = 2.0
+    return false
+  end
+  if waterTowerFixed then
+    toast.text = "水塔已经修好了"
+    toast.t = 2.0
+    return false
+  end
+  if not canAfford(WATER_TOWER_COST) then
+    toast.text = "修水塔材料不足：" .. costText(WATER_TOWER_COST)
+    toast.t = 2.8
+    return false
+  end
+  payCost(WATER_TOWER_COST)
+  waterTowerFixed = true
+  local before = water or 0
+  if addWater ~= nil then addWater(20) end
+  if PlaySfx then PlaySfx("repair") end
+  if addJournal ~= nil then
+    addJournal("修好了小镇水塔（镇上停靠可免费补水）", "goal")
+  end
+  toast.text = string.format("小镇水塔修好了——镇上停靠免费补水（+%.0fL）",
+                             (water or 0) - before)
+  toast.t = 5.0
+  if autoSave ~= nil then autoSave() end
+  return true
+end
+
 -- 程序化地点的外景装饰风格（按名字识别）
 function poiDecorStyle(name)
   local nm = name or ""
