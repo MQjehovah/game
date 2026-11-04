@@ -1383,6 +1383,16 @@ function runSelfTest()
                      rain, snow, night, none))
   end
 
+  -- 预计到达时间：按车速估算，最低 4 m/s，向上取整
+  do
+    local slow = jobEtaMinutes(1200, 0)
+    local fast = jobEtaMinutes(1200, 10)
+    local zero = jobEtaMinutes(0, 6)
+    ok(r, "job eta",
+       slow == 5 and fast == 2 and zero == 0,
+       string.format("slow=%d fast=%d zero=%d", slow, fast, zero))
+  end
+
   -- 完好送达奖励：货况 ≥95% 时 +5%
   do
     local full = cargoPristineBonus(1.0)

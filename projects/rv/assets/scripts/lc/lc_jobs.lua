@@ -28,6 +28,13 @@ function jobRemaining()
   return jobDistToNode(nd), nd
 end
 
+-- 预计到达时间（分钟）：按当前车速估算，最低按 4 m/s
+function jobEtaMinutes(distance, speed)
+  local d = math.max(0, distance or 0)
+  local v = math.max(4.0, math.abs(speed or 0))
+  return math.ceil(d / v / 60)
+end
+
 -- 当前合同相对视角的方位差（-π..π）：>0 在左、<0 在右（用于屏幕外箭头）
 function jobBearingDelta(px, pz, viewYaw)
   if job == nil then return 0 end
