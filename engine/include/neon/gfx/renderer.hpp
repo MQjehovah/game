@@ -505,6 +505,9 @@ public:
     }
 
     // Resources
+    // Releases a raw mesh handle (streamed terrain chunks own their Mesh and
+    // call this through Mesh::Release before dropping it).
+    void DestroyMesh(const MeshHandle& handle);
     Texture CreateTexture(const TextureDesc& desc);
     // Releases a texture created by CreateTexture (dynamic masks/fonts). No-op
     // for an invalid texture.

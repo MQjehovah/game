@@ -93,6 +93,12 @@ void AppendCylinderVerts(std::vector<Vertex3D>& verts, std::vector<uint16_t>& in
 
 } // namespace
 
+void Mesh::Release(Renderer& renderer) {
+    if (!data_) return;
+    renderer.DestroyMesh(data_->handle);
+    data_.reset();
+}
+
 Mesh Mesh::CreateCube(Renderer& renderer, float w, float h, float d, const std::string& name) {
     std::vector<Vertex3D> verts;
     std::vector<uint16_t> indices;

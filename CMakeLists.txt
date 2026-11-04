@@ -122,6 +122,7 @@ add_library(neon_gfx STATIC
   engine/src/gfx/scene_state.cpp
   engine/src/gfx/shadow_system.cpp
   engine/src/gfx/terrain.cpp
+  engine/src/gfx/terrain_streamer.cpp
   engine/src/gfx/light_probe.cpp
   engine/src/gfx/particles.cpp
   engine/src/gfx/trail.cpp
@@ -780,6 +781,7 @@ tests/test_world_features.cpp
 tests/test_terrain_world.cpp
 tests/test_terrain_chunk.cpp
 tests/test_terrain_material.cpp
+tests/test_terrain_streamer.cpp
   tests/test_light_probe.cpp
   tests/test_ssao.cpp
   tests/test_volumetric.cpp
@@ -894,3 +896,4 @@ if(MINGW)
   neon_copy_runtime_dlls(neon_tests)
   neon_copy_runtime_dlls(neon_server)
 endif()
+

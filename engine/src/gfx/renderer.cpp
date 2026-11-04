@@ -1796,6 +1796,10 @@ void Renderer::DrawSphere(const math::Vec3& center, float radius, const Color& c
     DrawLines(verts.data(), static_cast<uint32_t>(verts.size()), math::Mat4::Identity());
 }
 
+void Renderer::DestroyMesh(const MeshHandle& handle) {
+    if (backend_ && handle.Valid()) backend_->DestroyMesh(handle);
+}
+
 Texture Renderer::CreateTexture(const TextureDesc& desc) {
     TextureHandle handle = backend_->CreateTexture(desc);
     return Texture(handle, desc.width, desc.height);
