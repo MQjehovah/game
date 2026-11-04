@@ -54,6 +54,8 @@ NEON_GL_FUNC(void, TexSubImage2D, (GLenum, GLint, GLint, GLint, GLsizei, GLsizei
 NEON_GL_FUNC(void, CompressedTexImage2D, (GLenum, GLint, GLenum, GLsizei, GLsizei, GLint, GLsizei, const void*))
 NEON_GL_FUNC(void, TexParameteri, (GLenum, GLenum, GLint))
 NEON_GL_FUNC(void, TexStorage2D, (GLenum, GLsizei, GLenum, GLsizei, GLsizei))
+NEON_GL_FUNC(void, TexStorage3D, (GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLsizei))
+NEON_GL_FUNC(void, TexSubImage3D, (GLenum, GLint, GLint, GLint, GLint, GLsizei, GLsizei, GLsizei, GLenum, GLenum, const void*))
 NEON_GL_FUNC(void, GenerateMipmap, (GLenum))
 NEON_GL_FUNC(void, PixelStorei, (GLenum, GLint))
 NEON_GL_FUNC(void, ReadPixels, (GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*))

@@ -779,6 +779,7 @@ tests/test_biome.cpp
 tests/test_world_features.cpp
 tests/test_terrain_world.cpp
 tests/test_terrain_chunk.cpp
+tests/test_terrain_material.cpp
   tests/test_light_probe.cpp
   tests/test_ssao.cpp
   tests/test_volumetric.cpp

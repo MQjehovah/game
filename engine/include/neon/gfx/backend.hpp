@@ -29,6 +29,9 @@ struct TextureDesc {
     bool mipmaps = false;
     Filter filter = Filter::Linear;
     Wrap wrap = Wrap::Clamp;
+    // > 1 creates a 2D texture array (GL_TEXTURE_2D_ARRAY): `rgba` holds
+    // `layers` consecutive images, each width*height*4 bytes.
+    int layers = 1;
 };
 
 struct ShaderHandle {
