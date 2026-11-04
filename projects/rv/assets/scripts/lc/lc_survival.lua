@@ -742,6 +742,27 @@ function napInBed()
   return true
 end
 
+-- 睡到傍晚 19:00：为夜间跑单调整作息（不弹晨报）
+function sleepUntilEvening()
+  local before = needs.energy or 0
+  if (clock or 0) < 19 * 60 then
+    clock = 19 * 60
+  else
+    day = (day or 1) + 1
+    clock = 19 * 60
+  end
+  needs.energy = math.min(100, before + 35)
+  needs.hunger = math.max(0, (needs.hunger or 0) - 12)
+  needs.thirst = math.max(0, (needs.thirst or 0) - 16)
+  needs.hygiene = math.max(0, (needs.hygiene or 0) - 5)
+  restedMin = math.max(restedMin or 0, 90)
+  if PlaySfx then PlaySfx("click") end
+  toast.text = string.format("睡到傍晚 19:00 — 体力 %.0f，适合夜间跑单",
+                             needs.energy)
+  toast.t = 3.2
+  return true
+end
+
 -- 收音机广播：开启后按游戏分钟间隔播报路况/天气提示
 -- 当前收音机广播池：修好无线电塔后优先播报“信号恢复”内容
 function radioBroadcastPool()

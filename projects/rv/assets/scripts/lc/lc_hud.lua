@@ -2130,7 +2130,7 @@ function drawBedMenu()
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
-  local pw, ph = 430, 190
+  local pw, ph = 430, 220
   local px = math.floor((vw - pw) * 0.5)
   local py = math.floor((vh - ph) * 0.5)
   DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.94)
@@ -2145,6 +2145,8 @@ function drawBedMenu()
            0.94, 0.88, 0.66, 1)
   DrawText("[2] 小睡 2 小时（少量恢复，不弹晨报）", px + 24, py + 112, 14,
            0.78, 0.86, 0.92, 1)
+  DrawText("[3] 睡到傍晚 19:00（夜晚跑单）", px + 24, py + 146, 14,
+           0.92, 0.80, 0.92, 1)
 end
 
 -- 篝火烹饪菜单：1-N 选择料理，0 / E 关闭

@@ -1774,6 +1774,9 @@ function on_update(ent, dt)
     elseif ActionPressed("2") then
       bedMenuOpen = false
       if napInBed ~= nil then napInBed() end
+    elseif ActionPressed("3") then
+      bedMenuOpen = false
+      if sleepUntilEvening ~= nil then sleepUntilEvening() end
     end
     updateCamera(dt)
     return

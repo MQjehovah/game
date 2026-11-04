@@ -5020,6 +5020,30 @@ function runSelfTest()
                      (clock or 0) % 1440, gotEnergy, tostring(rested)))
   end
 
+  -- 睡到傍晚：下午睡到当天 19:00，晚上睡到次日 19:00
+  do
+    local sd, sc, se = day, clock, needs.energy
+    local sh, st, sg, sr = needs.hunger, needs.thirst, needs.hygiene, restedMin
+    local kt, kv = toast.text, toast.t
+    day, clock = 9, 12 * 60
+    needs.energy, needs.hunger, needs.thirst, needs.hygiene = 20, 80, 80, 60
+    restedMin = 0
+    local okEvening = sleepUntilEvening()
+    local sameDay = (day == 9 and clock == 19 * 60)
+    local energy = needs.energy or 0
+    day, clock = 9, 20 * 60
+    local okNext = sleepUntilEvening()
+    local nextDay = (day == 10 and clock == 19 * 60)
+    day, clock, needs.energy = sd, sc, se
+    needs.hunger, needs.thirst, needs.hygiene = sh, st, sg
+    restedMin = sr
+    toast.text, toast.t = kt, kv
+    ok(r, "sleep until evening",
+       okEvening and sameDay and energy == 55 and okNext and nextDay,
+       string.format("sameDay=%s energy=%.0f nextDay=%s", tostring(sameDay),
+                     energy, tostring(nextDay)))
+  end
+
   -- 舒适度提高睡眠恢复，最多 +15%
   do
     local a = comfortSleepBonus(0)
