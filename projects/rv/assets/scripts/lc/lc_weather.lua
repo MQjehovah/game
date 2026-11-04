@@ -115,6 +115,19 @@ function windshieldDirtCount(dirtValue)
   return 9
 end
 
+-- 驾驶席挡风玻璃起雾：雨雪天或衣服湿透时更明显，取暖器能快速吹散
+function windshieldFogAlpha(wet, weatherValue, heaterOn)
+  local w = math.max(0, math.min(100, wet or 0))
+  local base = 0
+  if weatherValue == "rain" then base = 0.22
+  elseif weatherValue == "snow" then base = 0.18
+  elseif weatherValue == "fog" then base = 0.12 end
+  local wetPart = math.max(0, (w - 25) / 75) * 0.45
+  local a = base + wetPart
+  if heaterOn then a = a * 0.18 end
+  return math.max(0, math.min(0.55, a))
+end
+
 -- 挡风玻璃积雪数量：仅雪天 + 驾驶席视角
 function windshieldSnowCount()
   if weather == "snow" and phase == "driving" and driveView == "cab" then
@@ -452,6 +465,20 @@ function drawWeatherOverlay()
       local y = (i * 117 + 31) % vh
       DrawCircle(x, y, 2 + (i % 3), 1, 0.42, 0.34, 0.24, 0.20, false)
       DrawLine(x, y, x + 3, y + 4, 1, 0.42, 0.34, 0.24, 0.14)
+    end
+  end
+  -- 挡风玻璃起雾：雨雪/湿衣服时明显，取暖器能吹散
+  if driveView == "cab" and phase == "driving" then
+    local fogA = windshieldFogAlpha(wetness or 0, weather,
+                                    (stats and stats.heaterOn) or false)
+    if fogA > 0.01 then
+      DrawRect(0, vh * 0.55, vw, vh * 0.45, 0.84, 0.88, 0.90,
+               fogA * 0.30)
+      DrawRect(0, 0, vw, vh * 0.16, 0.84, 0.88, 0.90, fogA * 0.22)
+      DrawCircle(vw * 0.18, vh * 0.30, vh * 0.22, 20,
+                 0.86, 0.90, 0.92, fogA * 0.18, true)
+      DrawCircle(vw * 0.82, vh * 0.33, vh * 0.20, 20,
+                 0.86, 0.90, 0.92, fogA * 0.16, true)
     end
   end
 end

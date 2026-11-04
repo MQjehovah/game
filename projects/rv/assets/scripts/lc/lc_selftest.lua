@@ -3437,6 +3437,19 @@ function runSelfTest()
                      clean, dirty, bad, worst))
   end
 
+  -- 挡风玻璃起雾：干燥晴天无雾，雨雪/湿衣服更明显，取暖器吹散
+  do
+    local dry = windshieldFogAlpha(0, "clear", false)
+    local rain = windshieldFogAlpha(0, "rain", false)
+    local wet = windshieldFogAlpha(85, "rain", false)
+    local heat = windshieldFogAlpha(85, "rain", true)
+    ok(r, "windshield fog",
+       dry == 0 and rain > 0 and wet > rain and heat < wet and
+       heat <= wet * 0.25,
+       string.format("dry=%.2f rain=%.2f wet=%.2f heat=%.2f",
+                     dry, rain, wet, heat))
+  end
+
   -- 雨刷：在 -0.20~0.42 之间来回摆动
   do
     local a0 = wiperAngle(0)
