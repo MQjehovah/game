@@ -1723,8 +1723,9 @@ end
 -- 每次篝火烹饪消耗的燃料（游戏分钟）
 COOK_FUEL_MIN = 10
 
-local function spendCookFuel()
-  campfireFuelMin = math.max(0, (campfireFuelMin or 0) - COOK_FUEL_MIN)
+local function spendCookFuel(minutes)
+  campfireFuelMin = math.max(0, (campfireFuelMin or 0) -
+                                (minutes or COOK_FUEL_MIN))
   if campfireFuelMin <= 0 and setCampfireLit ~= nil then
     setCampfireLit(false)
   end
@@ -1741,6 +1742,7 @@ function campfireCan(kind)
   if kind == "coffee" then
     return hasItem("coffee", 1) and (water or 0) >= 15
   end
+  if kind == "smoke" then return (inv.rawfish or 0) >= 2 end
   return false
 end
 
@@ -1752,6 +1754,7 @@ function campfireRecipeList()
     { kind = "stew",   label = "浆果炖肉（生食材 + 野浆果 x2）" },
     { kind = "meal",   label = "热饭（生食材 x1）" },
     { kind = "coffee", label = "热咖啡（咖啡豆 + 15L 水）" },
+    { kind = "smoke",  label = "烟熏鱼（生鱼 x2，耐存放）" },
   }
 end
 
@@ -1787,6 +1790,15 @@ function campfireCook(kind)
     useWater(15)
     addItem("brew", 1)
     toast.text = "篝火煮好一壶热咖啡（+1，提神保暖）"
+  elseif kind == "smoke" then
+    takeItem("rawfish", 2)
+    addItem("smokedfish", 1)
+    if addDailyProgress ~= nil then addDailyProgress("cook", 1) end
+    spendCookFuel(COOK_FUEL_MIN * 2)
+    if PlaySfx then PlaySfx("cook") end
+    toast.text = "篝火熏好一条鱼（烟熏鱼 +1，耐存放）"
+    toast.t = 2.8
+    return true
   end
   spendCookFuel()
   if PlaySfx then PlaySfx("cook") end
@@ -2285,6 +2297,7 @@ function stationPrompt(inst)
     if hasItem("fishsoup", 1) then return "喝鱼汤", "饥饿 -35 口渴 -20", true end
     if hasItem("meal", 1) then return "吃热饭", "饥饿 -42", true end
     if hasItem("fish", 1) then return "吃烤鱼", "饥饿 -30 生命 +5", true end
+    if hasItem("smokedfish", 1) then return "吃烟熏鱼", "饥饿 -26 生命 +4", true end
     if hasItem("canned", 1) then return "吃罐头", "饥饿 -22", true end
     if hasItem("rawfood", 1) then return "吃生食材", "饥饿 -8，会掉血", true end
     return "找吃的", "冰箱空了", false
@@ -2341,6 +2354,7 @@ function useStation(inst)
     elseif hasItem("fishsoup", 1) then useItem("fishsoup")
     elseif hasItem("meal", 1) then useItem("meal")
     elseif hasItem("fish", 1) then useItem("fish")
+    elseif hasItem("smokedfish", 1) then useItem("smokedfish")
     elseif hasItem("canned", 1) then useItem("canned")
     elseif hasItem("rawfood", 1) then useItem("rawfood")
     else toast.text = "冰箱空了"; toast.t = 2.0 end

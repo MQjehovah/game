@@ -86,8 +86,9 @@ ITEMS = {
   fish     = { name = "烤鱼",   kind = "food",  hunger = 30, health = 5, desc = "饥饿 -30 生命 +5" },
   fishsoup = { name = "鱼汤",   kind = "food",  hunger = 35, thirst = 20, health = 3, desc = "饥饿 -35 口渴 -20" },
   feast    = { name = "大餐",   kind = "food",  hunger = 65, health = 10, desc = "饥饿 -65 生命 +10" },
+  smokedfish = { name = "烟熏鱼", kind = "food", hunger = 26, health = 4, desc = "耐存放的烟熏鱼，不会腐败" },
 }
-ITEM_ORDER = { "water", "canned", "rawfood", "berry", "jam", "stew", "meal", "fishsoup", "feast", "coffee", "brew", "rawfish", "fish", "seed", "bait", "repairkit", "sparetire", "dirtywater", "tarp", "chains" }
+ITEM_ORDER = { "water", "canned", "rawfood", "berry", "jam", "stew", "meal", "fishsoup", "feast", "smokedfish", "coffee", "brew", "rawfish", "fish", "seed", "bait", "repairkit", "sparetire", "dirtywater", "tarp", "chains" }
 
 -- 钓鱼鱼种（权重 / 尺寸 cm）：越稀有越大，用来做纪录与风味
 FISH_SPECIES = {

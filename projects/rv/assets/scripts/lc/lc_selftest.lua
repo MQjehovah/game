@@ -2663,6 +2663,32 @@ function runSelfTest()
                      leftWater))
   end
 
+  -- 烟熏鱼：生鱼 x2 → 耐存放的烟熏鱼，耗 20 分钟燃料
+  do
+    local keepOn, keepFuel = campfireOn, campfireFuelMin
+    local kraw, ksmoke = inv.rawfish, inv.smokedfish or 0
+    local kgoal = dailyGoal
+    local kt, kv = toast.text, toast.t
+    setCampfireLit(true)
+    campfireFuelMin, dailyGoal = 500, nil
+    inv.rawfish, inv.smokedfish = 1, 0
+    local needTwo = campfireCan("smoke")
+    inv.rawfish = 2
+    local canSmoke = campfireCan("smoke")
+    local cooked = campfireCook("smoke")
+    local got = inv.smokedfish or 0
+    local leftRaw = inv.rawfish or 0
+    local fuelUsed = 500 - (campfireFuelMin or 0)
+    inv.rawfish, inv.smokedfish = kraw, ksmoke
+    campfireOn, campfireFuelMin, dailyGoal = keepOn, keepFuel, kgoal
+    toast.text, toast.t = kt, kv
+    ok(r, "campfire smoked fish",
+       needTwo == false and canSmoke and cooked and got == 1 and
+       leftRaw == 0 and math.abs(fuelUsed - 20) < 1e-6,
+       string.format("can=%s got=%d raw=%d fuel=%.0f", tostring(canSmoke),
+                     got, leftRaw, fuelUsed))
+  end
+
   -- 篝火烹饪消耗燃料：每次 10 游戏分钟
   do
     local keepOn, keepFuel = campfireOn, campfireFuelMin
