@@ -1779,6 +1779,7 @@ function on_update(ent, dt)
       if ActionPressed("8") and craftTarp ~= nil then craftTarp() end
       if ActionPressed("9") and upgradeWater ~= nil then upgradeWater() end
       if ActionPressed("0") and upgradeFuel ~= nil then upgradeFuel() end
+      if ActionPressed("a") and upgradeArmor ~= nil then upgradeArmor() end
     end
     updateCamera(dt)
     return

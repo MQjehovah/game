@@ -3162,6 +3162,19 @@ function runSelfTest()
                      e0, t0, e1, t1, eCap, tCap))
   end
 
+  -- 车体装甲：每级 -15% 碰撞损失，满级后不再降低
+  do
+    local lv0 = armorDamageScale(0)
+    local lv1 = armorDamageScale(1)
+    local lv3 = armorDamageScale(3)
+    local capped = armorDamageScale(99)
+    ok(r, "armor damage scale",
+       lv0 == 1.0 and lv1 < lv0 and lv3 < lv1 and
+       math.abs(lv3 - 0.55) < 1e-6 and math.abs(capped - 0.55) < 1e-6,
+       string.format("0=%.2f 1=%.2f 3=%.2f cap=%.2f",
+                     lv0, lv1, lv3, capped))
+  end
+
   -- 雨雪天刹车效率下降
   do
     local dry = brakeRate(1.0, 0, "clear")

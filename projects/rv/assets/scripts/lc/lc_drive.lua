@@ -647,6 +647,12 @@ function triggerBlowout()
   return true
 end
 
+-- 车体装甲：每级减少 15% 碰撞耐久损失（满级 -45%）
+function armorDamageScale(level)
+  local lv = math.max(0, math.min(3, level or (upgrades and upgrades.armor) or 0))
+  return 1.0 - 0.15 * lv
+end
+
 -- 碰撞对零部件的额外损伤：轻微剐蹭只掉车体，重撞才伤引擎/轮胎
 function impactPartDamage(drop)
   local d = drop or 0
@@ -908,7 +914,8 @@ function updateDrive(dt)
         local drop = math.abs(prev) - math.abs(proj)
         if drop > 1.5 and impactCd <= 0 then
           impactCd = 0.5
-          dur = math.max(0, dur - math.min(8, drop * VEH.impactK))
+          dur = math.max(0, dur - math.min(8, drop * VEH.impactK) *
+                              armorDamageScale())
           -- 重撞还会伤引擎/轮胎
           local engDmg, tireDmg = impactPartDamage(drop)
           parts.engine = math.max(0, (parts.engine or 100) - engDmg)

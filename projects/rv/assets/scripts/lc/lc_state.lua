@@ -32,7 +32,8 @@ impactCd = 0
 engineWarned, tireWarned = false, false
 fuel, dur = 60, 100
 parts = { engine = 100, tires = 100, battery = 100 }
-upgrades = { engine = 0, tires = 0, cargo = 0, rod = 0, water = 0, fuel = 0 }
+upgrades = { engine = 0, tires = 0, cargo = 0, rod = 0, water = 0, fuel = 0,
+             armor = 0 }
 fuelWarned = false
 dustAcc = 0
 mapOpen = false

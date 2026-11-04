@@ -1962,6 +1962,30 @@ function upgradeCargo()
   return true
 end
 
+-- 车体装甲升级：每级减少 15% 碰撞耐久损失
+function upgradeArmor()
+  upgrades.armor = upgrades.armor or 0
+  if upgrades.armor >= 3 then
+    toast.text = "装甲已经满级"
+    toast.t = 1.8
+    return false
+  end
+  local lv = upgrades.armor
+  local cost = { metal = 4 + lv * 2, cloth = 2 + lv }
+  if not canAfford(cost) then
+    toast.text = "升级材料不足：" .. costText(cost)
+    toast.t = 2.2
+    return false
+  end
+  payCost(cost)
+  upgrades.armor = lv + 1
+  if PlaySfx then PlaySfx("repair") end
+  toast.text = string.format("车体装甲升级到 Lv%d — 碰撞损失 -%d%%",
+                             upgrades.armor, upgrades.armor * 15)
+  toast.t = 2.6
+  return true
+end
+
 -- 水箱容量：基础 120L + 每级 30L
 function waterMax()
   return SURVIVAL.waterMax + (upgrades.water or 0) * (SURVIVAL.waterPerLevel or 30)
