@@ -46,6 +46,7 @@ local coop = {
   materials = { metal = 0, electronics = 0, cloth = 0, wood = 0 },
   inv = {},
   worldSeq = 0, crateList = {}, furnitureList = {},
+  pingX = 0, pingZ = 0, pingT = 0, pingSlot = 0,
   crateSeqApplied = -1, worldSeqApplied = -1,
   autoT = 0, autoDrive = false, autoDriveDone = false,
   actionsDemo = false, actionsDone = false, clampDemo = false,
@@ -506,6 +507,21 @@ function parseOfferToken(str)
   return out
 end
 
+-- 队友位置标记串：x:z:剩余秒:槽位（"-" 表示没有标记）
+function pingToken(x, z, t, slot)
+  if (t or 0) <= 0 then return "-" end
+  return string.format("%.0f:%.0f:%.1f:%d", x or 0, z or 0, t or 0, slot or 0)
+end
+
+function parsePingToken(str)
+  if type(str) ~= "string" or str == "-" or str == "" then return nil end
+  local parts = {}
+  for p in string.gmatch(str, "[^:]+") do parts[#parts + 1] = p end
+  if #parts < 4 then return nil end
+  return { x = tonumber(parts[1]) or 0, z = tonumber(parts[2]) or 0,
+           t = tonumber(parts[3]) or 0, slot = tonumber(parts[4]) or 0 }
+end
+
 -- 每日目标广播串：id:progress:target:done
 local function goalToken()
   if dailyGoal == nil then return "-" end
@@ -578,6 +594,7 @@ local function pushState()
     jobsDone = jobDelivered,
     offers = offerToken(),
     picker = coop.offerPicker and 1 or 0,
+    ping = pingToken(coop.pingX, coop.pingZ, coop.pingT, coop.pingSlot),
     goal = goalOut,
     relay = relayDone and 2 or ((radioMastFixed and 1) or 0),
     tower = waterTowerFixed and 1 or 0,
@@ -966,8 +983,11 @@ local function serverHandleCommand(clientId, a)
       if coop.slots[i].client == clientId then idx = i break end
     end
     local px, pz = s.x or rv.x, s.z or rv.z
+    coop.pingX, coop.pingZ = px, pz
+    coop.pingT, coop.pingSlot = 12, idx
     setToast(string.format("P%d 标记了位置 (%.0f, %.0f)", idx, px, pz))
-    print(string.format("[coop-ping] slot=%d pos=(%.0f,%.0f)", idx, px, pz))
+    print(string.format("[coop-ping] slot=%d pos=(%.0f,%.0f) t=%.0f",
+                        idx, px, pz, coop.pingT))
     pushState()
   elseif t == "eat" then
     local id = chooseFood()
@@ -1139,6 +1159,9 @@ end
 local function serverUpdate(dt)
   drainCommands()
   coop.autoT = coop.autoT + dt
+  if (coop.pingT or 0) > 0 then
+    coop.pingT = math.max(0, coop.pingT - dt)
+  end
 
   -- 顺路货运：服务器权威地判定到点（不限驾驶席，任何人在车上开到了就算送达）
   if job ~= nil and job.stage == "carry" then
@@ -1376,8 +1399,12 @@ local function serverUpdate(dt)
   -- Test-only co-op ping: broadcast a location callout to clients.
   if coop.pingDemo and not coop.pingDemoDone and coop.autoT >= 3.0 then
     coop.pingDemoDone = true
-    setToast(string.format("P1 标记了位置 (%.0f, %.0f)", rv.x, rv.z))
-    print(string.format("[coop-ping] demo ok=true pos=(%.0f,%.0f)", rv.x, rv.z))
+    coop.pingX, coop.pingZ = rv.x + 18, rv.z + 10
+    coop.pingT, coop.pingSlot = 12, 1
+    setToast(string.format("P1 标记了位置 (%.0f, %.0f)",
+                           coop.pingX, coop.pingZ))
+    print(string.format("[coop-ping] demo ok=true marker=(%.0f,%.0f) t=%.0f",
+                        coop.pingX, coop.pingZ, coop.pingT))
     pushState()
   end
 
@@ -2305,6 +2332,15 @@ local function applyState(s)
   end
   if s.picker ~= nil then
     coop.offerPicker = (s.picker == 1)
+  end
+  if s.ping ~= nil and parsePingToken ~= nil then
+    local p = parsePingToken(tostring(s.ping))
+    if p ~= nil then
+      coop.pingX, coop.pingZ = p.x, p.z
+      coop.pingT, coop.pingSlot = p.t, p.slot
+    else
+      coop.pingT = 0
+    end
   end
   if s.goal ~= nil then
     local parts = {}
@@ -3370,6 +3406,13 @@ function coopInvSummary()
     inv.repairkit or 0, inv.fuelcan or 0, inv.smokedfish or 0)
 end
 
+-- 当前队友位置标记（世界 HUD 与小地图共用）
+function coopPingMarker()
+  if (coop.pingT or 0) <= 0 then return nil end
+  return { x = coop.pingX or 0, z = coop.pingZ or 0,
+           t = coop.pingT or 0, slot = coop.pingSlot or 0 }
+end
+
 -- 联机货运板交易按键：4-9 对应前 6 条，T/Y/U 对应后 3 条
 function coopTradeKey(i)
   if i == nil then return "?" end
@@ -3595,6 +3638,20 @@ function coopDrawHud()
     DrawRect((vw - tw) * 0.5, vh - 92, tw, 34, 0.06, 0.07, 0.08, 0.9)
     DrawRectOutline((vw - tw) * 0.5, vh - 92, tw, 34, 0.62, 0.58, 0.42, 0.9)
     DrawText(coop.toast, (vw - tw) * 0.5 + 14, vh - 82, 14, 0.98, 0.92, 0.74, 1)
+  end
+
+  -- 队友位置标记：P 键标记后 12 秒内在世界里显示金色标记
+  local ping = coopPingMarker()
+  if not coop.isServer and ping ~= nil and WorldToScreen ~= nil then
+    local py = (terrainHeight and terrainHeight(ping.x, ping.z)) or 0
+    local sp = WorldToScreen(ping.x, py + 2.2, ping.z)
+    if sp ~= nil and sp.x ~= nil and sp.y ~= nil then
+      local d = math.sqrt((ping.x - rv.x) ^ 2 + (ping.z - rv.z) ^ 2)
+      DrawLine(sp.x, sp.y, sp.x, sp.y - 26, 2, 1.0, 0.82, 0.30, 0.9)
+      DrawCircle(sp.x, sp.y, 5, 1.5, 1.0, 0.82, 0.30, 0.95, false)
+      DrawText(string.format("P%d 标记 %.0fm", ping.slot, d),
+               sp.x - 42, sp.y - 44, 12, 1.0, 0.86, 0.42, 1)
+    end
   end
 
   -- 联机客户端也显示罗盘与小地图（与单机驾驶 HUD 对齐）

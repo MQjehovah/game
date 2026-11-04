@@ -656,6 +656,12 @@ function minimapMarkers()
     out[#out + 1] = { kind = "trap", x = pondTrap.x, z = pondTrap.z,
                       ready = pondTrap.ready == true }
   end
+  if coopPingMarker ~= nil then
+    local p = coopPingMarker()
+    if p ~= nil then
+      out[#out + 1] = { kind = "ping", x = p.x, z = p.z }
+    end
+  end
   return out
 end
 
@@ -825,6 +831,9 @@ function drawMinimap(vw, vh)
     if px2 ~= nil then
       if m.kind == "cache" then
         DrawCircle(px2, py2, 3.0, 1.5, 0.95, 0.75, 0.35, 1, false)
+      elseif m.kind == "ping" then
+        DrawCircle(px2, py2, 4.0, 1.5, 1.0, 0.82, 0.30, 1, false)
+        DrawCircle(px2, py2, 1.5, 1.0, 1.0, 0.88, 0.45, 1, true)
       else
         DrawCircle(px2, py2, 3.2, 1.5, 0.45, 0.90, 0.85,
                    m.ready and 1 or 0.7, m.ready)

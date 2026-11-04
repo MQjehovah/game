@@ -4643,6 +4643,19 @@ function runSelfTest()
        string.format("keys=%s", text))
   end
 
+  -- 联机队友位置标记：x:z:剩余秒:槽位 可编码/解析，过期/空标记为 "-"
+  do
+    local tok = pingToken(18, -10, 7.5, 3)
+    local p = parsePingToken(tok)
+    local none = parsePingToken("-")
+    local expired = pingToken(0, 0, 0, 1)
+    ok(r, "coop ping token",
+       p ~= nil and p.x == 18 and p.z == -10 and
+       math.abs((p.t or 0) - 7.5) < 1e-6 and p.slot == 3 and
+       none == nil and expired == "-",
+       string.format("token=%s", tostring(tok)))
+  end
+
   -- 极低油量供油不稳：2% 以上满动力，越低越弱
   do
     local full = fuelStarvationScale(0.10)
