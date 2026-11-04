@@ -335,6 +335,11 @@ function highBeamAttracts(highBeamValue, nightValue)
   return highBeamValue == true and nightValue == true
 end
 
+-- 夜间远光也会惊走鹿群，降低撞鹿概率（用感染者风险换视野）
+function deerAvoidsHighBeam(highBeamValue, nightValue)
+  return highBeamValue == true and nightValue == true
+end
+
 -- 车身太脏提示（积灰 >=80% 时提示洗车）
 function dirtWarningText(value)
   if (value or 0) < 0.8 then return nil end

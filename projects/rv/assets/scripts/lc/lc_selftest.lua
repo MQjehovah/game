@@ -2193,6 +2193,17 @@ function runSelfTest()
                      tostring(day), tostring(off)))
   end
 
+  -- 夜间远光惊走鹿群：只在高光 + 夜晚成立
+  do
+    local both = deerAvoidsHighBeam(true, true)
+    local day = deerAvoidsHighBeam(true, false)
+    local off = deerAvoidsHighBeam(false, true)
+    ok(r, "deer avoid high beam",
+       both == true and day == false and off == false,
+       string.format("night=%s day=%s off=%s", tostring(both),
+                     tostring(day), tostring(off)))
+  end
+
   -- 保养警示：全部良好为 false，任意一项低则 true
   do
     local ko, kc = oilLife, coolant

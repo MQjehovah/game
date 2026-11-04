@@ -108,6 +108,12 @@ end
 
 -- 野生动物横穿：从路侧冲向另一侧，撞上掉车体耐久/货况；不追车。
 function spawnDriveDeer(n)
+  -- 夜间远光会惊走大部分鹿群，用“招感染者”的风险换视野
+  if deerAvoidsHighBeam ~= nil and
+     deerAvoidsHighBeam(highBeam, isNight ~= nil and isNight()) and
+     math.random() < 0.5 then
+    return
+  end
   local base = 26 + math.random() * 12
   local side = (math.random() < 0.5) and -1 or 1
   for _ = 1, math.min(2, n or 1) do
