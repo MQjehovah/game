@@ -960,6 +960,8 @@
   `[coop-campfire] demo ok=true fire=true fuel=645`，验证联机篝火烹饪。
 - `coop_nap.txt`：服务端 3s 小睡 2 小时，日志
   `[coop-nap] demo ok=true clock=726->846`，验证联机小睡（客机按 4）。
+- `coop_clinic.txt`：服务端 3s 把生命打到 40% 并停到诊所，日志
+  `[coop-clinic] demo ok=true health=70 cloth=26 water=76`，验证联机诊所包扎。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /

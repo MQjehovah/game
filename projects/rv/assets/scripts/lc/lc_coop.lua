@@ -1442,6 +1442,21 @@ local function serverUpdate(dt)
     pushState()
   end
 
+  -- Test-only co-op clinic: wound the player, give cloth/water, park at clinic.
+  if coop.clinicDemo and not coop.clinicDemoDone and coop.autoT >= 3.0 then
+    coop.clinicDemoDone = true
+    local nd = nodeById ~= nil and nodeById("clinic") or nil
+    if nd ~= nil then rv.x, rv.z = nd.x, nd.z end
+    needs.health = 40
+    materials.cloth = math.max(materials.cloth or 0, 2)
+    water = math.max(water or 0, 20)
+    local healed, cost, note = serviceClinicAtRv()
+    print(string.format(
+      "[coop-clinic] demo ok=%s health=%.0f cloth=%d water=%.0f",
+      tostring(healed), needs.health or 0, materials.cloth or 0, water or 0))
+    pushState()
+  end
+
   -- Test-only co-op roadside cache: stand by the first cache and loot it.
   if coop.cacheDemo and not coop.cacheDemoDone and coop.autoT >= 3.0 then
     coop.cacheDemoDone = true
@@ -2853,6 +2868,7 @@ function coopInitWorld(role)
     coop.vehDemo = readFlag("coop_veh.txt")
     coop.campfireDemo = readFlag("coop_campfire.txt")
     coop.napDemo = readFlag("coop_nap.txt")
+    coop.clinicDemo = readFlag("coop_clinic.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -2983,6 +2999,7 @@ function coopInitWorld(role)
     coop.vehDemo = readFlag("coop_veh.txt")
     coop.campfireDemo = readFlag("coop_campfire.txt")
     coop.napDemo = readFlag("coop_nap.txt")
+    coop.clinicDemo = readFlag("coop_clinic.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
