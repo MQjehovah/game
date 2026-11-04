@@ -1574,7 +1574,7 @@ local HELP_SECTIONS = {
     } },
   { title = "步行 / 营地", lines = {
       "WASD       移动，鼠标张望",
-      "E          交互（上车/搜箱/篝火/货运板/收音机）",
+      "E          交互（上车/搜箱/篝火菜单/货运板/收音机）",
       "T          回到房车旁上路",
       "B          合作改装/建造",
       "R          现场维修（消耗修理包）",
@@ -1584,6 +1584,7 @@ local HELP_SECTIONS = {
       "X          喇叭（需在房车旁）",
       "Q          水塘取浑浊水",
       "1 / 2 / 3  吃 / 喝 / 睡觉",
+      "4          在床上小睡 2 小时",
       "0          放弃当前货运合同",
       "联机客机：T 添柴 / V 采浆果",
     } },
@@ -1600,8 +1601,18 @@ local HELP_SECTIONS = {
       "5 / 6      升级货架 / 鱼竿",
       "7 / 8      制作修理包 / 防雨篷布",
       "9 / 0      升级水箱 / 油箱",
+      "A          升级车体装甲",
     } },
 }
+
+-- 帮助面板文本汇总（自检用）
+function helpText()
+  local parts = {}
+  for _, sec in ipairs(HELP_SECTIONS) do
+    for _, line in ipairs(sec.lines) do parts[#parts + 1] = line end
+  end
+  return table.concat(parts, "\n")
+end
 
 function drawHelp()
   if not helpOpen then return end

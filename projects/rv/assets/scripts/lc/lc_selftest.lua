@@ -4262,6 +4262,19 @@ function runSelfTest()
                      tostring(edge), tostring(hint)))
   end
 
+  -- 帮助面板覆盖新增按键：保养 O / 装甲 A / 小睡 4 / 篝火菜单
+  do
+    local text = helpText and helpText() or ""
+    local hasO = text:find("O", 1, true) ~= nil
+    local hasA = text:find("装甲", 1, true) ~= nil
+    local hasNap = text:find("小睡", 1, true) ~= nil
+    local hasFire = text:find("篝火菜单", 1, true) ~= nil
+    ok(r, "help sections",
+       hasO and hasA and hasNap and hasFire,
+       string.format("O=%s armor=%s nap=%s campfire=%s", tostring(hasO),
+                     tostring(hasA), tostring(hasNap), tostring(hasFire)))
+  end
+
   -- 极低油量供油不稳：2% 以上满动力，越低越弱
   do
     local full = fuelStarvationScale(0.10)
