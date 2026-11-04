@@ -55,8 +55,14 @@ local function embankmentHeight(x, z)
   return math.max(0.0, base * taper)
 end
 
--- Bilinear sample of the grid; 0 outside the heightfield extent.
+-- World height at (x, z). The engine's procedural world is authoritative when
+-- the GetGroundHeight binding exists; the legacy JSON heightfield stays as a
+-- fallback for stripped builds and the analytic embankment as the last resort.
 function terrainHeight(x, z)
+  if GetGroundHeight ~= nil then
+    local h = GetGroundHeight(x, z)
+    if h ~= nil then return h end
+  end
   local f = loadField()
   if f == nil then return embankmentHeight(x, z) end
 
@@ -409,8 +415,10 @@ function surfaceInfo(x, z)
     if d2 < 12.0 then return "asphalt", SURFACES.asphalt end
     if d2 < 30.0 then return "gravel", SURFACES.gravel end
   end
-  if x > 4.0 and x < 16.0 and z > -25.0 and z < 47.0 and
-     (terrainHeight(x, z) or 0) > 0.12 then
+  -- Roadside dirt shoulder. The old embankment height check no longer applies
+  -- to the procedural world (the camp starts flat), so the strip itself is the
+  -- surface definition.
+  if x > 4.0 and x < 16.0 and z > -25.0 and z < 47.0 then
     return "dirt", SURFACES.dirt
   end
   if ponds ~= nil then

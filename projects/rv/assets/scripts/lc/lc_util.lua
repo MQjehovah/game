@@ -3,6 +3,11 @@
 
 function cellIndex(cx, cz) return cz * GW + cx end
 
+-- World ground height (procedural terrain when available, legacy fallback).
+function groundAt(x, z)
+  return terrainHeight(x, z)
+end
+
 -- 世界点 -> 房车局部（逆旋转 -yaw）再落格：房车停在任意位置/朝向都能放置
 function worldToCell(x, z)
   local dx, dz = x - rv.x, z - rv.z

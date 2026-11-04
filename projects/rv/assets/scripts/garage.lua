@@ -208,6 +208,7 @@ function saveLayout(silent)
                  wetness = wetness or 0 },
     inventory = inv, water = water,
     day = day, clock = clock, modules = rows, pois = generatedPois,
+    world = { seed = WORLD_SEED or 1337 },
     weather = { id = weather, t = weatherT, next = weatherNext,
                 forecast = weatherNextId },
     lights = { interior = interiorLightsOn and 1 or 0,
@@ -305,6 +306,11 @@ function loadLayout()
     toast.text = "存档格式无效"
     toast.t = 2.5
     return
+  end
+  if type(data.world) == "table" and tonumber(data.world.seed) ~= nil then
+    WORLD_SEED = tonumber(data.world.seed)
+  else
+    WORLD_SEED = WORLD_SEED or 1337   -- v5 老档：默认种子
   end
   if type(data.materials) == "table" then
     for k, v in pairs(data.materials) do
@@ -632,8 +638,13 @@ function on_start()
   -- tools/gen_rv_terrain.py; lc_terrain samples the same grid. The visible mesh
   -- is split into 4x4 chunks so each has a distance LOD chain (4 m near,
   -- 8 m / 12 m far) and can be frustum-culled independently.
-  local span = 72.0
   terrainChunks = {}
+  if WORLD_PROCEDURAL then
+    -- 引擎 TerrainStreamer 负责地面；隐藏旧的 60x60 Ground 板。
+    local g = FindNamedEntity("Ground")
+    if g ~= nil then SetVisible(g, false) end
+  else
+  local span = 72.0
   for iz = 0, 3 do
     for ix = 0, 3 do
       local cx = -144.0 + span * (ix + 0.5)
@@ -653,6 +664,7 @@ function on_start()
     end
   end
   if updateTerrainLod ~= nil then updateTerrainLod(0, true) end
+  end -- WORLD_PROCEDURAL
   spawnMarkers()
   if spawnCampProps ~= nil then spawnCampProps() end
   if spawnBirds ~= nil then spawnBirds() end
@@ -679,6 +691,7 @@ function on_start()
       -- Test-only: the sculpted lathed sink basin in front of the camera.
       SpawnPrefab("rv_furn_sink", { x = 5.0, y = 0.0, z = 1.8 })
     end
+
     -- Test-only: start in the outside chase camera (autopilot screenshots).
     if startMode == "chase" or startMode == "tiretest" or
        startMode == "northdrive" then

@@ -10,6 +10,11 @@ SENSITIVITY = 0.0022        -- 鼠标灵敏度（弧度/像素）
 -- lc_config.lua
 -- 配置：网格/模块目录/生存/载具/低强度威胁/程序化地点
 
+-- 程序化世界种子：写入存档 v6 的 world.seed；老档缺省时用这个值。
+WORLD_SEED = 1337
+-- true = 引擎流式地形接管地面（不再生成 4x4 烘焙 terrain 块，也不显示旧 Ground 板）
+WORLD_PROCEDURAL = true
+
 CATALOG = {
   { id="bed_double", name="双人床",   layer="floor", w=3, h=4, mh=0.45, color="#8A5A44", weight=60,  comfort=30, modelScale=1.0, use="bed",      desc="睡一觉恢复体力" , cost={wood=4,cloth=4}},
   { id="bed_single", name="单人床",   layer="floor", w=2, h=3, mh=0.40, color="#A0714F", weight=35,  comfort=15, modelScale=1.0, use="bed",      desc="睡一觉恢复体力" , cost={wood=2,cloth=2}},

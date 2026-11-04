@@ -194,14 +194,21 @@ function applyRvTransform()
       local wb = rv.wheelBodies and rv.wheelBodies[i]
       local bp = wb and PhysicsGetPosition and PhysicsGetPosition(wb.body)
       if bp ~= nil then
-        SetPosition(w.ent, { x = bp.x, y = bp.y, z = bp.z })
+        -- The physics wheel body sits at the suspension's compressed centre
+        -- (ground + SUSP_R - sag). The visual tire is a full WHEEL_RADIUS
+        -- circle, so placing it at bp.y buried the bottom of the tire in the
+        -- ground. Clamp the visual centre to ground + radius; airborne wheels
+        -- keep their body height.
+        local g = groundAt and groundAt(bp.x, bp.z) or 0
+        local y = math.max(bp.y, g + WHEEL_RADIUS)
+        SetPosition(w.ent, { x = bp.x, y = y, z = bp.z })
       else
         local travel, plane = 0, 0
         if s ~= nil and s.travel ~= nil then
           travel = s.travel[i] or 0
           plane = (s.plane and s.plane[i]) or 0
         end
-        local ly = WHEEL_CENTER_Y + plane + travel
+        local ly = WHEEL_RADIUS + plane + travel
         local ox, oy, oz = rvOffset(w.lx, ly, w.lz)
         SetPosition(w.ent, { x = rv.x + ox, y = gy + oy, z = rv.z + oz })
       end
