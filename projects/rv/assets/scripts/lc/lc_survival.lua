@@ -2155,6 +2155,30 @@ function repairPart(id)
   return true
 end
 
+-- 诊所包扎：生命 <70% 时花 1 布料 + 2L 水，恢复 +30 生命
+function clinicTreatAvailable()
+  return (needs.health or 100) < 70 and (materials.cloth or 0) >= 1
+end
+
+function serviceClinicAtRv()
+  if (needs.health or 100) >= 70 then
+    return false, 0, "生命状态良好"
+  end
+  if (materials.cloth or 0) < 1 then
+    return false, 1, "需要 1 布料"
+  end
+  if (water or 0) < 2 then
+    return false, 0, "需要 2L 水"
+  end
+  materials.cloth = (materials.cloth or 0) - 1
+  useWater(2)
+  healPlayer(30)
+  if addJournal ~= nil then
+    addJournal("在诊所包扎伤口（布料-1 生命+30）", "explore")
+  end
+  return true, 1, "诊所包扎：生命 +30"
+end
+
 -- 加油站快速维修：最差部件 <70% 时修 +25%，按缺失每 25% 收 1 金属
 function repairServiceCost()
   local worst, val = nil, 101

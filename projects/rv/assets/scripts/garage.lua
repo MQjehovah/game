@@ -91,6 +91,14 @@ function setPhase(m)
             end
           end
         end
+        if atNode == "clinic" and serviceClinicAtRv ~= nil then
+          local healOk, healCost, healNote = serviceClinicAtRv()
+          if healOk then
+            toast.text = toast.text .. " · 🩹 " .. (healNote or "已包扎")
+          elseif (healCost or 0) > 0 then
+            toast.text = toast.text .. " · 🩹 " .. (healNote or "未包扎")
+          end
+        end
         -- 首次抵达的一次性补给（每个地点只发一次）
         local visitText = firstVisitBonus ~= nil and firstVisitBonus(nd) or nil
         if visitText ~= nil then

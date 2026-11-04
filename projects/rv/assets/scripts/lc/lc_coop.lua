@@ -1753,6 +1753,27 @@ local function serverUpdate(dt)
     end
   end
 
+  -- 合作服务器：停稳在诊所旁自动包扎（生命 <70% 时，花 1 布料 + 2L 水）
+  coop.clinicCd = (coop.clinicCd or 0) - dt
+  if coop.clinicCd <= 0 and math.abs(rv.speed or 0) < 0.4 and
+     serviceClinicAtRv ~= nil then
+    local clinicNd = nodeById ~= nil and nodeById("clinic") or nil
+    if clinicNd ~= nil then
+      local cdx, cdz = rv.x - clinicNd.x, rv.z - clinicNd.z
+      if cdx * cdx + cdz * cdz < 13 * 13 then
+        coop.clinicCd = 5.0
+        local healOk, healCost, healNote = serviceClinicAtRv()
+        if healOk then
+          print(string.format(
+            "[coop-clinic] ok=true health=%.0f cloth=%d water=%.0f",
+            needs.health or 0, materials.cloth or 0, water or 0))
+          coop.saveDirty = true
+          pushState()
+        end
+      end
+    end
+  end
+
   -- 合作服务器：修好无线电塔并停稳在废弃小镇时完成信号中继
   if radioMastFixed and not relayDone and math.abs(rv.speed or 0) < 0.4 then
     local nd = nodeById("town")

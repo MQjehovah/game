@@ -1966,6 +1966,22 @@ function runSelfTest()
                      gotMetal))
   end
 
+  -- 诊所包扎：生命 <70% 时花 1 布料 + 2L 水，恢复 +30
+  do
+    local kh, kc, kw = needs.health, materials.cloth, water
+    needs.health, materials.cloth, water = 40, 1, 10
+    local healed, healCost, healNote = serviceClinicAtRv()
+    local gotHealth = needs.health
+    local leftCloth = materials.cloth
+    local leftWater = water
+    needs.health, materials.cloth, water = kh, kc, kw
+    ok(r, "clinic treatment",
+       healed and healCost == 1 and gotHealth == 70 and leftCloth == 0 and
+       math.abs(leftWater - 8) < 1e-6,
+       string.format("health=%.0f cloth=%d water=%.0f", gotHealth,
+                     leftCloth, leftWater))
+  end
+
   -- 冷却液不足提示：低于 20% 才提示
   do
     local low = coolantLowText(10)
