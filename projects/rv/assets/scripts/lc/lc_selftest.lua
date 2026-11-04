@@ -2182,6 +2182,17 @@ function runSelfTest()
        string.format("dirty=%s clean=%s", tostring(dirty), tostring(clean)))
   end
 
+  -- 夜间远光招感染者：只在“远光 + 夜晚”成立
+  do
+    local both = highBeamAttracts(true, true)
+    local day = highBeamAttracts(true, false)
+    local off = highBeamAttracts(false, true)
+    ok(r, "high beam risk",
+       both == true and day == false and off == false,
+       string.format("night=%s day=%s off=%s", tostring(both),
+                     tostring(day), tostring(off)))
+  end
+
   -- 保养警示：全部良好为 false，任意一项低则 true
   do
     local ko, kc = oilLife, coolant

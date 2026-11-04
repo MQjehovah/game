@@ -1057,6 +1057,9 @@ function drawDriveHud()
   if (brakeHeat or 0) > 0.6 then
     top = top .. string.format("   · 刹车过热 %.0f%%", (brakeHeat or 0) * 100)
   end
+  if highBeam and isNight ~= nil and isNight() then
+    top = top .. "   · 远光（招感染者）"
+  end
   if maintenanceWarningActive ~= nil and maintenanceWarningActive() then
     top = top .. "   · 保养!"
   end

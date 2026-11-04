@@ -330,6 +330,11 @@ function dirtFuelScale(value)
   return 1.0 + 0.04 * v
 end
 
+-- 夜间开远光会招来感染者（与废宅笔记的提示呼应）
+function highBeamAttracts(highBeamValue, nightValue)
+  return highBeamValue == true and nightValue == true
+end
+
 -- 车身太脏提示（积灰 >=80% 时提示洗车）
 function dirtWarningText(value)
   if (value or 0) < 0.8 then return nil end
@@ -1207,6 +1212,20 @@ function updateDrive(dt)
         spawnHitchhiker()
       end
     end
+  end
+  -- 夜间开远光会招来零散感染者（废宅笔记的警告成真）
+  if coopRole == nil and highBeamAttracts(highBeam, isNight ~= nil and isNight()) then
+    rv.highBeamT = (rv.highBeamT or 0) + dt
+    if rv.highBeamT > 75 then
+      rv.highBeamT = 0
+      if math.random() < 0.45 and spawnDriveHorde ~= nil then
+        spawnDriveHorde(1)
+        toast.text = "远光灯引来了零散感染者——按 H 关远光"
+        toast.t = 3.6
+      end
+    end
+  else
+    rv.highBeamT = math.max(0, (rv.highBeamT or 0) - dt * 2)
   end
   if fuel <= fuelMax() * 0.2 and not fuelWarned then
     fuelWarned = true
