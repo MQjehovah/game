@@ -644,6 +644,33 @@ function dailyGoalHudText()
                        dailyGoal.target or 0)
 end
 
+-- 小地图道路连线：返回两端都在范围内的节点对（绘制/自检共用）
+function minimapRoadPairs(range)
+  local out = {}
+  local r2 = (range or 140) * (range or 140)
+  local seen = {}
+  for _, nd in ipairs(NODES) do
+    local dx, dz = nd.x - rv.x, nd.z - rv.z
+    if dx * dx + dz * dz <= r2 then
+      for _, lid in ipairs(nd.links or {}) do
+        local o = nodeById(lid)
+        if o ~= nil then
+          local ox, oz = o.x - rv.x, o.z - rv.z
+          if ox * ox + oz * oz <= r2 then
+            local key = (nd.id < lid) and (nd.id .. "|" .. lid)
+                                    or (lid .. "|" .. nd.id)
+            if not seen[key] then
+              seen[key] = true
+              out[#out + 1] = { a = nd, b = o }
+            end
+          end
+        end
+      end
+    end
+  end
+  return out
+end
+
 -- 右下角小地图：附近地点、未知 POI、货运目标与 RV 朝向（北在上）
 function drawMinimap(vw, vh)
   local size = 150
@@ -672,6 +699,14 @@ function drawMinimap(vw, vh)
         DrawCircle(px2, py2, 2.5, 1, 0.55, 0.57, 0.55, 0.9, false)
       end
     end
+  end
+  -- 附近道路连线：让局部地图看起来像路网
+  for _, pair in ipairs(minimapRoadPairs and minimapRoadPairs(range) or {}) do
+    local ax = cx + (pair.a.x - rv.x) * scale
+    local ay = cy - (pair.a.z - rv.z) * scale
+    local bx2 = cx + (pair.b.x - rv.x) * scale
+    local by2 = cy - (pair.b.z - rv.z) * scale
+    DrawLine(ax, ay, bx2, by2, 1, 0.58, 0.57, 0.50, 0.40)
   end
   if job ~= nil then
     local nd = nodeById(job.destId)

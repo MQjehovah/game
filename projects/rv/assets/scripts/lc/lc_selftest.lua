@@ -3965,6 +3965,22 @@ function runSelfTest()
                      tostring(hasS), #markers, #afterLoot))
   end
 
+  -- 小地图道路连线：营地附近能连出道路，范围太小时为空
+  do
+    local sx, sz = rv.x, rv.z
+    rv.x, rv.z = 0, 0
+    local near = minimapRoadPairs(140)
+    local tiny = minimapRoadPairs(5)
+    rv.x, rv.z = sx, sz
+    local valid = true
+    for _, p in ipairs(near) do
+      if p.a == nil or p.b == nil then valid = false end
+    end
+    ok(r, "minimap roads",
+       #near >= 2 and #tiny == 0 and valid,
+       string.format("near=%d tiny=%d", #near, #tiny))
+  end
+
   -- 按位置找最近可取补给箱（联机服务器用）
   do
     local c = roadCaches and roadCaches[1] or nil
