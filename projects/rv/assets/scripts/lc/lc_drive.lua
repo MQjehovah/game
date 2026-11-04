@@ -259,6 +259,10 @@ function maintenanceCostText()
   if airCost > 0 then
     parts[#parts + 1] = string.format("充气 %d", airCost)
   end
+  local washCost = washServiceCost()
+  if washCost > 0 then
+    parts[#parts + 1] = string.format("洗车 %d", washCost)
+  end
   if #parts == 0 then return nil end
   return "加油站服务：" .. table.concat(parts, " · ") .. " 金属"
 end

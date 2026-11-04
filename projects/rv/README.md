@@ -106,8 +106,9 @@
   钓鱼、探索、笔记与连送（`journalSummaryText`）；
   自检 `journey log` / `journal summary`，截图 `start_mode=journal`。
 - **车辆保养（O）**：打开保养面板，一屏查看车体/引擎/轮胎/电瓶/机油/冷却液/
-  水温/刹车热量的状态（异常项变红），并列出四轮胎压、胎温、磨损与维护建议，
-  底部还会给出加油站下一次服务的金属花费（`maintenanceCostText`）；
+  水温/刹车热量/清洁度的状态（异常项变红），并列出四轮胎压、胎温、磨损与维护建议，
+  底部还会给出加油站下一次服务的金属花费（含机油/冷却液/充气/洗车，
+  `maintenanceCostText`）；
   任一系统异常时顶部状态条会显示 `保养!`（`maintenanceWarningActive`）；
   截图 `start_mode=maintview`，自检 `maintenance panel` / `maintenance cost` /
   `maintenance warning`。

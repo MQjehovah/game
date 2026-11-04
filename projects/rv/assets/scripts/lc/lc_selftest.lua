@@ -2220,20 +2220,25 @@ function runSelfTest()
        string.format("ok=%s warned=%s", tostring(okAll), tostring(warned)))
   end
 
-  -- 保养花费提示：需要保养时列出费用，全部良好时返回 nil
+  -- 保养花费提示：需要保养时列出费用（含洗车），全部良好时返回 nil
   do
     local ko, kc, kp = oilLife, coolant, rv.tirePressureCold
+    local kdirt = rv.dirt
     oilLife, coolant = 50, 40
     rv.tirePressureCold = { 1.8, 1.8, 1.8, 1.8 }
+    rv.dirt = 0.9
     local need = maintenanceCostText()
     oilLife, coolant = 100, 100
     rv.tirePressureCold = { 2.4, 2.4, 2.4, 2.4 }
+    rv.dirt = 0
     local none = maintenanceCostText()
     oilLife, coolant, rv.tirePressureCold = ko, kc, kp
+    rv.dirt = kdirt
     ok(r, "maintenance cost",
        need ~= nil and need:find("机油", 1, true) ~= nil and
        need:find("冷却液", 1, true) ~= nil and
-       need:find("充气", 1, true) ~= nil and none == nil,
+       need:find("充气", 1, true) ~= nil and
+       need:find("洗车", 1, true) ~= nil and none == nil,
        string.format("need=%s none=%s", tostring(need), tostring(none)))
   end
 
