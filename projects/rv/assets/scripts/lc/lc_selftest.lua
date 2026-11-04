@@ -6302,6 +6302,15 @@ function runSelfTest()
        string.format("60=%.3f 120=%.3f 180=%.3f max=%.3f", a, b, c, d))
   end
 
+  -- 咖啡清醒：同样夜驾时长，疲劳额外 -60%
+  do
+    local coffee = nightFatigueExtra(300, 0, 120)
+    local none = nightFatigueExtra(300, 0, 0)
+    ok(r, "coffee alertness",
+       coffee > 0 and none > 0 and math.abs(coffee - none * 0.4) < 1e-9,
+       string.format("none=%.4f coffee=%.4f", none, coffee))
+  end
+
   -- 睡饱状态：疲劳积累减半，睡觉会刷新 restedMin
   do
     local tired = nightFatigueExtra(300, 0)

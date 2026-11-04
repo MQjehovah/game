@@ -596,6 +596,7 @@ function useItem(id)
   local warmMin = nil
   if id == "brew" then
     nightDriveMin = math.max(0, (nightDriveMin or 0) - 60)
+    coffeeBoostMin = math.max(coffeeBoostMin or 0, 120)
     warmMin = 20
     warmthMin = math.max(warmthMin or 0, warmMin)
   end
@@ -865,12 +866,13 @@ function updateRadioBroadcast(gm)
 end
 
 -- 夜间驾驶疲劳：连续开夜车超过 120 游戏分钟后体力消耗加快；
--- 睡饱（rested）时疲劳积累减半
-function nightFatigueExtra(minutes, rested)
+-- 睡饱（rested）时疲劳积累减半，咖啡清醒（coffee）再减 60%
+function nightFatigueExtra(minutes, rested, coffee)
   local m = minutes or 0
   if m <= 120 then return 0 end
   local extra = math.min(0.020, (m - 120) * 0.0002)
   if (rested or 0) > 0 then extra = extra * 0.5 end
+  if (coffee or 0) > 0 then extra = extra * 0.4 end
   return extra
 end
 
@@ -1016,7 +1018,8 @@ function updateSurvival(dt)
   elseif phase ~= "driving" then
     nightDriveMin = math.max(0, (nightDriveMin or 0) - gm * 0.5)
   end
-  local fatigue = nightFatigueExtra(nightDriveMin, restedMin)
+  coffeeBoostMin = math.max(0, (coffeeBoostMin or 0) - gm)
+  local fatigue = nightFatigueExtra(nightDriveMin, restedMin, coffeeBoostMin)
   needs.energy = math.max(0, needs.energy -
     (SURVIVAL.energyRate + (sprinting and SURVIVAL.sprintExtra or 0) +
      coldExtra + fatigue) * gm)

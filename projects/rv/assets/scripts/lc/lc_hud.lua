@@ -1060,6 +1060,9 @@ function drawDriveHud()
   if highBeam and isNight ~= nil and isNight() then
     top = top .. "   · 远光（招感染者）"
   end
+  if (coffeeBoostMin or 0) > 0 then
+    top = top .. string.format("   · 咖啡清醒 %.0f 分钟", coffeeBoostMin)
+  end
   if maintenanceWarningActive ~= nil and maintenanceWarningActive() then
     top = top .. "   · 保养!"
   end
