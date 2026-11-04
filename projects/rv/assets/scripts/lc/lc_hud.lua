@@ -1624,6 +1624,9 @@ function drawMapHud()
   DrawRect(px, py, pw, ph, 0.07, 0.08, 0.09, 0.93)
   DrawRectOutline(px, py, pw, ph, 0.55, 0.52, 0.42, 0.95)
   DrawText("公路地图", px + 16, py + 10, 16, 0.95, 0.88, 0.7, 1)
+  if weatherForecastText ~= nil then
+    DrawText(weatherForecastText(), px + 100, py + 14, 12, 0.78, 0.82, 0.74, 1)
+  end
   drawTextRight("M 关闭", px + pw - 16, py + 13, 13, 0.6, 0.6, 0.55, 1)
 
   -- 动态边界：包含所有节点与房车

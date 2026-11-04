@@ -5473,6 +5473,17 @@ function runSelfTest()
                      tostring(chained), tostring(rain)))
   end
 
+  -- 天气预报文案：包含当前与下一段天气
+  do
+    local sw, sn, st = weather, weatherNextId, weatherT
+    weather, weatherNextId, weatherT = "clear", "rain", 0
+    local text = weatherForecastText()
+    weather, weatherNextId, weatherT = sw, sn, st
+    ok(r, "weather forecast text",
+       text:find("晴", 1, true) ~= nil and text:find("雨", 1, true) ~= nil,
+       tostring(text))
+  end
+
   -- 天气影响步行速度：雪地最慢、雨天略慢、晴天正常
   do
     local snow = walkSpeedScale("snow")

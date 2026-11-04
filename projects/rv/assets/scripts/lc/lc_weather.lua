@@ -318,6 +318,17 @@ function weatherHoursLeft()
   return left / 60
 end
 
+-- 地图/广播用的天气预报文案
+function weatherForecastText()
+  local now = weatherName()
+  if weatherNextId == nil or WEATHER_NAMES == nil or
+     WEATHER_NAMES[weatherNextId] == nil then
+    return string.format("天气 %s", now)
+  end
+  return string.format("天气 %s → %s（约 %.1fh）", now,
+                       WEATHER_NAMES[weatherNextId], weatherHoursLeft())
+end
+
 function isRainy()
   return weather == "rain" or weather == "fog" or weather == "snow"
 end
