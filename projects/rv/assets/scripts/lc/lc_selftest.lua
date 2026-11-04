@@ -3408,6 +3408,21 @@ function runSelfTest()
        string.format("dry=%.1f rain=%.1f snow=%.1f", dry, rain, snow))
   end
 
+  -- 刹车热：载重更快累积，雨雪散热更快
+  do
+    local light = brakeHeatLoadScale(1.0)
+    local loaded = brakeHeatLoadScale(1.4)
+    local cap = brakeHeatLoadScale(5.0)
+    local dry = brakeCoolScale("clear")
+    local rain = brakeCoolScale("rain")
+    local snow = brakeCoolScale("snow")
+    ok(r, "brake heat scales",
+       light == 1.0 and loaded > light and cap <= 1.6 and
+       dry == 1.0 and rain > dry and snow > rain,
+       string.format("load 1=%.2f 1.4=%.2f 5=%.2f | cool clear=%.2f rain=%.2f snow=%.2f",
+                     light, loaded, cap, dry, rain, snow))
+  end
+
   -- 载重增加轮胎磨损（超载最高 ×2.2）
   do
     local empty = tireWearScale(1.0)

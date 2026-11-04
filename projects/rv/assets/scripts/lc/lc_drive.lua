@@ -406,6 +406,20 @@ function weatherBrakeScale(weatherValue)
   return 1.0
 end
 
+-- 载重越大，刹车热累积越快（超载最高 ×1.6）
+function brakeHeatLoadScale(loadRatio)
+  local over = math.max(0, (loadRatio or 1) - 1.0)
+  return 1.0 + math.min(0.6, over * 0.8)
+end
+
+-- 雨雪天散热更快（水冷/低温），雾天略快
+function brakeCoolScale(weatherValue)
+  if weatherValue == "snow" then return 1.8 end
+  if weatherValue == "rain" then return 1.5 end
+  if weatherValue == "fog" then return 1.1 end
+  return 1.0
+end
+
 function brakeRate(loadRatio, heat, weatherValue)
   local over = math.max(0, (loadRatio or 1) - 1.0)
   return DRIVE.brake / (1.0 + over * 0.60) * brakeFadeScale(heat) *
@@ -1199,9 +1213,11 @@ function updateDrive(dt)
   local brakingHard = (ActionDown("shift") or ActionDown("s")) and
                       math.abs(rv.speed or 0) > 2.5
   if brakingHard then
-    brakeHeat = math.min(1, (brakeHeat or 0) + dt * 0.12)
+    brakeHeat = math.min(1, (brakeHeat or 0) + dt * 0.12 *
+                                   brakeHeatLoadScale(ratio))
   else
-    brakeHeat = math.max(0, (brakeHeat or 0) - dt * 0.05)
+    brakeHeat = math.max(0, (brakeHeat or 0) - dt * 0.05 *
+                                 brakeCoolScale(weather))
   end
   -- 刹车过热时偶发尖叫（1.2s 冷却）
   rv.brakeSquealCd = math.max(0, (rv.brakeSquealCd or 0) - dt)
