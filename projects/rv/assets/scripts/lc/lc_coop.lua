@@ -1040,7 +1040,7 @@ local function poiInsideCount()
   local cx, cz = poiCenter(nd)
   for i = 1, MAX_SLOTS do
     local s = coop.slots[i]
-    if s.joined and math.abs(s.x - cx) < POI_HALF_X and
+    if s ~= nil and s.joined and math.abs(s.x - cx) < POI_HALF_X and
        math.abs(s.z - cz) < POI_HALF_Z then
       n = n + 1
     end
@@ -3137,6 +3137,14 @@ function coopDrawNameTags(vw, vh)
   end
 end
 
+-- 联机 HUD 的随身物资摘要（绘制/自检共用）
+function coopInvSummary()
+  return string.format("箱%d 家具%d 店内%d  热%d 水%d 鱼%d 包%d 罐%d 熏%d",
+    #crates, #sortedInstances(), poiInsideCount(),
+    inv.meal or 0, inv.water or 0, inv.fish or 0,
+    inv.repairkit or 0, inv.fuelcan or 0, inv.smokedfish or 0)
+end
+
 function coopDrawHud()
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
@@ -3157,10 +3165,7 @@ function coopDrawHud()
   DrawText(string.format("材料 金属%d 电子%d 布料%d 木材%d",
            materials.metal or 0, materials.electronics or 0,
            materials.cloth or 0, materials.wood or 0), 26, 110, 12, 0.80, 0.82, 0.76, 1)
-  DrawText(string.format("物资箱 %d   家具 %d 件   商店内 %d 人   热饭 %d   净水 %d",
-           #crates, #sortedInstances(), poiInsideCount(),
-           coop.invMeal or 0, coop.invWater or 0),
-           26, 128, 12, 0.80, 0.82, 0.76, 1)
+  DrawText(coopInvSummary(), 26, 128, 11, 0.80, 0.82, 0.76, 1)
   if coop.veh ~= nil then
     local blow = ""
     if coop.veh.blowout then

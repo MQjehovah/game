@@ -4387,6 +4387,21 @@ function runSelfTest()
                      tostring(hasA), tostring(hasNap), tostring(hasFire)))
   end
 
+  -- 联机随身物资摘要：包含热饭/净水/烤鱼/修理包/燃油罐/烟熏鱼
+  do
+    local km, kw, kf = inv.meal, inv.water, inv.fish
+    local kr, kc, ks = inv.repairkit, inv.fuelcan, inv.smokedfish
+    inv.meal, inv.water, inv.fish = 2, 3, 1
+    inv.repairkit, inv.fuelcan, inv.smokedfish = 1, 4, 5
+    local text = coopInvSummary and coopInvSummary() or ""
+    inv.meal, inv.water, inv.fish = km, kw, kf
+    inv.repairkit, inv.fuelcan, inv.smokedfish = kr, kc, ks
+    ok(r, "coop inv summary",
+       text:find("热2", 1, true) ~= nil and text:find("水3", 1, true) ~= nil and
+       text:find("罐4", 1, true) ~= nil and text:find("熏5", 1, true) ~= nil,
+       text)
+  end
+
   -- 极低油量供油不稳：2% 以上满动力，越低越弱
   do
     local full = fuelStarvationScale(0.10)
