@@ -3321,6 +3321,10 @@ function coopDrawHud()
              tags, coop.jobCrates or 0, jnd and jnd.name or coop.jobDest, jd,
              (coop.jobCond or 1) * 100),
              vw - 500, 40, 12, 0.96, 0.86, 0.52, 1)
+    local bonusTags = (jobDeliveryBonusTags and jobDeliveryBonusTags()) or ""
+    if bonusTags ~= "" then
+      DrawText(bonusTags, vw - 500, 56, 11, 0.80, 0.82, 0.70, 1)
+    end
   elseif (coop.jobsDone or 0) > 0 then
     DrawText(string.format("已完成货运 %d 单", coop.jobsDone),
              vw - 390, 40, 12, 0.78, 0.82, 0.72, 1)

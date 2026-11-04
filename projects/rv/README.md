@@ -1157,7 +1157,8 @@ POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃
   客户端 HUD/`powerOk()` 不再各算各的；合作 smoke 通过。
 - **货运详情同步**：`game_state.job` 为 `dest:crates:cond:flags`
   （flags：1 急单 / 2 易碎 / 4 双站 / 8 易腐 / 16 活畜 / 32 危险品），
-  客户端 HUD 显示目的地、货况百分比与标记；服务器日志可直接看到
+  客户端 HUD 显示目的地、货况百分比与标记，并实时显示当前送达加成
+  （夜间/雨天/雪天/雾天，`jobDeliveryBonusTags`）；服务器日志可直接看到
   `job=poi_3:3:100:3`。
 - **每日目标同步**：`game_state.goal` 为 `id:progress:target:done`，
   客户端合作 HUD 显示 `今日目标 jobs 1/2`；服务器日志可直接看到
