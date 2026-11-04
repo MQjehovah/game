@@ -599,6 +599,7 @@ local function pushState()
     relay = relayDone and 2 or ((radioMastFixed and 1) or 0),
     tower = waterTowerFixed and 1 or 0,
     pump = fuelPumpFixed and 1 or 0,
+    restored = wastelandRestored and 1 or 0,
     fire = campfireOn and 1 or 0,
     fireFuel = math.floor(campfireFuelMin or 0),
   })
@@ -1623,6 +1624,21 @@ local function serverUpdate(dt)
     pushState()
   end
 
+  -- Test-only co-op endgame: mark all infrastructure restored and grant reward.
+  if coop.restoreDemo and not coop.restoreDemoDone and coop.autoT >= 3.0 then
+    coop.restoreDemoDone = true
+    radioMastFixed, relayDone = true, true
+    waterTowerFixed, fuelPumpFixed = true, true
+    wastelandRestored = false
+    local okRestore = false
+    if checkInfrastructureMilestone ~= nil then
+      okRestore = checkInfrastructureMilestone()
+    end
+    print(string.format("[coop-restore] demo ok=%s restored=%s",
+                        tostring(okRestore), tostring(wastelandRestored)))
+    pushState()
+  end
+
   -- Test-only co-op high-beam risk: night + high beam + forced timer.
   if coop.highRiskDemo and not coop.highRiskDemoDone and coop.autoT >= 3.0 then
     coop.highRiskDemoDone = true
@@ -2289,12 +2305,21 @@ local function applyState(s)
   end
   if s.relay ~= nil then
     coop.relay = tonumber(s.relay) or 0
+    radioMastFixed = (coop.relay >= 1)
+    relayDone = (coop.relay >= 2)
   end
   if s.tower ~= nil then
     waterTowerFixed = (s.tower == 1)
   end
   if s.pump ~= nil then
     fuelPumpFixed = (s.pump == 1)
+  end
+  if s.restored ~= nil then
+    local was = wastelandRestored
+    wastelandRestored = (s.restored == 1)
+    if wastelandRestored and not was then
+      setToast("荒原基础设施全部恢复")
+    end
   end
   if s.fire ~= nil and setCampfireLit ~= nil then
     local lit = (s.fire == 1 or s.fire == true)
@@ -3199,6 +3224,7 @@ function coopInitWorld(role)
     coop.highRiskDemo = readFlag("coop_highrisk.txt")
     coop.smokeDemo = readFlag("coop_smoke.txt")
     coop.fuelPumpDemo = readFlag("coop_pump.txt")
+    coop.restoreDemo = readFlag("coop_restore.txt")
     coop.offerDemo = readFlag("coop_offer.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
@@ -3335,6 +3361,7 @@ function coopInitWorld(role)
     coop.highRiskDemo = readFlag("coop_highrisk.txt")
     coop.smokeDemo = readFlag("coop_smoke.txt")
     coop.fuelPumpDemo = readFlag("coop_pump.txt")
+    coop.restoreDemo = readFlag("coop_restore.txt")
     coop.offerDemo = readFlag("coop_offer.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
@@ -3664,6 +3691,12 @@ function coopDrawHud()
              0.86, 0.74, 0.42, 1)
   elseif (coop.relay or 0) == 2 then
     DrawText("信号中继已恢复", vw - 390, 80, 12, 0.60, 0.86, 0.60, 1)
+  end
+  if infrastructureStatusText ~= nil then
+    local infra = infrastructureStatusText()
+    if infra ~= nil then
+      DrawText(infra, vw - 390, 96, 12, 0.78, 0.80, 0.66, 1)
+    end
   end
 
   if coop.buildMode then
