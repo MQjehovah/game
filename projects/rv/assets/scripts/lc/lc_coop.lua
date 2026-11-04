@@ -800,6 +800,25 @@ local function serverHandleCommand(clientId, a)
   elseif t == "job_close" then
     coop.offerPicker = false
     pushState()
+  elseif t == "job_reroll" then
+    local okReroll = false
+    if jobReroll ~= nil then okReroll = jobReroll() end
+    print(string.format("[coop-offer] reroll=%s offers=%d",
+                        tostring(okReroll), #jobOffers))
+    if okReroll then
+      coop.saveDirty = true
+      pushState()
+    end
+  elseif t == "trade" then
+    local idx = tonumber(s.index) or 0
+    local okTrade = false
+    if doTrade ~= nil then okTrade = doTrade(idx) end
+    print(string.format("[coop-offer] trade=%d ok=%s", idx,
+                        tostring(okTrade)))
+    if okTrade then
+      coop.saveDirty = true
+      pushState()
+    end
   elseif t == "job_abandon" then
     if job ~= nil then
       jobAbandon()
@@ -2515,34 +2534,46 @@ local function clientUpdate(dt)
   end
 
   if not coop.buildMode then
-    if ActionPressed("f") then Rpc("game_cmd", { type = "drive" }) end
-    if ActionPressed("l") then Rpc("game_cmd", { type = "lights" }) end
-    if ActionPressed("g") then Rpc("game_cmd", { type = "toggle_stove" }) end
     if coop.offerPicker then
+      -- 货运板打开时按键只作用于面板，避免误触小睡/维修/添柴/水塔。
       if ActionPressed("1") then Rpc("game_cmd", { type = "job_accept", index = 1 }) end
       if ActionPressed("2") then Rpc("game_cmd", { type = "job_accept", index = 2 }) end
       if ActionPressed("3") then Rpc("game_cmd", { type = "job_accept", index = 3 }) end
+      if ActionPressed("4") then Rpc("game_cmd", { type = "trade", index = 1 }) end
+      if ActionPressed("5") then Rpc("game_cmd", { type = "trade", index = 2 }) end
+      if ActionPressed("6") then Rpc("game_cmd", { type = "trade", index = 3 }) end
+      if ActionPressed("7") then Rpc("game_cmd", { type = "trade", index = 4 }) end
+      if ActionPressed("8") then Rpc("game_cmd", { type = "trade", index = 5 }) end
+      if ActionPressed("9") then Rpc("game_cmd", { type = "trade", index = 6 }) end
+      if ActionPressed("t") then Rpc("game_cmd", { type = "trade", index = 7 }) end
+      if ActionPressed("y") then Rpc("game_cmd", { type = "trade", index = 8 }) end
+      if ActionPressed("u") then Rpc("game_cmd", { type = "trade", index = 9 }) end
+      if ActionPressed("r") then Rpc("game_cmd", { type = "job_reroll" }) end
+      if ActionPressed("e") then Rpc("game_cmd", { type = "job_close" }) end
     else
+      if ActionPressed("f") then Rpc("game_cmd", { type = "drive" }) end
+      if ActionPressed("l") then Rpc("game_cmd", { type = "lights" }) end
+      if ActionPressed("g") then Rpc("game_cmd", { type = "toggle_stove" }) end
       if ActionPressed("1") then Rpc("game_cmd", { type = "eat" }) end
       if ActionPressed("2") then Rpc("game_cmd", { type = "drink" }) end
       if ActionPressed("3") then Rpc("game_cmd", { type = "sleep" }) end
+      if ActionPressed("4") then Rpc("game_cmd", { type = "nap" }) end
+      if ActionPressed("0") then Rpc("game_cmd", { type = "job_abandon" }) end
+      if ActionPressed("x") then Rpc("game_cmd", { type = "horn" }) end
+      if ActionPressed("h") then Rpc("game_cmd", { type = "highbeam" }) end
+      if ActionPressed("r") then Rpc("game_cmd", { type = "repair" }) end
+      if ActionPressed("q") then Rpc("game_cmd", { type = "refuel_can" }) end
+      if ActionPressed("k") then Rpc("game_cmd", { type = "workbench_repair" }) end
+      if ActionPressed("c") then Rpc("game_cmd", { type = "cook" }) end
+      if ActionPressed("n") then Rpc("game_cmd", { type = "mast_repair" }) end
+      if ActionPressed("p") then Rpc("game_cmd", { type = "ping" }) end
+      if ActionPressed("u") then Rpc("game_cmd", { type = "watertower" }) end
+      if ActionPressed("t") then Rpc("game_cmd", { type = "firewood" }) end
+      if ActionPressed("v") then Rpc("game_cmd", { type = "berry" }) end
+      if ActionPressed("z") then Rpc("game_cmd", { type = "pond_trap" }) end
+      if ActionPressed("j") then Rpc("game_cmd", { type = "toggle_chains" }) end
+      if ActionPressed("o") then maintOpen = not maintOpen end
     end
-    if ActionPressed("4") then Rpc("game_cmd", { type = "nap" }) end
-    if ActionPressed("0") then Rpc("game_cmd", { type = "job_abandon" }) end
-    if ActionPressed("x") then Rpc("game_cmd", { type = "horn" }) end
-    if ActionPressed("h") then Rpc("game_cmd", { type = "highbeam" }) end
-    if ActionPressed("r") then Rpc("game_cmd", { type = "repair" }) end
-    if ActionPressed("q") then Rpc("game_cmd", { type = "refuel_can" }) end
-    if ActionPressed("k") then Rpc("game_cmd", { type = "workbench_repair" }) end
-    if ActionPressed("c") then Rpc("game_cmd", { type = "cook" }) end
-    if ActionPressed("n") then Rpc("game_cmd", { type = "mast_repair" }) end
-    if ActionPressed("p") then Rpc("game_cmd", { type = "ping" }) end
-    if ActionPressed("u") then Rpc("game_cmd", { type = "watertower" }) end
-    if ActionPressed("t") then Rpc("game_cmd", { type = "firewood" }) end
-    if ActionPressed("v") then Rpc("game_cmd", { type = "berry" }) end
-    if ActionPressed("z") then Rpc("game_cmd", { type = "pond_trap" }) end
-    if ActionPressed("j") then Rpc("game_cmd", { type = "toggle_chains" }) end
-    if ActionPressed("o") then maintOpen = not maintOpen end
     if coop.highDemo and not coop.highDemoDone then
       coop.highDemoT = (coop.highDemoT or 0) + dt
       if coop.highDemoT >= 3.0 and GetVar("netConnected") == 1 then
@@ -2561,7 +2592,7 @@ local function clientUpdate(dt)
                             #(maintenanceRows and maintenanceRows() or {})))
       end
     end
-    if ActionPressed("e") then
+    if ActionPressed("e") and not coop.offerPicker then
       if inside then
         Rpc("game_cmd", { type = "exit" })
       else
@@ -3335,21 +3366,33 @@ function coopInvSummary()
     inv.repairkit or 0, inv.fuelcan or 0, inv.smokedfish or 0)
 end
 
--- 联机合同选择面板：1-3 接单，E 关闭
+-- 联机货运板交易按键：4-9 对应前 6 条，T/Y/U 对应后 3 条
+function coopTradeKey(i)
+  if i == nil then return "?" end
+  if i <= 6 then return tostring(i + 3) end
+  if i == 7 then return "T" end
+  if i == 8 then return "Y" end
+  return "U"
+end
+
+-- 联机合同选择面板：1-3 接单，4-9/T/Y/U 交易，R 刷新，E 关闭
 function drawCoopJobOffers()
   if not coop.offerPicker then return end
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
   local list = coop.offers or {}
+  local trades = TRADES or {}
   local pw = 580
-  local ph = 120 + math.max(1, #list) * 44
+  local tradesH = (#trades > 0) and (36 + #trades * 24) or 0
+  local ph = 120 + math.max(1, #list) * 44 + tradesH
   local px = math.floor((vw - pw) * 0.5)
   local py = math.floor((vh - ph) * 0.5)
   DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.95)
   DrawRectOutline(px, py, pw, ph, 0.72, 0.62, 0.38, 0.95)
   drawTextCentered("货运板 · 选择合同", vw * 0.5, py + 12, 20, 0.98, 0.90, 0.68, 1)
-  DrawText("1-3 接单   E 关闭", px + pw - 156, py + 16, 12, 0.68, 0.70, 0.64, 1)
+  DrawText("1-3 接单   R 刷新   E 关闭", px + pw - 216, py + 16, 12,
+           0.68, 0.70, 0.64, 1)
   if #list == 0 then
     DrawText("暂时没有合同", px + 24, py + 64, 14, 0.70, 0.70, 0.64, 1)
   end
@@ -3373,6 +3416,23 @@ function drawCoopJobOffers()
     drawTextRight(string.format("金属 x%d", o.payMetal or 0),
                   px + pw - 22, y, 13, 0.88, 0.82, 0.62, 1)
   end
+  local ty = py + 56 + math.max(1, #list) * 44 + 10
+  if #trades > 0 then
+    DrawText("以物易物", px + 26, ty, 14, 0.96, 0.84, 0.56, 1)
+    ty = ty + 22
+    for i, tr in ipairs(trades) do
+      local avail = (tradeAvailable == nil) or tradeAvailable(tr)
+      DrawRect(px + 16, ty - 2, pw - 32, 22,
+               avail and 0.08 or 0.10, 0.09, 0.07, 0.75)
+      DrawText(string.format("[%s]", coopTradeKey(i)), px + 26, ty, 13,
+               avail and 0.95 or 0.52, avail and 0.86 or 0.52, 0.54, 1)
+      DrawText(tr.name, px + 70, ty, 12,
+               avail and 0.90 or 0.58, avail and 0.88 or 0.60, 0.76, 1)
+      ty = ty + 24
+    end
+  end
+  DrawText("4-9/T/Y/U 以物易物   R 花 1 金属刷新合同", px + 20, py + ph - 26,
+           11, 0.70, 0.72, 0.66, 1)
 end
 
 function coopDrawHud()

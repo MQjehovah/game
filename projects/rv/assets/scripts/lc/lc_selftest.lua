@@ -4603,6 +4603,14 @@ function runSelfTest()
        tostring(tok))
   end
 
+  -- 联机货运板交易按键：前 6 条 4-9，后 3 条 T/Y/U
+  do
+    local text = ""
+    for i = 1, 9 do text = text .. coopTradeKey(i) end
+    ok(r, "coop trade keys", text == "456789TYU",
+       string.format("keys=%s", text))
+  end
+
   -- 极低油量供油不稳：2% 以上满动力，越低越弱
   do
     local full = fuelStarvationScale(0.10)
