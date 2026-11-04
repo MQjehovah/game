@@ -5559,6 +5559,26 @@ function runSelfTest()
                      tostring(names["鲟鱼"])))
   end
 
+  -- 限定鱼种：鳗鱼只在夜间，冰鱼只在雪天
+  do
+    local eel = nil
+    local ice = nil
+    for _, sp in ipairs(FISH_SPECIES) do
+      if sp.name == "鳗鱼" then eel = sp end
+      if sp.name == "冰鱼" then ice = sp end
+    end
+    local eelDay = eel and fishWeight(eel, "clear", false) or nil
+    local eelNight = eel and fishWeight(eel, "clear", true) or nil
+    local iceClear = ice and fishWeight(ice, "clear", false) or nil
+    local iceSnow = ice and fishWeight(ice, "snow", true) or nil
+    ok(r, "conditional fish species",
+       eel ~= nil and ice ~= nil and eelDay == 0 and (eelNight or 0) > 0 and
+       iceClear == 0 and (iceSnow or 0) > 0,
+       string.format("eel day=%s night=%s ice clear=%s snow=%s",
+                     tostring(eelDay), tostring(eelNight),
+                     tostring(iceClear), tostring(iceSnow)))
+  end
+
   -- 旅行日志：记录、封顶与内容
   do
     local keep = journal

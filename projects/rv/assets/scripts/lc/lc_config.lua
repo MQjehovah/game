@@ -100,6 +100,8 @@ FISH_SPECIES = {
   { name = "黑鱼", w = 5,  min = 38, max = 88 },
   { name = "狗鱼", w = 9,  min = 30, max = 92 },
   { name = "鲟鱼", w = 3,  min = 60, max = 110 },
+  { name = "鳗鱼", w = 7,  min = 40, max = 95, nightOnly = true },
+  { name = "冰鱼", w = 5,  min = 25, max = 60, snowOnly = true },
 }
 
 -- 工作台可维修的车体/零件

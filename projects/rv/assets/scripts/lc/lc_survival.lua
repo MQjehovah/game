@@ -1204,6 +1204,9 @@ end
 -- 鱼种偏好：雨天/夜间鲶鱼、黑鱼更活跃；晴天鲫鱼、鳊鱼略多
 function fishWeight(sp, weatherValue, night)
   local w = sp.w or 1
+  -- 稀有鱼种只在特定时段/天气出现
+  if sp.nightOnly and not night then return 0 end
+  if sp.snowOnly and weatherValue ~= "snow" then return 0 end
   local name = sp.name
   if name == "鲶鱼" or name == "黑鱼" then
     if weatherValue == "rain" then w = w * 1.6 end
