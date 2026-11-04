@@ -472,6 +472,40 @@ local function jobToken()
                        math.floor((job.condition or 1) * 100), flags)
 end
 
+-- 货运板三张合同串：destId:crates:payMetal:flags:cargoId;...
+function offerToken()
+  if jobOffers == nil or #jobOffers == 0 then return "-" end
+  local out = {}
+  for _, o in ipairs(jobOffers) do
+    local flags = (o.urgent and 1 or 0) + (o.fragile and 2 or 0) +
+                  (o.stops and 4 or 0) + (o.perishable and 8 or 0) +
+                  (o.livestock and 16 or 0) + (o.hazmat and 32 or 0)
+    out[#out + 1] = string.format("%s:%d:%d:%d:%s",
+      tostring(o.destId or "?"), o.crates or 1,
+      (o.pay and o.pay.metal) or 0, flags, tostring(o.cargoId or "?"))
+  end
+  return table.concat(out, ";")
+end
+
+function parseOfferToken(str)
+  if type(str) ~= "string" or str == "-" or str == "" then return {} end
+  local out = {}
+  for entry in string.gmatch(str, "[^;]+") do
+    local parts = {}
+    for p in string.gmatch(entry, "[^:]+") do parts[#parts + 1] = p end
+    if parts[1] ~= nil then
+      out[#out + 1] = {
+        destId = parts[1],
+        crates = tonumber(parts[2]) or 1,
+        payMetal = tonumber(parts[3]) or 0,
+        flags = tonumber(parts[4]) or 0,
+        cargoId = parts[5] or "?",
+      }
+    end
+  end
+  return out
+end
+
 -- 每日目标广播串：id:progress:target:done
 local function goalToken()
   if dailyGoal == nil then return "-" end
@@ -501,15 +535,15 @@ local function pushState()
     local s = coop.slots[i]
     if s.joined and s.inside then anyInside = true end
   end
+  -- 紧凑数组：客户端按 [client,x,z,yaw,gy,joined,inside,seat,key] 解析，
+  -- 比对象字段名省一半空间，避免 game_state 超过可靠帧上限被丢弃。
   for i = 1, MAX_SLOTS do
     local s = coop.slots[i]
     players[i] = {
-      c = s.client, x = q3(s.x), z = q3(s.z), y = q3(s.yaw),
-      gy = q3(s.gy or 0),
-      j = s.joined and 1 or 0,
-      ins = s.inside and 1 or 0,
-      st = (s.seat == "driver" and 2) or (s.seat == "passenger" and 1) or 0,
-      k = s.key,
+      s.client or 0, q3(s.x), q3(s.z), q3(s.yaw), q3(s.gy or 0),
+      s.joined and 1 or 0, s.inside and 1 or 0,
+      (s.seat == "driver" and 2) or (s.seat == "passenger" and 1) or 0,
+      s.key or "",
     }
   end
   -- Quantise the slow-moving needs/clock so the game_state JSON stays well
@@ -518,19 +552,6 @@ local function pushState()
   local needsOut = {}
   for k, v in pairs(needs) do
     needsOut[k] = math.floor((tonumber(v) or 0) * 10 + 0.5) / 10
-  end
-  local invList = {}
-  for id, n in pairs(inv) do
-    if (n or 0) > 0 then invList[#invList + 1] = { id = id, n = n } end
-  end
-  local furnOn = {}
-  for _, id in ipairs({ "stove", "fridge", "bed", "coffee", "plant", "workbench" }) do
-    furnOn[#furnOn + 1] = { id = id, on = furnState(id) and 1 or 0 }
-  end
-  local glass = "-"
-  if poiGlassBrokenList ~= nil then
-    local gb = poiGlassBrokenList()
-    if gb ~= nil and gb ~= "" then glass = gb end
   end
   local rvOut = { x = q3(coop.rv.x), z = q3(coop.rv.z),
                   yaw = q3(coop.rv.yaw), speed = q3(coop.rv.speed),
@@ -547,20 +568,42 @@ local function pushState()
     weather = coop.weather, lights = coop.lights and 1 or 0,
     high = highBeam and 1 or 0,
     battery = math.floor((batteryCharge or 0) * 100 + 0.5) / 100,
-    materials = materials, inv = invList, furn = furnOn,
+    materials = materials,
     crates = #crates, furnCount = #sortedInstances(), worldSeq = coop.worldSeq,
     door = anyInside and 1 or 0,
     carry = coop.carrySlot or 0,
     rollup = coop.rollup and 1 or 0,
     barndoor = coop.barnDoor and 1 or 0,
-    glass = glass,
     job = jobOut,
     jobsDone = jobDelivered,
+    offers = offerToken(),
+    picker = coop.offerPicker and 1 or 0,
     goal = goalOut,
     relay = relayDone and 2 or ((radioMastFixed and 1) or 0),
     tower = waterTowerFixed and 1 or 0,
     fire = campfireOn and 1 or 0,
     fireFuel = math.floor(campfireFuelMin or 0),
+  })
+end
+
+-- 大块显示数据（库存/家具/车况/玻璃/笔记）单独低频发送，
+-- 避免和 game_state 挤在同一个可靠帧里超过 1 KB 上限而被丢弃。
+local function pushDetail()
+  local invList = {}
+  for id, n in pairs(inv) do
+    if (n or 0) > 0 then invList[#invList + 1] = { id = id, n = n } end
+  end
+  local furnOn = {}
+  for _, id in ipairs({ "stove", "fridge", "bed", "coffee", "plant", "workbench" }) do
+    furnOn[#furnOn + 1] = { id = id, on = furnState(id) and 1 or 0 }
+  end
+  local glass = "-"
+  if poiGlassBrokenList ~= nil then
+    local gb = poiGlassBrokenList()
+    if gb ~= nil and gb ~= "" then glass = gb end
+  end
+  Rpc("game_detail", {
+    inv = invList, furn = furnOn, glass = glass,
     oil = math.floor(oilLife or 100),
     coolant = math.floor(coolant or 100),
     veh = vehicleConditionToken and vehicleConditionToken() or "-",
@@ -729,19 +772,34 @@ local function serverHandleCommand(clientId, a)
     coop.lights = not coop.lights
     setToast(coop.lights and "车内灯已打开" or "车内灯已关闭")
   elseif t == "job" then
-    -- 走到营地货运板按 E：接第一张顺路合同（服务端权威）
+    -- 走到货运板按 E：让客机从三张合同里选一张（服务端权威）
     if job ~= nil then
       setToast("已载货：送到 " .. nodeName(job.destId))
     else
       jobRefreshOffers()
       if #jobOffers > 0 then
-        jobAccept(1)
-        coop.saveDirty = true
+        coop.offerPicker = true
+        setToast("货运板：按 1/2/3 选择合同，E 关闭")
         pushState()
       else
         setToast("这一带暂时没有可接的合同")
       end
     end
+  elseif t == "job_accept" then
+    if coop.offerPicker and job == nil and s.index ~= nil then
+      local idx = tonumber(s.index) or 0
+      if jobAccept(idx) then
+        coop.offerPicker = false
+        coop.saveDirty = true
+        setToast("已接合同：送到 " .. nodeName(job.destId))
+      else
+        setToast("没有这张合同")
+      end
+      pushState()
+    end
+  elseif t == "job_close" then
+    coop.offerPicker = false
+    pushState()
   elseif t == "job_abandon" then
     if job ~= nil then
       jobAbandon()
@@ -1475,6 +1533,16 @@ local function serverUpdate(dt)
                         coop.highRiskT))
   end
 
+  -- Test-only co-op job offer picker: open the board with three offers.
+  if coop.offerDemo and not coop.offerDemoDone and coop.autoT >= 3.0 then
+    coop.offerDemoDone = true
+    jobRefreshOffers()
+    coop.offerPicker = (#jobOffers > 0)
+    print(string.format("[coop-offer] demo offers=%d token=%s",
+                        #jobOffers, offerToken()))
+    pushState()
+  end
+
   -- Test-only co-op clinic: wound the player, give cloth/water, park at clinic.
   if coop.clinicDemo and not coop.clinicDemoDone and coop.autoT >= 3.0 then
     coop.clinicDemoDone = true
@@ -1988,6 +2056,11 @@ local function serverUpdate(dt)
     coop.stateT = 0
     pushState()
   end
+  coop.detailT = (coop.detailT or 0) + dt
+  if coop.detailT >= 0.5 then
+    coop.detailT = 0
+    pushDetail()
+  end
   coop.poseT = coop.poseT + dt
   if coop.poseT >= 0.05 then
     coop.poseT = 0
@@ -2035,18 +2108,18 @@ local function clientLog(s)
     "[coop-main-client] seq=%d name=%s slot=%d id=%.0f rv=(%.2f,%.2f,yaw=%.2f) p1=(%.2f,%.2f) p2=(%.2f,%.2f) p3=(%.2f,%.2f) p4=(%.2f,%.2f) fuel=%.1f water=%.1f metal=%d crates=%d meal=%d waterItem=%d stove=%d fridge=%d bed=%d hunger=%.1f furn=%d in1=%d in2=%d in3=%d in4=%d door=%d shop=%d rollup=%s barndoor=%s glass=%s job=%s batt=%.2f goal=%s high=%s",
     s.seq, tostring(GetVar("playerName")), coop.mySlot, coop.myClientId or 0,
     s.rv.x, s.rv.z, s.rv.yaw,
-    (p[1] and p[1].x) or 0, (p[1] and p[1].z) or 0,
-    (p[2] and p[2].x) or 0, (p[2] and p[2].z) or 0,
-    (p[3] and p[3].x) or 0, (p[3] and p[3].z) or 0,
-    (p[4] and p[4].x) or 0, (p[4] and p[4].z) or 0,
+    (p[1] and p[1][2]) or 0, (p[1] and p[1][3]) or 0,
+    (p[2] and p[2][2]) or 0, (p[2] and p[2][3]) or 0,
+    (p[3] and p[3][2]) or 0, (p[3] and p[3][3]) or 0,
+    (p[4] and p[4][2]) or 0, (p[4] and p[4][3]) or 0,
     s.fuel or 0, s.water or 0, (s.materials and s.materials.metal) or 0,
     s.crates or 0, coop.invMeal or 0, coop.invWater or 0,
     (s.furn and s.furn[1] and s.furn[1].on) or 0,
     (s.furn and s.furn[2] and s.furn[2].on) or 0,
     (s.furn and s.furn[3] and s.furn[3].on) or 0,
     (s.needs and s.needs.hunger) or 0, s.furnCount or 0,
-    (p[1] and p[1].ins) or 0, (p[2] and p[2].ins) or 0,
-    (p[3] and p[3].ins) or 0, (p[4] and p[4].ins) or 0, s.door or 0, shop,
+    (p[1] and p[1][7]) or 0, (p[2] and p[2][7]) or 0,
+    (p[3] and p[3][7]) or 0, (p[4] and p[4][7]) or 0, s.door or 0, shop,
     tostring(s.rollup or 0), tostring(s.barndoor or 0), tostring(s.glass or "-"),
     tostring(s.job or "-"), batteryCharge or 0, tostring(s.goal or "-"),
     tostring(coop.high)))
@@ -2204,6 +2277,12 @@ local function applyState(s)
     end
   end
   coop.jobsDone = tonumber(s.jobsDone) or coop.jobsDone
+  if s.offers ~= nil and parseOfferToken ~= nil then
+    coop.offers = parseOfferToken(tostring(s.offers))
+  end
+  if s.picker ~= nil then
+    coop.offerPicker = (s.picker == 1)
+  end
   if s.goal ~= nil then
     local parts = {}
     for p in string.gmatch(tostring(s.goal), "([^:]+)") do parts[#parts + 1] = p end
@@ -2220,43 +2299,46 @@ local function applyState(s)
   if type(s.players) == "table" then
     for i, p in ipairs(s.players) do
       local st = coop.slots[i]
-      if st ~= nil then
-        st.client = p.c or 0
-        st.joined = (p.j == 1)
-        st.x = p.x or st.x
-        st.z = p.z or st.z
-        st.yaw = p.y or st.yaw
-        st.gy = tonumber(p.gy) or st.gy or 0
-        st.driving = (p.st == 2)
-        st.inside = (p.ins == 1)
-        st.seat = (p.st == 2) and "driver" or ((p.st == 1) and "passenger" or nil)
-        st.key = p.k or st.key
+      if st ~= nil and type(p) == "table" then
+        st.client = p[1] or 0
+        st.joined = (p[6] == 1)
+        st.x = p[2] or st.x
+        st.z = p[3] or st.z
+        st.yaw = p[4] or st.yaw
+        st.gy = tonumber(p[5]) or st.gy or 0
+        st.driving = (p[8] == 2)
+        st.inside = (p[7] == 1)
+        st.seat = (p[8] == 2) and "driver" or ((p[8] == 1) and "passenger" or nil)
+        st.key = p[9] or st.key
       end
     end
   end
-  coop.doorTarget = (s.door == 1) and (math.pi * 0.5) or 0
+  if s.door ~= nil then
+    coop.doorTarget = (s.door == 1) and (math.pi * 0.5) or 0
+  end
 
   if type(s.players) == "table" and coop.myClientId ~= nil then
     for i, p in ipairs(s.players) do
-      if p.c == coop.myClientId then
+      if type(p) == "table" and p[1] == coop.myClientId then
         coop.mySlot = i
         if not coop.haveSelf then
           coop.haveSelf = true
-          coop.localPos.x = p.x
-          coop.localPos.z = p.z
-          coop.localPos.yaw = p.y or 0
-          coop.lookYaw = p.y or 0
+          coop.localPos.x = p[2] or 0
+          coop.localPos.z = p[3] or 0
+          coop.localPos.yaw = p[4] or 0
+          coop.lookYaw = p[4] or 0
         else
-          local dx, dz = (p.x or 0) - coop.localPos.x, (p.z or 0) - coop.localPos.z
+          local dx, dz = (p[2] or 0) - coop.localPos.x,
+                         (p[3] or 0) - coop.localPos.z
           local d = math.sqrt(dx * dx + dz * dz)
           if d > 1.5 then
-            coop.localPos.x, coop.localPos.z = p.x, p.z
+            coop.localPos.x, coop.localPos.z = p[2] or 0, p[3] or 0
           else
             coop.localPos.x = coop.localPos.x + dx * 0.25
             coop.localPos.z = coop.localPos.z + dz * 0.25
           end
         end
-        if p.k ~= nil then SetVar("netControlKey", p.k) end
+        if p[9] ~= nil then SetVar("netControlKey", p[9]) end
         break
       end
     end
@@ -2276,6 +2358,10 @@ local function clientUpdate(dt)
     local cmd = NetCommand()
     if cmd == nil then break end
     if cmd.name == "game_state" then
+      local s = nil
+      if type(cmd.args) == "string" and cmd.args ~= "" then s = Json.Parse(cmd.args) end
+      if type(s) == "table" then applyState(s) end
+    elseif cmd.name == "game_detail" then
       local s = nil
       if type(cmd.args) == "string" and cmd.args ~= "" then s = Json.Parse(cmd.args) end
       if type(s) == "table" then applyState(s) end
@@ -2432,9 +2518,15 @@ local function clientUpdate(dt)
     if ActionPressed("f") then Rpc("game_cmd", { type = "drive" }) end
     if ActionPressed("l") then Rpc("game_cmd", { type = "lights" }) end
     if ActionPressed("g") then Rpc("game_cmd", { type = "toggle_stove" }) end
-    if ActionPressed("1") then Rpc("game_cmd", { type = "eat" }) end
-    if ActionPressed("2") then Rpc("game_cmd", { type = "drink" }) end
-    if ActionPressed("3") then Rpc("game_cmd", { type = "sleep" }) end
+    if coop.offerPicker then
+      if ActionPressed("1") then Rpc("game_cmd", { type = "job_accept", index = 1 }) end
+      if ActionPressed("2") then Rpc("game_cmd", { type = "job_accept", index = 2 }) end
+      if ActionPressed("3") then Rpc("game_cmd", { type = "job_accept", index = 3 }) end
+    else
+      if ActionPressed("1") then Rpc("game_cmd", { type = "eat" }) end
+      if ActionPressed("2") then Rpc("game_cmd", { type = "drink" }) end
+      if ActionPressed("3") then Rpc("game_cmd", { type = "sleep" }) end
+    end
     if ActionPressed("4") then Rpc("game_cmd", { type = "nap" }) end
     if ActionPressed("0") then Rpc("game_cmd", { type = "job_abandon" }) end
     if ActionPressed("x") then Rpc("game_cmd", { type = "horn" }) end
@@ -2478,7 +2570,11 @@ local function clientUpdate(dt)
         local dx, dz = doorWorld()
         local dd = math.sqrt((coop.localPos.x - dx) ^ 2 + (coop.localPos.z - dz) ^ 2)
         if bd <= JOBS.boardRadius then
-          Rpc("game_cmd", { type = "job" })
+          if coop.offerPicker then
+            Rpc("game_cmd", { type = "job_close" })
+          else
+            Rpc("game_cmd", { type = "job" })
+          end
         elseif dd <= 3.5 then
           Rpc("game_cmd", { type = "board" })
         else
@@ -2959,6 +3055,7 @@ function coopInitWorld(role)
     coop.clinicDemo = readFlag("coop_clinic.txt")
     coop.towerDemo = readFlag("coop_tower.txt")
     coop.highRiskDemo = readFlag("coop_highrisk.txt")
+    coop.offerDemo = readFlag("coop_offer.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -3092,6 +3189,7 @@ function coopInitWorld(role)
     coop.clinicDemo = readFlag("coop_clinic.txt")
     coop.towerDemo = readFlag("coop_tower.txt")
     coop.highRiskDemo = readFlag("coop_highrisk.txt")
+    coop.offerDemo = readFlag("coop_offer.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
@@ -3235,6 +3333,46 @@ function coopInvSummary()
     #crates, #sortedInstances(), poiInsideCount(),
     inv.meal or 0, inv.water or 0, inv.fish or 0,
     inv.repairkit or 0, inv.fuelcan or 0, inv.smokedfish or 0)
+end
+
+-- 联机合同选择面板：1-3 接单，E 关闭
+function drawCoopJobOffers()
+  if not coop.offerPicker then return end
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local list = coop.offers or {}
+  local pw = 580
+  local ph = 120 + math.max(1, #list) * 44
+  local px = math.floor((vw - pw) * 0.5)
+  local py = math.floor((vh - ph) * 0.5)
+  DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.95)
+  DrawRectOutline(px, py, pw, ph, 0.72, 0.62, 0.38, 0.95)
+  drawTextCentered("货运板 · 选择合同", vw * 0.5, py + 12, 20, 0.98, 0.90, 0.68, 1)
+  DrawText("1-3 接单   E 关闭", px + pw - 156, py + 16, 12, 0.68, 0.70, 0.64, 1)
+  if #list == 0 then
+    DrawText("暂时没有合同", px + 24, py + 64, 14, 0.70, 0.70, 0.64, 1)
+  end
+  for i, o in ipairs(list) do
+    local nd = (nodeById ~= nil) and nodeById(o.destId) or nil
+    local name = (nd and nd.name) or tostring(o.destId)
+    local f = o.flags or 0
+    local tags = ""
+    if math.floor(f / 1) % 2 == 1 then tags = tags .. "[急]" end
+    if math.floor(f / 2) % 2 == 1 then tags = tags .. "[易碎]" end
+    if math.floor(f / 8) % 2 == 1 then tags = tags .. "[易腐]" end
+    if math.floor(f / 16) % 2 == 1 then tags = tags .. "[活畜]" end
+    if math.floor(f / 32) % 2 == 1 then tags = tags .. "[危险品]" end
+    if math.floor(f / 4) % 2 == 1 then tags = tags .. "[2站]" end
+    local y = py + 56 + (i - 1) * 44
+    DrawRect(px + 16, y - 4, pw - 32, 38, 0.08, 0.09, 0.08, 0.8)
+    DrawText("[" .. i .. "]", px + 26, y, 16, 0.96, 0.86, 0.52, 1)
+    local cargoName = (jobCargoName and jobCargoName(o.cargoId)) or tostring(o.cargoId)
+    DrawText(string.format("%s%s x%d → %s", tags, cargoName, o.crates or 1, name),
+             px + 70, y, 14, 0.94, 0.92, 0.84, 1)
+    drawTextRight(string.format("金属 x%d", o.payMetal or 0),
+                  px + pw - 22, y, 13, 0.88, 0.82, 0.62, 1)
+  end
 end
 
 function coopDrawHud()
@@ -3399,6 +3537,7 @@ function coopDrawHud()
     if drawMinimap ~= nil then drawMinimap(vw, vh) end
     if coopDrawNameTags ~= nil then coopDrawNameTags(vw, vh) end
   end
+  if drawCoopJobOffers ~= nil then drawCoopJobOffers() end
 end
 
 function on_player_join(clientId, name)

@@ -4580,6 +4580,29 @@ function runSelfTest()
        text)
   end
 
+  -- 联机合同串：三张合同可编码/解析
+  do
+    local keep = jobOffers
+    jobOffers = {
+      { destId = "gasstop", crates = 2, pay = { metal = 7 }, urgent = true,
+        cargoId = "med" },
+      { destId = "ruin", crates = 1, pay = { metal = 3 }, fragile = true,
+        cargoId = "parts" },
+      { destId = "clinic", crates = 3, pay = { metal = 5 }, hazmat = true,
+        cargoId = "coldmed" },
+    }
+    local tok = offerToken()
+    local parsed = parseOfferToken(tok)
+    local empty = parseOfferToken("-")
+    jobOffers = keep
+    ok(r, "coop offer token",
+       #parsed == 3 and parsed[1].destId == "gasstop" and
+       parsed[1].crates == 2 and parsed[1].payMetal == 7 and
+       parsed[1].flags % 2 == 1 and parsed[2].destId == "ruin" and
+       parsed[3].cargoId == "coldmed" and #empty == 0,
+       tostring(tok))
+  end
+
   -- 极低油量供油不稳：2% 以上满动力，越低越弱
   do
     local full = fuelStarvationScale(0.10)

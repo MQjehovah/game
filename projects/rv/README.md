@@ -1013,6 +1013,8 @@
   `[coop-tower] demo ok=true fixed=true water=98`，验证联机水塔修复。
 - `coop_highrisk.txt`：服务端 3s 切到夜间 + 开远光并强制计时，日志
   `[coop-highrisk] horde spawned`，验证联机夜间远光招感染者。
+- `coop_offer.txt`：服务端 3s 打开货运板并广播三张合同，日志
+  `[coop-offer] demo offers=3 token=...`，客机 HUD 弹出 `1/2/3` 选择面板。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /
@@ -1069,7 +1071,7 @@
   `cachemap`（地图上的补给箱标记）/ `notemap`（地图上的笔记标记）/
   `smoketest`（车体 25%、引擎 15% 冒烟）。
 
-自检覆盖 414 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、
+自检覆盖 415 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、
 高度场剖面/草丘/扩展高度场/地形分块 LOD/道路压平/地面跟随/坡面倾斜/车内倾斜/四轮接地/分轮行程/车轮实体/前轮转向/物理悬挂绑定/姿态回读/轮胎抓地绑定/轮胎抓地模型/偏航姿态回读/路面材质表/路面摩擦/阿克曼转向/转向助力/自动回正/滑移牵引/滑移率/滑移曲线/联合滑移/Pacejka/胎压/载荷敏感/胎温/四轮独立胎温/4 条胎面带/横向传导/逐顶点风摆/Voronoi 碎窗/玻璃种子广播/车轮刚体绑定/车轮刚体/圆柱滚动车轮/客户端车轮预测/姿态外推回正/车轮滚动、废宅商店/加油站/物流仓库/旧农场/购物中心/湖边木屋/路边诊所店内物资箱（6/6）、
 POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃卸货/货损打折、
 货运目标指定/世界标记/地图目标圈、公路反光轮廓桩、营地陈设（遮阳棚/木桌/营地灯）、
@@ -1160,6 +1162,15 @@ POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃
   客户端 HUD 显示目的地、货况百分比与标记，并实时显示当前送达加成
   （夜间/雨天/雪天/雾天，`jobDeliveryBonusTags`）；服务器日志可直接看到
   `job=poi_3:3:100:3`。
+- **联机货运板选择**：客机走到货运板按 `E` 不再直接接第一张，而是由服务器
+  广播三张合同（`game_state.offers`，`destId:crates:pay:flags:cargoId`），
+  客机 HUD 弹出选择面板，按 `1/2/3` 接单、`E` 关闭（`job_accept` /
+  `job_close`）；`coop_offer.txt` 可复现，日志 `[coop-offer] demo offers=3`，
+  自检 `coop offer token`。
+- **状态分包**：库存/家具/车况/玻璃/笔记等大块数据改走独立的
+  `game_detail` RPC（0.5s 一次），`game_state` 只保留核心字段并压缩玩家数组，
+  避免超过可靠帧上限被丢弃（修复联机 HUD/合同/车况不同步）；合作 smoke
+  服务器日志中 `game_state deferred` 计数为 0。
 - **每日目标同步**：`game_state.goal` 为 `id:progress:target:done`，
   客户端合作 HUD 显示 `今日目标 jobs 1/2`；服务器日志可直接看到
   `goal=jobs:0:2:0`，合作 smoke 通过。
@@ -1314,7 +1325,7 @@ POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃
   `rv wheel rolling`（wx=2.00）、
   `rv attitude roundtrip`（pitch=0.15 roll=-0.22）与
   `rv yaw attitude roundtrip`（yaw=0.80 pitch=0.15 roll=-0.22），
-  单机自检 **414/414 PASS**。
+  单机自检 **415/415 PASS**。
   **逐顶点风摆验证**（`start_mode=hills`，相隔 1 秒两帧截图）：
   植被区域（880×370 = 325,600 px 裁剪）变化 **2.28%**（7412 px，
   阈值 |ΣRGB|>12），差异图 `rv_wind_diff.png` 正好落在草叶/花茎上；

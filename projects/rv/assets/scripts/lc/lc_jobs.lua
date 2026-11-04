@@ -88,6 +88,14 @@ function jobCargoPrefab(cargoId)
   return CARGO_PREFAB[cargoId] or "rv_cargo_crate"
 end
 
+-- 货物 id → 名称（联机合同选择面板用）
+function jobCargoName(cargoId)
+  for _, c in ipairs((JOBS and JOBS.cargo) or {}) do
+    if c.id == cargoId then return c.name end
+  end
+  return tostring(cargoId or "?")
+end
+
 function jobSpawnCargo()
   jobDespawnCargo()
   if job == nil or coopRole ~= nil then return end
