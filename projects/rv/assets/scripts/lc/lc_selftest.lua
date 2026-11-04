@@ -1095,6 +1095,19 @@ function runSelfTest()
          math.abs(roll) < 0.001 and spin > 0.2 and lock < -0.5,
          string.format("roll=%.2f spin=%.2f lock=%.2f", roll, spin, lock))
     end
+    if absBrakeScale ~= nil and tractionControlScale ~= nil then
+      local noSlip = absBrakeScale(0.0, 10.0, 0.12)
+      local locked = absBrakeScale(0.8, 10.0, 0.12)
+      local crawl = absBrakeScale(0.8, 1.0, 0.12)
+      local tcFree = tractionControlScale(0.0, 10.0, 0.12)
+      local tcSpin = tractionControlScale(0.5, 10.0, 0.12)
+      local tcMud = tractionControlScale(0.5, 10.0, 0.32)
+      ok(r, "rv abs traction control",
+         noSlip == 1.0 and locked < 0.9 and crawl == 1.0 and
+         tcFree == 1.0 and tcSpin < 1.0 and tcMud > tcSpin,
+         string.format("abs=%.2f/%.2f/%.2f tc=%.2f/%.2f/%.2f",
+                       noSlip, locked, crawl, tcFree, tcSpin, tcMud))
+    end
     if rvBody ~= nil and PhysicsGetRotation ~= nil and rvQuat ~= nil
        and rvPitchRollFromQuat ~= nil then
       local kp, kr, ky = rv.pitch, rv.roll, rv.yaw

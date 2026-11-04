@@ -414,6 +414,28 @@ function tireGripImpulse(latV, normalForce, mass, dt, mu)
   return imp
 end
 
+-- ABS / traction control: cap brake or drive torque once the tire is past its
+-- friction peak. `peak` is the surface's peak slip ratio (asphalt ~0.12,
+-- mud ~0.32), so low-grip surfaces engage later instead of over-braking.
+-- These are intentionally pure functions so the self-test can pin the curve.
+function absBrakeScale(slip, speed, peak, enabled)
+  if enabled == false then return 1.0 end
+  if math.abs(speed or 0) < 2.0 then return 1.0 end
+  local threshold = (peak or 0.18) + 0.10
+  local over = math.abs(slip or 0) - threshold
+  if over <= 0 then return 1.0 end
+  return math.max(0.25, 1.0 - over * 2.2)
+end
+
+function tractionControlScale(slip, speed, peak, enabled)
+  if enabled == false then return 1.0 end
+  if math.abs(speed or 0) < 1.0 then return 1.0 end
+  local threshold = (peak or 0.18) + 0.13
+  local over = math.abs(slip or 0) - threshold
+  if over <= 0 then return 1.0 end
+  return math.max(0.35, 1.0 - over * 1.8)
+end
+
 -- Surface materials: grip multiplier, slip curve shape (peak at `peak`, then
 -- settles to `sat` of the peak), and how fast the tire heats / wears on it.
 -- More than the old three-value table; lookup is by world feature (road slab,
@@ -984,6 +1006,7 @@ function updateRvPhysics(dt)
   local wheelV, wheelSlipSpd, wheelLatSpd, wheelLoad, wheelSurf = {}, {}, {}, {}, {}
   local heatPower, slipSum, slipSpeedSum, slipCount = 0, 0, 0, 0
   local muLast, surfLast = 0.9, "grass"
+  rv.absActive, rv.tcActive = false, false
   if useBodies and PhysicsActivate ~= nil then
     PhysicsActivate(rvBody)
     for i = 1, #rv.wheelBodies do
@@ -1078,14 +1101,22 @@ function updateRvPhysics(dt)
       -- (wheelspin) or lock (lockup) instead of being set kinematically.
       if wb.rolling and PhysicsAddAngularImpulse ~= nil then
         local torque = 0
+        local preSlip = wheelSlipRatio(omega, vLong, SUSP_R)
+        local surfPeak = (rv.__surfDef and rv.__surfDef.peak) or 0.18
         if braking then
-          if omega > 0.2 then torque = -BRAKE_TORQUE
-          elseif omega < -0.2 then torque = BRAKE_TORQUE end
+          local absScale = absBrakeScale(preSlip, vLong, surfPeak,
+                                         rv.absEnabled ~= false)
+          if absScale < 0.999 then rv.absActive = true end
+          if omega > 0.2 then torque = -BRAKE_TORQUE * absScale
+          elseif omega < -0.2 then torque = BRAKE_TORQUE * absScale end
         elseif not w.front then
+          local tcScale = tractionControlScale(preSlip, vLong, surfPeak,
+                                               rv.tcEnabled ~= false)
+          if tcScale < 0.999 then rv.tcActive = true end
           local drive = targetSpeed - vLong
           if math.abs(drive) > 0.05 then
             local amount = math.min(1.0, math.abs(drive) / 2.0)
-            torque = (drive > 0 and 1 or -1) * DRIVE_TORQUE * amount
+            torque = (drive > 0 and 1 or -1) * DRIVE_TORQUE * amount * tcScale
           end
         end
         if torque ~= 0 then

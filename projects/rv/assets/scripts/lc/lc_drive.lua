@@ -164,6 +164,12 @@ function maintenanceRows()
   row("水温", string.format("%.0f°C", temp), temp < (VEH.tempOverheat or 110))
   row("刹车", string.format("%.0f%% 热", (brakeHeat or 0) * 100),
       (brakeHeat or 0) < 0.7)
+  local assist = {}
+  if rv.absActive then assist[#assist + 1] = "ABS" end
+  if rv.tcActive then assist[#assist + 1] = "TC" end
+  if #assist > 0 then
+    row("辅助", table.concat(assist, " + "), true)
+  end
   local armor = (veh and veh.armor) or (upgrades and upgrades.armor) or 0
   row("装甲", string.format("Lv%d", armor), true)
   local dirt = (veh and veh.dirt) or rv.dirt or 0
