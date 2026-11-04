@@ -7,9 +7,15 @@
     },
     "mesh": {
       "meshKey": "cube",
-      "colorHex": "#2E2E2E",
-      "roughness": 0.98,
+      "colorHex": "#FFFFFF",
+      "roughness": 0.96,
       "metallic": 0,
+      "albedoTex": "assets/models/rv/rv_asphalt_albedo.png",
+      "normalTex": "assets/models/rv/rv_asphalt_normal.png",
+      "normalScale": 0.75,
+      "mrTex": "assets/models/rv/rv_asphalt_orm.png",
+      "aoTex": "assets/models/rv/rv_asphalt_orm.png",
+      "uvRepeat": 1.0,
       "polygonOffset": -2,
       "castShadow": false,
       "receiveShadow": false

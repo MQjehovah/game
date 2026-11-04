@@ -4260,6 +4260,20 @@ function runSelfTest()
        string.format("near=%d tiny=%d", #near, #tiny))
   end
 
+  -- 路面/路肩材质：程序化沥青/碎石 albedo + normal + ORM 已接入 prefab
+  do
+    local seg = ReadText and ReadText("assets/prefabs/rv_road_seg.json") or nil
+    local shoulder = ReadText and
+      ReadText("assets/prefabs/rv_road_shoulder.json") or nil
+    ok(r, "road surface textures",
+       seg ~= nil and seg:find("rv_asphalt_albedo", 1, true) ~= nil and
+       seg:find("rv_asphalt_normal", 1, true) ~= nil and
+       shoulder ~= nil and
+       shoulder:find("rv_gravel_albedo", 1, true) ~= nil,
+       string.format("seg=%s shoulder=%s", tostring(seg ~= nil),
+                     tostring(shoulder ~= nil)))
+  end
+
   -- 小地图额外标记：未搜刮补给箱和鱼笼
   do
     local kc, kt = roadCaches, pondTrap
