@@ -3150,8 +3150,8 @@ function coopDrawHud()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
 
-  DrawRect(14, 14, 390, 400, 0.035, 0.045, 0.055, 0.90)
-  DrawRectOutline(14, 14, 390, 400, 0.52, 0.50, 0.40, 0.95)
+  DrawRect(14, 14, 390, 416, 0.035, 0.045, 0.055, 0.90)
+  DrawRectOutline(14, 14, 390, 416, 0.52, 0.50, 0.40, 0.95)
   DrawText("房车合作 · 主世界", 26, 24, 18, 0.98, 0.90, 0.68, 1)
   DrawText(string.format("角色 %s   槽位 %d   客户端 %.0f", tostring(coop.role), coop.mySlot,
            coop.myClientId or 0), 26, 50, 11, 0.72, 0.74, 0.70, 1)
@@ -3204,8 +3204,11 @@ function coopDrawHud()
     end
     DrawText(text, 26, 314 + (i - 1) * 17, 12, 0.80, 0.82, 0.76, 1)
   end
-  DrawText("WASD 移动  L 车灯  F 驾驶  E 搜箱  1 吃  2 喝  3 睡  4 小睡  G 灶台  R 维修  Q 加油  K 工台  C 做饭  N 修塔  T 添柴  V 采果  Z 鱼笼  J 链条",
-           26, 392, 9, 0.66, 0.68, 0.64, 1)
+  DrawText("WASD 移动  L 车灯  F 驾驶  E 搜箱  1 吃  2 喝  3 睡  4 小睡",
+           26, 382, 9, 0.66, 0.68, 0.64, 1)
+  DrawText("G 灶台  R 维修  Q 加油  K 工台  C 做饭  N 修塔  T 柴  V 果  Z 鱼笼  J 链条",
+           26, 394, 9, 0.66, 0.68, 0.64, 1)
+  DrawText("O 保养  X 鸣笛  H 远光  P 说明", 26, 406, 9, 0.66, 0.68, 0.64, 1)
 
   DrawText(string.format("网络 %s", (GetVar("netConnected") == 1) and "已连接" or "未连接"),
            vw - 170, 22, 12, 0.72, 0.78, 0.76, 1)
