@@ -321,6 +321,8 @@ POI_KINDS = {
   { name = "物流仓库",   danger = 3, loot = { metal={3,6}, electronics={2,4} } },
   { name = "临时营地",   danger = 0, loot = { wood={1,3}, cloth={1,2} } },
   { name = "湖边营地",   danger = 1, loot = { wood={2,4}, cloth={1,2} }, pond = true },
+  { name = "林间木屋",   danger = 1, loot = { wood={3,6}, cloth={1,3} } },
+  { name = "废弃邮局",   danger = 1, loot = { cloth={2,4}, electronics={1,2} } },
 }
 
 -- 山林/越野场景池（Kenney nature 套件模型 + 地面灌木色块）

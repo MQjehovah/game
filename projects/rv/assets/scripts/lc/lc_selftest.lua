@@ -343,6 +343,22 @@ function runSelfTest()
   ok(r, "procedural POI", grew or atCap,
      string.format("nodes %d->%d", n0, #NODES))
 
+  -- 程序化地点种类：至少 10 种，且都有名称/危险度/战利品
+  do
+    local okKinds = #POI_KINDS >= 10
+    local names = {}
+    for _, k in ipairs(POI_KINDS) do
+      if k.name == nil or k.danger == nil or type(k.loot) ~= "table" then
+        okKinds = false
+      end
+      names[k.name] = true
+    end
+    ok(r, "poi kinds",
+       okKinds and names["林间木屋"] == true and names["废弃邮局"] == true,
+       string.format("kinds=%d woodcabin=%s post=%s", #POI_KINDS,
+                     tostring(names["林间木屋"]), tostring(names["废弃邮局"])))
+  end
+
   -- 昼夜
   clock = 22 * 60
   local nightOn = nightAmount() > 0.5
