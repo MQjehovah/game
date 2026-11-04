@@ -1116,6 +1116,10 @@ function updateDrive(dt)
   local oilF = engineOilPowerScale()
   maxSp = maxSp * oilF
   acc = acc * oilF
+  -- Slope traction: steep terrain caps the target speed and acceleration.
+  local slopeF = slopeSpeedFactor and slopeSpeedFactor(rv.x, rv.z) or 1.0
+  maxSp = maxSp * slopeF
+  acc = acc * (0.55 + 0.45 * slopeF)
   -- 防滑链在干燥铺装路上略拖慢
   local surfName = "asphalt"
   if surfaceInfo ~= nil then

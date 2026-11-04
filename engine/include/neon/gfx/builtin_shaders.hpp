@@ -562,6 +562,23 @@ void main() {
         vec3 n0 = texture(uTerrainNormal, vec3(uvXZ * uTerrainUvScale0, float(uTerrainLayer0))).rgb * 2.0 - 1.0;
         vec3 n1 = texture(uTerrainNormal, vec3(uvXZ * uTerrainUvScale1, float(uTerrainLayer1))).rgb * 2.0 - 1.0;
         terrainNormalTex = normalize(vec3(n0.xy * wSoil + n1.xy * wRock, 1.0));
+    } else {
+        // No texture arrays bound yet (asset pipeline pending): fall back to a
+        // procedural height/slope palette so the world is readable instead of
+        // a white sheet.
+        vec3 n = normalize(vNormal);
+        float slope = 1.0 - n.y;
+        float rockW = smoothstep(0.30, 0.60, slope);
+        float dirtW = smoothstep(0.04, 0.24, slope) * (1.0 - rockW);
+        float snowW = smoothstep(55.0, 85.0, vWorldPos.y) *
+                      (1.0 - smoothstep(0.45, 0.70, slope));
+        vec3 c = mix(vec3(0.20, 0.34, 0.14), vec3(0.38, 0.31, 0.20), dirtW);
+        c = mix(c, vec3(0.42, 0.40, 0.37), rockW);
+        c = mix(c, vec3(0.92, 0.94, 0.98), snowW);
+        float macro = 0.86 + 0.28 * (0.5 + 0.5 * sin(vWorldPos.x * 0.021 +
+                                                       sin(vWorldPos.z * 0.017) * 2.0));
+        albedo = vec4(c * macro, 1.0);
+        terrainRough = 0.85;
     }
     albedo *= uTint;
 #elif defined(TERRAIN_SPLAT)

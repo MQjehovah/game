@@ -126,6 +126,10 @@ struct GLTexture {
     gl::GLuint id = 0;
     int width = 0;
     int height = 0;
+    // GL_TEXTURE_2D or GL_TEXTURE_2D_ARRAY: BindTexture must target the same
+    // binding point the texture was created on, or sampler2DArray reads a
+    // stale 2D binding (black terrain).
+    gl::GLenum target = glc::Texture2D;
 };
 
 struct GLRenderTarget {
@@ -751,7 +755,7 @@ public:
             g.GenerateMipmap(target);
         }
         g.BindTexture(target, 0);
-        textures_[++nextTextureId_] = GLTexture{id, desc.width, desc.height};
+        textures_[++nextTextureId_] = GLTexture{id, desc.width, desc.height, target};
         return {nextTextureId_};
     }
 
@@ -1112,6 +1116,8 @@ public:
         auto& g = gl::GetGL();
         auto it = textures_.find(texture.id);
         const gl::GLuint id = it != textures_.end() ? it->second.id : 0;
+        const gl::GLenum target =
+            it != textures_.end() ? it->second.target : glc::Texture2D;
         // Materials re-bind the same albedo/MR/AO/white textures every draw;
         // skip the ActiveTexture+BindTexture round trip when the unit already
         // holds the texture. unitKnown_ is invalidated wherever the backend
@@ -1120,7 +1126,7 @@ public:
             unitTex_[slot] == id)
             return;
         g.ActiveTexture(glc::Texture0 + static_cast<gl::GLenum>(slot));
-        g.BindTexture(glc::Texture2D, id);
+        g.BindTexture(target, id);
         if (slot >= 0 && slot < kMaxTextureUnits) {
             unitKnown_[slot] = true;
             unitTex_[slot] = id;

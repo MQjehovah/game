@@ -100,6 +100,23 @@ function terrainSlope(x, z)
   return dx, dz
 end
 
+-- Slope traction: 0-25 deg full speed, 25-35 deg loses up to 45%, 35-45 deg
+-- loses the rest, >45 deg is effectively impassable (the mountain still
+-- exists; physics just refuses to climb it).
+function slopeFactorFromGradient(g)
+  local deg = math.deg(math.atan(g or 0))
+  if deg <= 25.0 then return 1.0 end
+  if deg <= 35.0 then return 1.0 - 0.45 * ((deg - 25.0) / 10.0) end
+  if deg <= 45.0 then return 0.55 * (1.0 - ((deg - 35.0) / 10.0)) end
+  return 0.0
+end
+
+function slopeSpeedFactor(x, z)
+  if terrainSlope == nil then return 1.0 end
+  local dx, dz = terrainSlope(x, z)
+  return slopeFactorFromGradient(math.sqrt(dx * dx + dz * dz))
+end
+
 -- RV pitch/roll from the terrain gradient, damped so it does not jitter.
 -- Pitch tilts the nose with the slope ahead, roll tilts the right side.
 function updateRvTilt(dt)

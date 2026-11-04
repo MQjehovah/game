@@ -23,6 +23,7 @@
 #include "neon/physics/jolt_world.hpp"
 #include "neon/plugin/backend.hpp"
 #include "neon/scene/scene_file.hpp"
+#include "neon/scene/terrain_layers.hpp"
 #include "neon/scene/environment.hpp"
 #include "neon/scene/data_table.hpp"
 #include "gameplay_lib.hpp"
@@ -1256,6 +1257,26 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
     // (world_/scriptCtx_/hosts_/hiddenEntities_/uiScale_/uiOffset_ + the post-FX
     // toggles from SetPostFx) are wired in as parameters; the runtime keeps the
     // public entry point so the editor/player call sites are unchanged.
+    // Terrain layer arrays are a renderer resource, so they load lazily on the
+    // first draw (Start() runs before any renderer is attached in some hosts).
+    if (terrainWorld_ && !terrainLayersTried_) {
+        terrainLayersTried_ = true;
+        const std::string manifest =
+            ReadScript(FullScriptPath("assets/data/terrain_layers.json"));
+        if (!manifest.empty()) {
+            TerrainLayerSet set = LoadTerrainLayers(
+                renderer, manifest, [this](const std::string& rel) {
+                    return FullScriptPath("assets/textures/terrain/" + rel);
+                });
+            if (set.Valid()) {
+                terrainMaterial_.terrainAlbedoArray = set.albedo;
+                terrainMaterial_.terrainNormalArray = set.normal;
+                terrainMaterial_.terrainOrmArray = set.orm;
+                for (int i = 0; i < 4; ++i)
+                    terrainMaterial_.terrainUvScale[i] = set.uvScale[i];
+            }
+        }
+    }
     DrawSystem::DrawParams params{previewZoom, postSsao_, postVolumetric_, postSsr_,
                                   postSsaoIntensity_, postVolumetricIntensity_,
                                   postSsrIntensity_};

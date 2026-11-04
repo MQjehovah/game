@@ -162,6 +162,7 @@ add_library(neon_scene STATIC
   engine/src/scene/game_manifest.cpp
   engine/src/scene/fog_of_war.cpp
   engine/src/scene/game_runtime.cpp
+  engine/src/scene/terrain_layers.cpp
   engine/src/scene/game_runtime_combat.cpp
   engine/src/scene/game_runtime_content.cpp
   engine/src/scene/systems/animation_system.cpp

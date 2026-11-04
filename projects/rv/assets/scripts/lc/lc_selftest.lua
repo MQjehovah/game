@@ -506,6 +506,14 @@ function runSelfTest()
       ok(r, "pois grounded", worst < 1.5,
          string.format("worst=%s %.2fm", worstId, worst))
     end
+    if slopeFactorFromGradient ~= nil then
+      local f0 = slopeFactorFromGradient(0)
+      local f30 = slopeFactorFromGradient(math.tan(math.rad(30)))
+      local f50 = slopeFactorFromGradient(math.tan(math.rad(50)))
+      ok(r, "slope traction",
+         f0 == 1.0 and f30 < 0.80 and f30 > 0.55 and f50 == 0.0,
+         string.format("flat=%.2f d30=%.2f d50=%.2f", f0, f30, f50))
+    end
     -- Wheels must never be buried by the visible terrain: the physics wheel
     -- body rests slightly compressed, so the visual tire is clamped to
     -- ground + WHEEL_RADIUS in lc_vehicle.

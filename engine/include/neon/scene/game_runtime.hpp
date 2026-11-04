@@ -568,6 +568,7 @@ void ResolveEnvironmentResources();
     std::unique_ptr<world::TerrainWorld> terrainWorld_;
     gfx::TerrainStreamer terrainStreamer_;
     gfx::Material terrainMaterial_;
+    bool terrainLayersTried_ = false;
     gfx::Renderer* lastRenderer_ = nullptr;
 
     DrawSystem drawSystem_;
