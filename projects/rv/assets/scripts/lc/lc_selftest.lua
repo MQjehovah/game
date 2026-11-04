@@ -4574,6 +4574,19 @@ function runSelfTest()
                      rOk, rTire, rPress, tostring(cleared)))
   end
 
+  -- 爆胎跑偏：左侧向左拉、右侧向右拉，前轮比后轮更明显
+  do
+    local none = blowoutPullSteer(false, 1)
+    local fl = blowoutPullSteer(true, 1)
+    local fr = blowoutPullSteer(true, 2)
+    local rl = blowoutPullSteer(true, 3)
+    ok(r, "blowout pull steer",
+       none == 0 and fl > 0 and fr < 0 and
+       math.abs(fl) > math.abs(rl) and math.abs(fl) <= 0.06,
+       string.format("none=%.3f fl=%.3f fr=%.3f rl=%.3f",
+                     none, fl, fr, rl))
+  end
+
   -- 高速爆胎风险：低速基准、高速上升且有上限
   do
     local slow = speedBlowoutScale(0)

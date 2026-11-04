@@ -632,12 +632,24 @@ end
 function clearBlowout()
   rv.blowout = false
   rv.blowoutWarned = false
+  rv.blowoutWheel = nil
+end
+
+-- 爆胎跑偏：前轮爆胎拉扯更明显（正向 = 向左）
+function blowoutPullSteer(blowout, wheel)
+  if not blowout then return 0 end
+  local w = wheel or 1
+  local front = (w == 1 or w == 2)
+  local left = (w == 1 or w == 3)
+  local amount = front and 0.055 or 0.030
+  return left and amount or -amount
 end
 
 -- 真正触发爆胎（音效/提示/尘屑），便于测试与其它系统复用
-function triggerBlowout()
+function triggerBlowout(wheel)
   if rv.blowout then return false end
   rv.blowout = true
+  rv.blowoutWheel = wheel or 1
   rv.blowoutBangs = (rv.blowoutBangs or 0) + 1
   if not rv.blowoutWarned then
     rv.blowoutWarned = true
@@ -685,7 +697,15 @@ function updateBlowout(dt)
                speedBlowoutScale(rv.speed) *
                tireTempBlowoutScale(hottest)
   if risk > 0 and math.random() < risk * (dt or 0) then
-    triggerBlowout()
+    -- 最差的轮胎先爆：磨损高、胎压低的轮子优先
+    local worst, score = 1, math.huge
+    for i = 1, 4 do
+      local wear = (rv.tireWear or {})[i] or ((parts and parts.tires) or 100)
+      local press = (rv.tirePressureCold or {})[i] or 2.4
+      local s = wear + (2.4 - press) * 30
+      if s < score then worst, score = i, s end
+    end
+    triggerBlowout(worst)
   end
 end
 
@@ -909,6 +929,8 @@ function updateDrive(dt)
     steer = steer + windSteerAmount(weather, rv.speed, rv.windT)
     -- 左右胎压不均：向低压侧轻微跑偏
     steer = steer + tirePullSteer(rv.tirePressureCold)
+    -- 爆胎：车会明显向爆胎一侧拉，需要反打方向
+    steer = steer + blowoutPullSteer(rv.blowout, rv.blowoutWheel)
     steer = math.max(-1, math.min(1, steer))
   end
 
