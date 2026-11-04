@@ -5442,8 +5442,11 @@ function runSelfTest()
   do
     local n = #waterTowers
     local parts = (n > 0) and #(waterTowers[n].parts or {}) or 0
-    ok(r, "town water tower", n >= 1 and parts >= 6,
-       string.format("towers=%d parts=%d", n, parts))
+    ok(r, "town water tower",
+       n >= 1 and parts >= 1 and waterTowers[n].model ~= nil,
+       string.format("towers=%d parts=%d model=%s", n, parts,
+                     tostring(waterTowers[n] ~= nil and
+                              waterTowers[n].model ~= nil)))
   end
 
   -- 水塔修复：材料足够时修复并一次性补水，重复修复返回 false

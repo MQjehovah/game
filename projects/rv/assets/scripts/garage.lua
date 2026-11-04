@@ -1061,6 +1061,15 @@ function on_start()
     px, pz = tx - 9.0, tz + 10.0
     pyaw = dirYaw(tx - px, tz - pz)
   end
+  if startMode == "watertower" then
+    -- 展示 Blender 建模的小镇水塔
+    clock = 12 * 60
+    local tx, tz = 8.0, 18.0
+    local gy = (terrainHeight and terrainHeight(tx, tz)) or 0
+    SpawnPrefab("rv_water_tower", { x = tx, y = gy, z = tz })
+    px, pz = tx - 10.0, tz + 12.0
+    pyaw = dirYaw(tx - px, tz - pz)
+  end
   if startMode == "gas" or startMode == "poinight" then
     -- 加油站商店门口
     local nd = nodeById("gasstop")
@@ -1163,6 +1172,7 @@ function on_start()
   elseif startMode == "poinight" then player.pitch = 0.14
   elseif startMode == "windmillview" then player.pitch = 0.28
   elseif startMode == "townview" then player.pitch = 0.20
+  elseif startMode == "watertower" then player.pitch = 0.14
   elseif startMode == "mastview" then player.pitch = 0.30
   end
   SetVar("cameraMouseLock", 1)

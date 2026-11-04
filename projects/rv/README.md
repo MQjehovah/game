@@ -720,10 +720,13 @@
   共 5 件）；自检 `farm scarecrow`。
 - **农田作物**：谷仓西侧 4 行 × 6 列成排的低多边形作物，尺寸/朝向随机，
   让旧农场有可辨认的农田；截图 `start_mode=farmfield`，自检 `farm crops`。
-- **小镇水塔**：小镇建筑群侧面立一座水塔（4 条支架 + 圆柱水箱 + 顶盖 + 爬梯），
+- **小镇水塔**：小镇建筑群侧面立一座 Blender 建模的钢结构水塔
+  `rv_water_tower.gltf`（`tools/gen_rv_water_tower_blender.py`，通过 MCP 生成）：
+  石基、四柱、横梁/斜撑、服务平台/护栏、圆柱水箱、锥形顶盖、爬梯和落水管；
   远处可作地标；走到塔下按 `E`，消耗金属 5 + 木材 4 修好水塔，修好时水箱 +20L，
   之后把房车停到镇上会自动补满水（`repairWaterTower`，联机客机按 `U`）；
-  截图 `start_mode=townview`，自检 `town water tower` / `water tower repair`。
+  截图 `start_mode=townview` / `start_mode=watertower`，
+  自检 `town water tower` / `water tower repair`。
 - **长线目标 · 修加油站油泵**：走到加油站油泵旁按 `E`，消耗金属 5 + 电子件 2
   修好油泵；之后加油永久 7 折（与老顾客折扣叠乘，`repairFuelPumpAt`），
   修好状态随存档保存；自检 `fuel pump repair`。
