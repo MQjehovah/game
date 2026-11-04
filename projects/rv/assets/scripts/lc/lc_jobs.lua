@@ -80,6 +80,7 @@ local CARGO_PREFAB = {
   elec = "rv_cargo_elec",    -- 蓝色电子件
   grain = "rv_cargo_crate",  -- 木色粮袋
   livestock = "rv_cargo_crate", -- 活畜：木栏箱
+  coldmed = "rv_cargo_med",  -- 冷藏药品：白色医疗箱
 }
 
 function jobCargoPrefab(cargoId)

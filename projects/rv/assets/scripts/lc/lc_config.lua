@@ -277,6 +277,7 @@ JOBS = {
     { id = "elec",  name = "电子件", kg = 28, mat = "electronics" },
     { id = "grain", name = "粮袋",   kg = 40, mat = "wood" },
     { id = "livestock", name = "活畜", kg = 52, mat = "wood" },
+    { id = "coldmed", name = "冷藏药品", kg = 26, mat = "electronics" },
   },
 }
 

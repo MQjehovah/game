@@ -1207,6 +1207,19 @@ function runSelfTest()
        string.format("offers=%d spent=%s poor=%s", #jobOffers,
                      tostring(spent), tostring(poor)))
   end
+
+  -- 货物种类：新增冷藏药品，且有对应车顶箱 prefab
+  do
+    local found = nil
+    for _, c in ipairs(JOBS.cargo or {}) do
+      if c.id == "coldmed" then found = c end
+    end
+    local prefab = (jobCargoPrefab and jobCargoPrefab("coldmed")) or nil
+    ok(r, "job cargo variety",
+       found ~= nil and found.name == "冷藏药品" and prefab ~= nil,
+       string.format("cargo=%s prefab=%s",
+                     found and found.name or "missing", tostring(prefab)))
+  end
   ok(r, "job history",
      jobHistory ~= nil and #jobHistory >= 1 and
      tostring(jobHistory[#jobHistory]):find("→", 1, true) ~= nil,
