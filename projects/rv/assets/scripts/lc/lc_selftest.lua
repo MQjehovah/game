@@ -492,6 +492,20 @@ function runSelfTest()
                        terrainHeight(106, -66), terrainHeight(137, -2)))
     end
     end -- WORLD_PROCEDURAL
+    -- Authored POIs sit on the camp plateau in the new world; this pins the
+    -- assumption so a future terrain change cannot quietly bury them.
+    if NODES ~= nil and poiCenter ~= nil then
+      local worst, worstId = 0, ""
+      for _, nd in ipairs(NODES) do
+        local cx, cz = poiCenter(nd)
+        if cx ~= nil then
+          local d = math.abs(terrainHeight(cx, cz))
+          if d > worst then worst, worstId = d, tostring(nd.id) end
+        end
+      end
+      ok(r, "pois grounded", worst < 1.5,
+         string.format("worst=%s %.2fm", worstId, worst))
+    end
     -- Wheels must never be buried by the visible terrain: the physics wheel
     -- body rests slightly compressed, so the visual tire is clamped to
     -- ground + WHEEL_RADIUS in lc_vehicle.
@@ -651,7 +665,11 @@ function runSelfTest()
     -- Tilt/suspension math is world-independent: drive it on a synthetic 30%
     -- east-west slope so these assertions do not depend on authored terrain.
     local __realTerrainHeight = terrainHeight
-    terrainHeight = function(x, z) return x * 0.30 + (z or 0) * 0.02 end
+    -- A linear slope fits a plane exactly (zero articulation), so add a small
+    -- bump that only some wheels see to exercise the travel residual.
+    terrainHeight = function(x, z)
+      return x * 0.30 + 0.12 * math.sin(x * 1.7) + (z or 0) * 0.02
+    end
     if updateRvTilt ~= nil then
       local kx, kz, ky = rv.x, rv.z, rv.yaw
       local kp, kr = rv.pitch, rv.roll
