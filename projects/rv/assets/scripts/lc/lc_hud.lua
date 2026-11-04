@@ -2036,6 +2036,29 @@ function drawMaintenancePanel()
   end
 end
 
+-- 床铺菜单：1 睡到早上 / 2 小睡 2 小时 / 0 或 E 关闭
+function drawBedMenu()
+  if not bedMenuOpen then return end
+  local vp = GetViewportSize()
+  local vw = (vp and vp.w) or 1280
+  local vh = (vp and vp.h) or 720
+  local pw, ph = 430, 190
+  local px = math.floor((vw - pw) * 0.5)
+  local py = math.floor((vh - ph) * 0.5)
+  DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.94)
+  DrawRectOutline(px, py, pw, ph, 0.52, 0.52, 0.62, 0.95)
+  drawTextCentered("床铺", vw * 0.5, py + 12, 20, 0.96, 0.92, 0.78, 1)
+  DrawText("0 / E 关闭", px + pw - 96, py + 16, 12, 0.68, 0.70, 0.64, 1)
+  DrawText(string.format("当前 第%d天 %02d:%02d   体力 %.0f",
+           day or 1, math.floor((clock or 0) / 60) % 24,
+           math.floor((clock or 0) % 60), needs.energy or 0),
+           px + 20, py + 44, 12, 0.80, 0.82, 0.74, 1)
+  DrawText("[1] 睡到早上 07:00（恢复最多，可能跨天）", px + 24, py + 78, 14,
+           0.94, 0.88, 0.66, 1)
+  DrawText("[2] 小睡 2 小时（少量恢复，不弹晨报）", px + 24, py + 112, 14,
+           0.78, 0.86, 0.92, 1)
+end
+
 -- 篝火烹饪菜单：1-5 选择料理，0 / E 关闭
 function drawCampfireMenu()
   if not campfireMenuOpen then return end

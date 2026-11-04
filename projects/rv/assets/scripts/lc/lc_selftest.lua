@@ -4657,6 +4657,26 @@ function runSelfTest()
        string.format("energy=%.0f warmth=%.0f", gotEnergy, gotWarm))
   end
 
+  -- 小睡：推进 2 小时、恢复部分体力、进入睡饱
+  do
+    local sc, se, sh, st = clock, needs.energy, needs.hunger, needs.thirst
+    local sr = restedMin
+    clock = 12 * 60
+    needs.energy, needs.hunger, needs.thirst = 20, 80, 80
+    restedMin = 0
+    local okNap = napInBed()
+    local advanced = (clock or 0) == 14 * 60
+    local gotEnergy = needs.energy or 0
+    local rested = (restedMin or 0) >= 60
+    clock = sc
+    needs.energy, needs.hunger, needs.thirst = se, sh, st
+    restedMin = sr
+    ok(r, "nap in bed",
+       okNap and advanced and gotEnergy == 45 and rested,
+       string.format("clock=%.0f energy=%.0f rested=%s",
+                     (clock or 0) % 1440, gotEnergy, tostring(rested)))
+  end
+
   -- 舒适度提高睡眠恢复，最多 +15%
   do
     local a = comfortSleepBonus(0)

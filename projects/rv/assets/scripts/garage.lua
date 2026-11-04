@@ -1257,6 +1257,9 @@ function on_start()
     fuel = fuelMax() * 0.12
     setPhase("driving")
     driveView = "chase"
+  elseif startMode == "bedmenu" then
+    bedMenuOpen = true
+    setPhase("parked")
   elseif startMode == "campfiremenu" then
     addItem("rawfish", 2)
     addItem("rawfood", 1)
@@ -1744,6 +1747,21 @@ function on_update(ent, dt)
     return
   end
 
+  -- 床铺菜单：1 睡到早上 / 2 小睡 / 0 或 E 关闭
+  if bedMenuOpen then
+    if ActionPressed("e") or ActionPressed("0") then
+      bedMenuOpen = false
+    elseif ActionPressed("1") then
+      bedMenuOpen = false
+      if sleepInBed ~= nil then sleepInBed() end
+    elseif ActionPressed("2") then
+      bedMenuOpen = false
+      if napInBed ~= nil then napInBed() end
+    end
+    updateCamera(dt)
+    return
+  end
+
   -- 篝火烹饪菜单：1-5 选择料理，0 / E 关闭
   if campfireMenuOpen then
     if ActionPressed("e") or ActionPressed("0") then
@@ -1904,6 +1922,7 @@ function on_render()
   end
   if invOpen then drawInventoryPanel() end
   if stationUI then drawStationMenu() end
+  if bedMenuOpen then drawBedMenu() end
   if campfireMenuOpen then drawCampfireMenu() end
   if jobUI then drawJobPanel() end
   if jobResult then drawJobResult() end

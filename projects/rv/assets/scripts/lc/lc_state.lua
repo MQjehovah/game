@@ -77,6 +77,7 @@ loreRewardDone = false        -- 是否已领取集齐笔记奖励
 fishBookOpen = false          -- 鱼类图鉴面板是否打开
 maintOpen = false             -- 车辆保养面板是否打开（O）
 campfireMenuOpen = false      -- 篝火烹饪菜单是否打开
+bedMenuOpen = false           -- 床铺菜单是否打开（睡到早上 / 小睡）
 helpOpen = false              -- 操作说明面板是否打开
 dailyGoal = nil               -- 每日目标 {id,name,target,progress,done,reward,day}
 roadMarkers = {}              -- 公路轮廓桩（反光桩）

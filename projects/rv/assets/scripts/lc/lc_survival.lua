@@ -713,6 +713,20 @@ function sleepInBed()
   if autoSave ~= nil then autoSave() end
 end
 
+-- 小睡 2 小时：不跳晨报，恢复部分体力，适合等天气/等货运截止
+function napInBed()
+  local before = needs.energy or 0
+  advanceGameMinutes(120)
+  needs.energy = math.min(100, before + 25)
+  needs.hunger = math.max(0, (needs.hunger or 0) - 8)
+  needs.thirst = math.max(0, (needs.thirst or 0) - 10)
+  restedMin = math.max(restedMin or 0, 60)
+  if PlaySfx then PlaySfx("click") end
+  toast.text = string.format("小睡 2 小时 — 体力 %.0f", needs.energy)
+  toast.t = 3.0
+  return true
+end
+
 -- 收音机广播：开启后按游戏分钟间隔播报路况/天气提示
 -- 当前收音机广播池：修好无线电塔后优先播报“信号恢复”内容
 function radioBroadcastPool()
