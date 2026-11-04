@@ -137,6 +137,10 @@ struct TextureLoadOptions {
     // Wrap mode. glTF samplers default to REPEAT (DamagedHelmet-style assets
     // rely on UVs outside [0,1]), so the glTF importer sets Repeat here.
     gfx::Wrap wrap = gfx::Wrap::Clamp;
+    // Generate a mip chain. Alpha-tested foliage cards disable this: straight-
+    // alpha mip averaging turns the transparent card background into a nearly
+    // opaque veil, which alpha test then keeps as a visible rectangle.
+    bool mipmaps = true;
 };
 
 // Runtime asset cache. Files are loaded once and reused by path.
@@ -328,7 +332,8 @@ private:
     DecodedImage DecodeImage(const std::string& path, const TextureLoadOptions& opts,
                              bool compressed);
     // Main-thread GPU upload; handles the compressed->RGBA8 driver fallback.
-    gfx::Texture UploadDecoded(const DecodedImage& img, gfx::Wrap wrap = gfx::Wrap::Clamp);
+    gfx::Texture UploadDecoded(const DecodedImage& img, gfx::Wrap wrap = gfx::Wrap::Clamp,
+                               bool mipmaps = true);
     // Main-thread completion of an async request: cache + fire callbacks.
     void FinishAsyncTexture(const std::string& path, DecodedImage img,
                             const TextureLoadOptions& opts);

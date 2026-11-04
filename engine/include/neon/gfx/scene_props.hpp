@@ -47,9 +47,29 @@ Mesh MakeHeroMesh(Renderer& renderer, const std::string& name = "hero");
 // and a robed cultivator. All are vertex-coloured and origin-at-feet so scene
 // entities can place them directly on the terrain.
 Mesh MakePineMesh(Renderer& renderer, const std::string& name = "pine");
+Mesh MakeBroadleafMesh(Renderer& renderer, const std::string& name = "broadleaf");
+// Coherent low-poly tree: tapered trunk, branches and faceted leaf clusters.
+// `pink` swaps the leaf palette for a xianxia blossom tree.
+Mesh MakeStylizedTreeMesh(Renderer& renderer, const std::string& name, bool pink);
+Mesh MakeBlossomMesh(Renderer& renderer, const std::string& name = "blossom");
+// Textured leaf-card canopy for the sculpted island tree trunk (alpha-tested).
+Mesh MakeLeafCanopyMesh(Renderer& renderer, const std::string& name = "leaf_canopy");
+// Craggy cliff face laid over the right-hand terrain slope; noise-displaced
+// grid with UVs so a rock texture and normal map hide the smooth splat wall.
+Mesh MakeCliffFaceMesh(Renderer& renderer, const std::string& name = "cliff_face");
+// Flat XZ cloud-sea card (two triangles) for filling the valley below the path.
+Mesh MakeCloudPlaneMesh(Renderer& renderer, const std::string& name = "cloud_sea");
+// Distant jagged mountain wall; use a few scaled/offset copies for haze layers.
+Mesh MakeMountainRidgeMesh(Renderer& renderer, const std::string& name = "mountain_ridge");
 Mesh MakeRockPillarMesh(Renderer& renderer, const std::string& name = "rock_pillar");
+Mesh MakeBoulderMesh(Renderer& renderer, const std::string& name = "boulder");
 Mesh MakeStoneLanternMesh(Renderer& renderer, const std::string& name = "stone_lantern");
 Mesh MakeCultivatorMesh(Renderer& renderer, const std::string& name = "cultivator");
+// Ground cover: a fan of drooping fern fronds and an autumn-red shrub.
+Mesh MakeFernMesh(Renderer& renderer, const std::string& name = "fern");
+Mesh MakeRedShrubMesh(Renderer& renderer, const std::string& name = "red_shrub");
+// A single-draw stone-slab path (individual box slabs with visible seams).
+Mesh MakeStonePathMesh(Renderer& renderer, const std::string& name = "stone_path");
 
 // Hostile wolf (low-poly): gray body, head, legs, tail.
 Mesh MakeWolfMesh(Renderer& renderer, const std::string& name = "wolf");

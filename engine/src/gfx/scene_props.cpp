@@ -1,5 +1,6 @@
-#include "neon/gfx/scene_props.hpp"
+﻿#include "neon/gfx/scene_props.hpp"
 
+#include <array>
 #include <cmath>
 
 #include "neon/gfx/renderer.hpp"
@@ -258,27 +259,250 @@ Mesh MakeHeroMesh(Renderer& renderer, const std::string& name) {
                                 idx.data(), static_cast<uint32_t>(idx.size()), name);
 }
 
-Mesh MakePineMesh(Renderer& renderer, const std::string& name) {
+// Painterly tree billboard volume: three crossed quads carrying a hand-painted
+// whole-tree texture. Far cheaper than leaf geometry and, unlike stacked cones,
+// keeps a soft irregular silhouette at every viewing angle.
+Mesh MakeTreeCardMesh(Renderer& renderer, const std::string& name, float width,
+                      float height) {
     std::vector<Vertex3D> v;
     std::vector<uint16_t> idx;
-    Mesh trunk = Mesh::CreateCube(renderer, 0.34f, 2.7f, 0.34f, "pine_trunk");
-    AppendMeshAt(v, idx, trunk, {0.0f, 1.35f, 0.0f}, {0.30f, 0.22f, 0.15f, 1.0f});
-    // Four overlapping tiers with a slight alternating lean read as a mature
-    // mountain pine rather than a generic cone tree.
-    for (int tier = 0; tier < 4; ++tier) {
-        const float r = 1.35f - tier * 0.24f;
-        const float h = 1.75f - tier * 0.10f;
-        const float y = 1.45f + tier * 1.10f;
-        const math::Vec4 green =
-            (tier & 1) ? math::Vec4{0.10f, 0.25f, 0.14f, 1.0f}
-                       : math::Vec4{0.13f, 0.31f, 0.17f, 1.0f};
-        auto crown = ConeVerts(r, h, 12, green);
-        const float lean = (tier & 1) ? 0.08f : -0.06f;
-        for (auto& vv : crown) {
-            vv.pos.x += lean * (vv.pos.y / h);
-            vv.pos.y += y;
+    for (int plane = 0; plane < 3; ++plane) {
+        const float a = static_cast<float>(plane) * 1.0471976f;
+        const math::Vec3 right{std::cos(a) * width * 0.5f, 0.0f,
+                               std::sin(a) * width * 0.5f};
+        const math::Vec3 n{std::sin(a), 0.0f, -std::cos(a)};
+        const uint16_t base = static_cast<uint16_t>(v.size());
+        v.push_back({-right, n, {0.0f, 0.0f}, math::Vec4{1.0f, 1.0f, 1.0f, 1.0f}});
+        v.push_back({right, n, {1.0f, 0.0f}, math::Vec4{1.0f, 1.0f, 1.0f, 1.0f}});
+        v.push_back({right + math::Vec3{0.0f, height, 0.0f}, n, {1.0f, 1.0f},
+                     math::Vec4{1.0f, 1.0f, 1.0f, 1.0f}});
+        v.push_back({-right + math::Vec3{0.0f, height, 0.0f}, n, {0.0f, 1.0f},
+                     math::Vec4{1.0f, 1.0f, 1.0f, 1.0f}});
+        idx.insert(idx.end(), {base, static_cast<uint16_t>(base + 1),
+                               static_cast<uint16_t>(base + 2), base,
+                               static_cast<uint16_t>(base + 2),
+                               static_cast<uint16_t>(base + 3)});
+    }
+    return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
+                                idx.data(), static_cast<uint32_t>(idx.size()), name);
+}
+
+Mesh MakePineMesh(Renderer& renderer, const std::string& name) {
+    return MakeTreeCardMesh(renderer, name, 3.6f, 7.6f);
+}
+
+Mesh MakeCloudPlaneMesh(Renderer& renderer, const std::string& name) {
+    std::vector<Vertex3D> v = {
+        {{-0.5f, 0.0f, -0.5f}, {0, 1, 0}, {0, 0}, {1, 1, 1, 1}},
+        {{-0.5f, 0.0f, 0.5f}, {0, 1, 0}, {0, 1}, {1, 1, 1, 1}},
+        {{0.5f, 0.0f, 0.5f}, {0, 1, 0}, {1, 1}, {1, 1, 1, 1}},
+        {{0.5f, 0.0f, -0.5f}, {0, 1, 0}, {1, 0}, {1, 1, 1, 1}},
+    };
+    std::vector<uint16_t> idx = {0, 1, 2, 0, 2, 3};
+    return Mesh::CreateFromData(renderer, v.data(), 4, idx.data(), 6, name);
+}
+
+Mesh MakeCliffFaceMesh(Renderer& renderer, const std::string& name) {
+    constexpr int kZ = 124;
+    constexpr int kY = 58;
+    constexpr float kZStep = 0.58f;
+    constexpr float kYStep = 0.56f;
+    auto heightAt = [](float z, float y) {
+        const float n = std::sin(z * 0.33f + y * 0.27f) +
+                        0.55f * std::sin(z * 0.91f - y * 0.53f + 1.7f) +
+                        0.28f * std::sin(z * 2.10f + y * 1.20f) +
+                        0.14f * std::sin(z * 4.70f + y * 3.90f);
+        const float ledge = 0.18f * std::sin(y * 1.70f + z * 0.22f) +
+                            0.12f * std::sin(y * 2.80f + 0.6f);
+        return 5.00f + 0.34f * y + 0.55f * n + ledge;
+    };
+    std::vector<Vertex3D> v;
+    std::vector<uint16_t> idx;
+    v.reserve(static_cast<size_t>(kZ) * kY);
+    for (int iz = 0; iz < kZ; ++iz) {
+        const float z = -52.0f + iz * kZStep;
+        for (int iy = 0; iy < kY; ++iy) {
+            const float y = iy * kYStep;
+            const float e = 0.18f;
+            const float dyd = (heightAt(z, y + e) - heightAt(z, y - e)) / (2.0f * e);
+            const float dzd = (heightAt(z + e, y) - heightAt(z - e, y)) / (2.0f * e);
+            const math::Vec3 n = math::Vec3{-1.0f, dyd, dzd}.Normalized();
+            v.push_back({math::Vec3{heightAt(z, y), y, z}, n,
+                         {z * 0.34f + y * 0.10f, y * 0.40f - z * 0.08f}, {1, 1, 1, 1}});
         }
-        AppendMesh(v, idx, crown, ConeIndices(12));
+    }
+    for (int iz = 0; iz + 1 < kZ; ++iz) {
+        for (int iy = 0; iy + 1 < kY; ++iy) {
+            const uint16_t a = static_cast<uint16_t>(iz * kY + iy);
+            const uint16_t b = static_cast<uint16_t>(a + kY);
+            const uint16_t c = static_cast<uint16_t>(b + 1);
+            const uint16_t d = static_cast<uint16_t>(a + 1);
+            idx.insert(idx.end(), {a, b, c, a, c, d});
+        }
+    }
+    return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
+                                idx.data(), static_cast<uint32_t>(idx.size()), name);
+}
+Mesh MakeStylizedTreeMesh(Renderer& renderer, const std::string& name, bool pink) {
+    std::vector<Vertex3D> v;
+    std::vector<uint16_t> idx;
+    auto tri = [&](const math::Vec3& a, const math::Vec3& b, const math::Vec3& c,
+                   const math::Vec4& col) {
+        const math::Vec3 n = math::Cross(b - a, c - a).Normalized();
+        const uint16_t base = static_cast<uint16_t>(v.size());
+        v.push_back({a, n, {0, 0}, col});
+        v.push_back({b, n, {0, 0}, col});
+        v.push_back({c, n, {0, 0}, col});
+        idx.push_back(base); idx.push_back(base + 1); idx.push_back(base + 2);
+    };
+    auto cylinder = [&](const math::Vec3& a, const math::Vec3& b, float ra, float rb,
+                        const math::Vec4& col) {
+        const math::Vec3 axis = (b - a).Normalized();
+        const math::Vec3 up = std::abs(axis.y) > 0.9f ? math::Vec3{1, 0, 0}
+                                                       : math::Vec3{0, 1, 0};
+        const math::Vec3 u = math::Cross(axis, up).Normalized();
+        const math::Vec3 w = math::Cross(axis, u).Normalized();
+        constexpr int S = 6;
+        for (int i = 0; i < S; ++i) {
+            const float a0 = 6.2831853f * i / S;
+            const float a1 = 6.2831853f * (i + 1) / S;
+            const math::Vec3 d0 = u * std::cos(a0) + w * std::sin(a0);
+            const math::Vec3 d1 = u * std::cos(a1) + w * std::sin(a1);
+            tri(a + d0 * ra, b + d0 * rb, b + d1 * rb, col);
+            tri(a + d0 * ra, b + d1 * rb, a + d1 * ra, col);
+        }
+    };
+    const std::array<math::Vec3, 12> ico = {
+        math::Vec3{-1, 1.618f, 0}, math::Vec3{1, 1.618f, 0},
+        math::Vec3{-1, -1.618f, 0}, math::Vec3{1, -1.618f, 0},
+        math::Vec3{0, -1, 1.618f}, math::Vec3{0, 1, 1.618f},
+        math::Vec3{0, -1, -1.618f}, math::Vec3{0, 1, -1.618f},
+        math::Vec3{1.618f, 0, -1}, math::Vec3{1.618f, 0, 1},
+        math::Vec3{-1.618f, 0, -1}, math::Vec3{-1.618f, 0, 1}};
+    const std::array<std::array<int, 3>, 20> faces = {{
+        {{0, 11, 5}}, {{0, 5, 1}}, {{0, 1, 7}}, {{0, 7, 10}}, {{0, 10, 11}},
+        {{1, 5, 9}}, {{5, 11, 4}}, {{11, 10, 2}}, {{10, 7, 6}}, {{7, 1, 8}},
+        {{3, 9, 4}}, {{3, 4, 2}}, {{3, 2, 6}}, {{3, 6, 8}}, {{3, 8, 9}},
+        {{4, 9, 5}}, {{2, 4, 11}}, {{6, 2, 10}}, {{8, 6, 7}}, {{9, 8, 1}}}};
+    auto blob = [&](const math::Vec3& c, float r, const math::Vec4& col, float seed) {
+        std::array<math::Vec3, 12> p{};
+        for (size_t i = 0; i < p.size(); ++i) p[i] = c + ico[i].Normalized() * r;
+        for (size_t f = 0; f < faces.size(); ++f) {
+            const auto& q = faces[f];
+            const float t = 0.86f + 0.14f * std::sin(seed + f * 1.7f);
+            const math::Vec4 cc{col.x * t, col.y * t, col.z * t, 1.0f};
+            tri(p[q[0]], p[q[1]], p[q[2]], cc);
+        }
+    };
+    const math::Vec4 bark{0.31f, 0.22f, 0.15f, 1.0f};
+    const math::Vec4 leafA = pink ? math::Vec4{0.83f, 0.38f, 0.54f, 1}
+                                  : math::Vec4{0.22f, 0.38f, 0.18f, 1};
+    const math::Vec4 leafB = pink ? math::Vec4{0.95f, 0.62f, 0.72f, 1}
+                                  : math::Vec4{0.31f, 0.48f, 0.23f, 1};
+    const math::Vec4 leafC = pink ? math::Vec4{0.67f, 0.25f, 0.40f, 1}
+                                  : math::Vec4{0.17f, 0.30f, 0.14f, 1};
+    cylinder({0, 0, 0}, {0.05f, 4.2f, 0}, 0.30f, 0.16f, bark);
+    const std::array<math::Vec3, 5> tips = {
+        math::Vec3{-1.5f, 3.9f, 0.2f}, math::Vec3{1.35f, 4.0f, 0.5f},
+        math::Vec3{0.2f, 3.7f, -1.45f}, math::Vec3{-0.2f, 3.9f, 1.4f},
+        math::Vec3{0.0f, 5.4f, 0.0f}};
+    for (size_t i = 0; i < tips.size(); ++i) {
+        cylinder({0, 2.1f + 0.25f * i, 0}, tips[i], 0.10f, 0.06f, bark);
+    }
+    blob({-1.55f, 4.7f, 0.25f}, 1.35f, leafA, 1.0f);
+    blob({1.45f, 4.8f, 0.55f}, 1.28f, leafB, 2.0f);
+    blob({0.25f, 4.6f, -1.55f}, 1.22f, leafC, 3.0f);
+    blob({-0.15f, 5.9f, 0.25f}, 1.40f, leafB, 4.0f);
+    blob({0.9f, 5.2f, 1.15f}, 1.05f, leafA, 5.0f);
+    blob({-1.1f, 5.5f, -0.9f}, 1.0f, leafB, 6.0f);
+    return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
+                                idx.data(), static_cast<uint32_t>(idx.size()), name);
+}
+Mesh MakeBroadleafMesh(Renderer& renderer, const std::string& name) {
+    return MakeTreeCardMesh(renderer, name, 5.4f, 6.8f);
+}
+
+Mesh MakeBlossomMesh(Renderer& renderer, const std::string& name) {
+    return MakeTreeCardMesh(renderer, name, 4.4f, 5.4f);
+}
+
+Mesh MakeLeafCanopyMesh(Renderer& renderer, const std::string& name) {
+    std::vector<Vertex3D> v;
+    std::vector<uint16_t> idx;
+    auto hash = [](float n) {
+        const float s = std::sin(n * 127.1f + 311.7f) * 43758.5453f;
+        return s - std::floor(s);
+    };
+    // Dense alpha-tested leaf cards fill the sculpted Poly Haven boughs. The
+    // cards are real geometry (not billboards) so the canopy keeps parallax
+    // and dappled shading while the high-poly trunk supplies the silhouette.
+    for (int i = 0; i < 4200; ++i) {
+        const float a = hash(i * 1.31f) * 6.2831853f;
+        const float rr = std::sqrt(hash(i * 2.17f)) * 1.72f;
+        const float yy = 2.72f + (hash(i * 4.73f) - 0.5f) * 1.95f;
+        const math::Vec3 c{std::cos(a) * rr, yy, std::sin(a) * rr};
+        const float yaw = hash(i * 11.3f) * 6.2831853f;
+        const float pitch = (hash(i * 5.9f) - 0.5f) * 1.15f;
+        const math::Vec3 n{std::cos(pitch) * std::cos(yaw), std::sin(pitch),
+                           std::cos(pitch) * std::sin(yaw)};
+        math::Vec3 t = math::Cross(n, math::Vec3{0.0f, 1.0f, 0.0f});
+        if (t.LengthSq() < 1e-5f) t = math::Vec3{1.0f, 0.0f, 0.0f};
+        t = t.Normalized();
+        math::Vec3 b = math::Cross(n, t).Normalized();
+        const float grow = 0.62f + 0.28f * hash(i * 7.07f);
+        const float h = 0.30f * grow;
+        const float w = 0.26f * grow;
+        const float roll = (hash(i * 17.1f) - 0.5f) * 0.7f;
+        const math::Vec3 tw = t * std::cos(roll) + b * std::sin(roll);
+        const math::Vec3 bw = b * std::cos(roll) - t * std::sin(roll);
+        const float hue = hash(i * 13.7f);
+        const math::Vec4 col =
+            hue > 0.75f ? math::Vec4{0.80f, 0.86f, 0.52f, 1.0f}
+                        : (hue > 0.30f ? math::Vec4{0.66f, 0.78f, 0.46f, 1.0f}
+                                       : math::Vec4{0.50f, 0.66f, 0.36f, 1.0f});
+        const uint16_t base = static_cast<uint16_t>(v.size());
+        v.push_back({c - tw * w - bw * h, n, {0.0f, 0.0f}, col});
+        v.push_back({c + tw * w - bw * h, n, {1.0f, 0.0f}, col});
+        v.push_back({c + tw * w + bw * h, n, {1.0f, 1.0f}, col});
+        v.push_back({c - tw * w + bw * h, n, {0.0f, 1.0f}, col});
+        idx.insert(idx.end(), {base, static_cast<uint16_t>(base + 1),
+                               static_cast<uint16_t>(base + 2), base,
+                               static_cast<uint16_t>(base + 2),
+                               static_cast<uint16_t>(base + 3)});
+    }
+    return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
+                                idx.data(), static_cast<uint32_t>(idx.size()), name);
+}
+
+Mesh MakeMountainRidgeMesh(Renderer& renderer, const std::string& name) {
+    std::vector<Vertex3D> v;
+    std::vector<uint16_t> idx;
+    auto hash = [](float n) {
+        const float s = std::sin(n * 127.1f + 311.7f) * 43758.5453f;
+        return s - std::floor(s);
+    };
+    constexpr int kSeg = 72;
+    const math::Vec4 low{0.49f, 0.58f, 0.64f, 1.0f};
+    const math::Vec4 high{0.73f, 0.80f, 0.85f, 1.0f};
+    for (int i = 0; i <= kSeg; ++i) {
+        const float x = -1.0f + 2.0f * static_cast<float>(i) / kSeg;
+        // Broad massifs with sharper secondary peaks; the absolute sine folds
+        // turn the profile into ridge crests instead of rolling hills.
+        const float massif = 0.48f + 0.26f * std::sin(x * 4.1f + 1.3f);
+        const float peaks = 0.22f * std::fabs(std::sin(x * 9.7f + 0.4f)) +
+                            0.10f * std::fabs(std::sin(x * 23.0f + 2.2f));
+        const float h = massif + peaks + 0.05f * hash(i * 3.1f);
+        v.push_back({{x, -0.18f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}, low});
+        v.push_back({{x, h, 0.0f}, {0.0f, 0.0f, 1.0f},
+                     {0.0f, h}, h > 0.72f ? high : low});
+    }
+    for (int i = 0; i < kSeg; ++i) {
+        const uint16_t a = static_cast<uint16_t>(i * 2);
+        idx.insert(idx.end(), {a, static_cast<uint16_t>(a + 2),
+                               static_cast<uint16_t>(a + 1),
+                               static_cast<uint16_t>(a + 1),
+                               static_cast<uint16_t>(a + 2),
+                               static_cast<uint16_t>(a + 3)});
     }
     return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
                                 idx.data(), static_cast<uint32_t>(idx.size()), name);
@@ -310,14 +534,18 @@ Mesh MakeRockPillarMesh(Renderer& renderer, const std::string& name) {
         for (int i = 0; i < seg; ++i) {
             const float a0 = static_cast<float>(i) / seg * math::kTwoPi;
             const float a1 = static_cast<float>(i + 1) / seg * math::kTwoPi;
-            auto point = [](const Ring& ring, float a) {
-                return math::Vec3{ring.ox + std::cos(a) * ring.r, ring.y,
-                                  ring.oz + std::sin(a) * ring.r};
+            auto radiusAt = [&](int ringIdx, int segIdx) {
+                const Ring& ring = rings[ringIdx];
+                return ring.r * (0.90f + 0.13f * std::sin(segIdx * 2.1f + ringIdx * 1.4f));
             };
-            const math::Vec3 p0 = point(lo, a0);
-            const math::Vec3 p1 = point(lo, a1);
-            const math::Vec3 p2 = point(hi, a1);
-            const math::Vec3 p3 = point(hi, a0);
+            auto point = [](const Ring& ring, float a, float r) {
+                return math::Vec3{ring.ox + std::cos(a) * r, ring.y,
+                                  ring.oz + std::sin(a) * r};
+            };
+            const math::Vec3 p0 = point(lo, a0, radiusAt(ri, i));
+            const math::Vec3 p1 = point(lo, a1, radiusAt(ri, i + 1));
+            const math::Vec3 p2 = point(hi, a1, radiusAt(ri + 1, i + 1));
+            const math::Vec3 p3 = point(hi, a0, radiusAt(ri + 1, i));
             math::Vec3 n = math::Cross(p1 - p0, p2 - p0).Normalized();
             const math::Vec3 mid{(p0.x + p2.x) * 0.5f, (p0.y + p2.y) * 0.5f,
                                  (p0.z + p2.z) * 0.5f};
@@ -326,7 +554,7 @@ Mesh MakeRockPillarMesh(Renderer& renderer, const std::string& name) {
             if (math::Dot(n, mid - axis) < 0.0f)
                 n = math::Vec3{-n.x, -n.y, -n.z};
             const uint16_t base = static_cast<uint16_t>(v.size());
-            const math::Vec4 c = (ri == 0 && i % 3 == 0) ? moss : stone;
+            const math::Vec4 c = ((ri == 0 && i % 3 == 0) || (ri == 2 && i % 5 == 0)) ? moss : stone;
             v.push_back({p0, n, {a0 / math::kTwoPi, lo.y * 0.1f}, c});
             v.push_back({p1, n, {a1 / math::kTwoPi, lo.y * 0.1f}, c});
             v.push_back({p2, n, {a1 / math::kTwoPi, hi.y * 0.1f}, c});
@@ -347,6 +575,30 @@ Mesh MakeRockPillarMesh(Renderer& renderer, const std::string& name) {
     Mesh boulder = Mesh::CreateSphere(renderer, 1.0f, 10, 7, "pillar_boulder");
     AppendMeshAt(v, idx, boulder, {-1.25f, 0.35f, 0.25f}, stone);
     AppendMeshAt(v, idx, boulder, {1.10f, 0.28f, -0.35f}, moss);
+    return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
+                                idx.data(), static_cast<uint32_t>(idx.size()), name);
+}
+
+Mesh MakeBoulderMesh(Renderer& renderer, const std::string& name) {
+    std::vector<Vertex3D> v;
+    std::vector<uint16_t> idx;
+    Mesh sphere = Mesh::CreateSphere(renderer, 1.0f, 14, 9, "boulder_base");
+    std::vector<Vertex3D> sv = sphere.CpuVerts();
+    for (auto& vv : sv) {
+        const float warp = 1.0f + 0.13f * std::sin(vv.pos.x * 7.0f + vv.pos.z * 4.0f) +
+                           0.08f * std::cos(vv.pos.y * 9.0f - vv.pos.x * 3.0f);
+        vv.pos.x *= 1.18f * warp;
+        vv.pos.z *= 1.05f * warp;
+        vv.pos.y *= 0.64f;
+        if (vv.pos.y < -0.36f) vv.pos.y = -0.36f + (vv.pos.y + 0.36f) * 0.12f;
+        const math::Vec4 stone{0.56f, 0.55f, 0.51f, 1.0f};
+        const math::Vec4 moss{0.34f, 0.43f, 0.29f, 1.0f};
+        vv.color = (vv.pos.y > 0.20f &&
+                    std::sin(vv.pos.x * 8.0f + vv.pos.z * 6.0f) > 0.15f)
+                       ? moss
+                       : stone;
+    }
+    AppendMesh(v, idx, sv, sphere.CpuIndices());
     return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
                                 idx.data(), static_cast<uint32_t>(idx.size()), name);
 }
@@ -377,24 +629,132 @@ Mesh MakeCultivatorMesh(Renderer& renderer, const std::string& name) {
     const math::Vec4 robe{0.075f, 0.085f, 0.11f, 1.0f};
     const math::Vec4 trim{0.48f, 0.38f, 0.22f, 1.0f};
     const math::Vec4 skin{0.84f, 0.70f, 0.56f, 1.0f};
-    const math::Vec4 hair{0.56f, 0.59f, 0.65f, 1.0f};
+    const math::Vec4 hair{0.58f, 0.61f, 0.67f, 1.0f};
+    const math::Vec4 under{0.52f, 0.52f, 0.48f, 1.0f};
+    // Layered robe: a short pale under-robe hem under the dark outer skirt.
+    auto underskirt = ConeVerts(0.62f, 0.22f, 12, under);
+    for (auto& vv : underskirt) vv.pos.y -= 0.02f;
+    AppendMesh(v, idx, underskirt, ConeIndices(12));
     auto skirt = ConeVerts(0.56f, 1.32f, 12, robe);
     AppendMesh(v, idx, skirt, ConeIndices(12));
     Mesh torso = Mesh::CreateCube(renderer, 0.46f, 0.56f, 0.30f, "cultivator_torso");
     AppendMeshAt(v, idx, torso, {0.0f, 1.22f, 0.0f}, robe);
+    Mesh collar = Mesh::CreateCube(renderer, 0.36f, 0.10f, 0.30f, "cultivator_collar");
+    AppendMeshAt(v, idx, collar, {0.0f, 1.43f, 0.0f}, under);
     Mesh sash = Mesh::CreateCube(renderer, 0.50f, 0.10f, 0.32f, "cultivator_sash");
     AppendMeshAt(v, idx, sash, {0.0f, 1.00f, 0.0f}, trim);
-    Mesh arm = Mesh::CreateCube(renderer, 0.14f, 0.58f, 0.16f, "cultivator_arm");
-    AppendMeshAt(v, idx, arm, {-0.29f, 1.26f, 0.0f}, robe);
-    AppendMeshAt(v, idx, arm, {0.29f, 1.26f, 0.0f}, robe);
+    Mesh sleeve = Mesh::CreateCube(renderer, 0.20f, 0.54f, 0.22f, "cultivator_sleeve");
+    AppendMeshAt(v, idx, sleeve, {-0.31f, 1.24f, 0.0f}, robe);
+    AppendMeshAt(v, idx, sleeve, {0.31f, 1.24f, 0.0f}, robe);
+    Mesh hand = Mesh::CreateSphere(renderer, 0.075f, 8, 6, "cultivator_hand");
+    AppendMeshAt(v, idx, hand, {-0.33f, 0.98f, 0.0f}, skin);
+    AppendMeshAt(v, idx, hand, {0.33f, 0.98f, 0.0f}, skin);
     Mesh head = Mesh::CreateSphere(renderer, 0.22f, 12, 8, "cultivator_head");
     AppendMeshAt(v, idx, head, {0.0f, 1.66f, 0.0f}, skin);
-    Mesh backHair = Mesh::CreateCube(renderer, 0.20f, 0.74f, 0.08f, "cultivator_hair");
-    AppendMeshAt(v, idx, backHair, {0.0f, 1.45f, 0.16f}, hair);
-    Mesh topHair = Mesh::CreateSphere(renderer, 0.20f, 10, 7, "cultivator_hair_top");
-    AppendMeshAt(v, idx, topHair, {0.0f, 1.80f, 0.03f}, hair);
+    Mesh backHair = Mesh::CreateCube(renderer, 0.24f, 0.86f, 0.09f, "cultivator_hair");
+    AppendMeshAt(v, idx, backHair, {0.0f, 1.40f, 0.17f}, hair);
+    Mesh lock = Mesh::CreateCube(renderer, 0.055f, 0.55f, 0.06f, "cultivator_lock");
+    AppendMeshAt(v, idx, lock, {-0.15f, 1.34f, 0.16f}, hair);
+    AppendMeshAt(v, idx, lock, {0.15f, 1.34f, 0.16f}, hair);
+    Mesh topHair = Mesh::CreateSphere(renderer, 0.22f, 10, 7, "cultivator_hair_top");
+    AppendMeshAt(v, idx, topHair, {0.0f, 1.81f, 0.03f}, hair);
+    Mesh pin = Mesh::CreateCube(renderer, 0.06f, 0.06f, 0.30f, "cultivator_pin");
+    AppendMeshAt(v, idx, pin, {0.13f, 1.90f, 0.02f}, trim);
+    Mesh jade = Mesh::CreateSphere(renderer, 0.065f, 8, 6, "cultivator_jade");
+    AppendMeshAt(v, idx, jade, {0.18f, 1.22f, -0.17f}, {0.20f, 0.55f, 0.40f, 1.0f});
     Mesh sword = Mesh::CreateCube(renderer, 0.07f, 1.15f, 0.04f, "cultivator_sword");
-    AppendMeshAt(v, idx, sword, {0.28f, 0.82f, 0.20f}, {0.72f, 0.76f, 0.82f, 1.0f});
+    AppendMeshAt(v, idx, sword, {0.29f, 0.82f, 0.20f}, {0.72f, 0.76f, 0.82f, 1.0f});
+    return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
+                                idx.data(), static_cast<uint32_t>(idx.size()), name);
+}
+
+Mesh MakeFernMesh(Renderer& renderer, const std::string& name) {
+    (void)renderer;
+    std::vector<Vertex3D> v;
+    std::vector<uint16_t> idx;
+    const int fronds = 9;
+    for (int f = 0; f < fronds; ++f) {
+        const float a = static_cast<float>(f) / fronds * math::kTwoPi +
+                        (f % 2 ? 0.17f : -0.11f);
+        const float dirX = std::cos(a);
+        const float dirZ = std::sin(a);
+        const float sideX = -dirZ;
+        const float sideZ = dirX;
+        const float len = 0.55f + (f % 3) * 0.10f;
+        const float midY = 0.34f + (f % 2) * 0.06f;
+        const math::Vec3 tip{dirX * len, 0.22f, dirZ * len};
+        const math::Vec3 mid{dirX * len * 0.55f, midY, dirZ * len * 0.55f};
+        const float w0 = 0.075f, w1 = 0.105f, w2 = 0.012f;
+        const math::Vec3 baseL{-sideX * w0, 0.01f, -sideZ * w0};
+        const math::Vec3 baseR{sideX * w0, 0.01f, sideZ * w0};
+        const math::Vec3 midL{mid.x - sideX * w1, mid.y, mid.z - sideZ * w1};
+        const math::Vec3 midR{mid.x + sideX * w1, mid.y, mid.z + sideZ * w1};
+        const math::Vec3 tipL{tip.x - sideX * w2, tip.y, tip.z - sideZ * w2};
+        const math::Vec3 tipR{tip.x + sideX * w2, tip.y, tip.z + sideZ * w2};
+        const math::Vec4 dark{0.075f, 0.23f, 0.10f, 1.0f};
+        const math::Vec4 light{0.18f, 0.42f, 0.17f, 1.0f};
+        const math::Vec3 n{0.0f, 1.0f, 0.0f};
+        const uint16_t base = static_cast<uint16_t>(v.size());
+        auto add = [&](const math::Vec3& p, const math::Vec4& c, float u, float vv) {
+            v.push_back({p, n, {u, vv}, c});
+        };
+        add(baseL, dark, 0.0f, 0.0f);
+        add(baseR, dark, 1.0f, 0.0f);
+        add(midL, light, 0.0f, 0.55f);
+        add(midR, light, 1.0f, 0.55f);
+        add(tipL, light, 0.0f, 1.0f);
+        add(tipR, light, 1.0f, 1.0f);
+        // Two-sided leaf strip: front and back faces so the fan reads from any
+        // camera angle without a dedicated alpha-card material.
+        idx.insert(idx.end(), {base, static_cast<uint16_t>(base + 1),
+                               static_cast<uint16_t>(base + 3), base,
+                               static_cast<uint16_t>(base + 3),
+                               static_cast<uint16_t>(base + 2),
+                               static_cast<uint16_t>(base + 2),
+                               static_cast<uint16_t>(base + 3),
+                               static_cast<uint16_t>(base + 5), base,
+                               static_cast<uint16_t>(base + 5),
+                               static_cast<uint16_t>(base + 4)});
+        idx.insert(idx.end(), {base, static_cast<uint16_t>(base + 3),
+                               static_cast<uint16_t>(base + 1), base,
+                               static_cast<uint16_t>(base + 2),
+                               static_cast<uint16_t>(base + 3),
+                               static_cast<uint16_t>(base + 2),
+                               static_cast<uint16_t>(base + 5),
+                               static_cast<uint16_t>(base + 3), base,
+                               static_cast<uint16_t>(base + 4),
+                               static_cast<uint16_t>(base + 5)});
+    }
+    return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
+                                idx.data(), static_cast<uint32_t>(idx.size()), name);
+}
+
+Mesh MakeRedShrubMesh(Renderer& renderer, const std::string& name) {
+    std::vector<Vertex3D> v;
+    std::vector<uint16_t> idx;
+    Mesh trunk = Mesh::CreateCube(renderer, 0.16f, 0.55f, 0.16f, "shrub_trunk");
+    AppendMeshAt(v, idx, trunk, {0.0f, 0.27f, 0.0f}, {0.28f, 0.18f, 0.12f, 1.0f});
+    Mesh leaf = Mesh::CreateSphere(renderer, 0.45f, 12, 8, "shrub_leaf");
+    AppendMeshAt(v, idx, leaf, {-0.28f, 0.62f, 0.10f}, {0.46f, 0.12f, 0.08f, 1.0f});
+    AppendMeshAt(v, idx, leaf, {0.26f, 0.70f, -0.08f}, {0.62f, 0.20f, 0.10f, 1.0f});
+    AppendMeshAt(v, idx, leaf, {0.05f, 0.88f, 0.12f}, {0.72f, 0.28f, 0.12f, 1.0f});
+    return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
+                                idx.data(), static_cast<uint32_t>(idx.size()), name);
+}
+
+Mesh MakeStonePathMesh(Renderer& renderer, const std::string& name) {
+    std::vector<Vertex3D> v;
+    std::vector<uint16_t> idx;
+    const int slabs = 34;
+    for (int i = 0; i < slabs; ++i) {
+        const float z = -37.4f + i * 2.2f;
+        const float w = 4.15f + 0.09f * std::sin(i * 2.1f);
+        Mesh slab = Mesh::CreateCube(renderer, w, 0.12f, 2.34f, "path_slab");
+        const float shade = 0.68f + 0.05f * std::sin(i * 1.7f);
+        AppendMeshAt(v, idx, slab,
+                     {0.05f * std::sin(i * 1.3f), 0.06f, z},
+                     {shade, shade, shade * 0.96f, 1.0f});
+    }
     return Mesh::CreateFromData(renderer, v.data(), static_cast<uint32_t>(v.size()),
                                 idx.data(), static_cast<uint32_t>(idx.size()), name);
 }
@@ -461,3 +821,22 @@ Mesh MakeGrassMesh(Renderer& renderer, const std::string& name) {
 }
 
 } // namespace neon::gfx
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

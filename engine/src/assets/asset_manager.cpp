@@ -1,4 +1,4 @@
-#include "neon/assets/asset_manager.hpp"
+﻿#include "neon/assets/asset_manager.hpp"
 #include "neon/assets/asset_path.hpp"
 
 #include "system_cjk_codepoints.hpp"
@@ -67,7 +67,7 @@ uint64_t FileMTime(const std::string& path) {
 // real filesystem when no layer is set. Returns Err on missing/unreadable.
 // When a VFS is set but rejects the path (an absolute path, or a reference
 // that escapes the mounted root), it falls back to a direct CWD read of the
-// ORIGINAL path — so relative/absolute/legacy references all resolve through
+// ORIGINAL path 鈥?so relative/absolute/legacy references all resolve through
 // this one entry point without per-call path munging.
 core::Result<std::vector<uint8_t>> ReadAllBytes(neon::io::IFileSystem* fs,
                                                 const std::string& path) {
@@ -533,7 +533,7 @@ DecodedImage AssetManager::DecodeImage(const std::string& path, const TextureLoa
 }
 
 DecodedImage AssetManager::DecodeImageForPath(const std::string& path, bool compressBc1) {
-    // Worker-safe (pure CPU: VFS/disk reads + stbi + optional BC1 compress —
+    // Worker-safe (pure CPU: VFS/disk reads + stbi + optional BC1 compress 鈥?
     // no GL, no shared caches). Prefer a pre-baked BC1 texture (offline
     // AssetImporter cache): upload the blocks directly, skipping the runtime
     // decode+compress. Reads through the VFS when installed (packed game),
@@ -578,7 +578,7 @@ gfx::Texture AssetManager::LoadTexturePredecoded(const std::string& path,
         NEON_LOG_ERROR("Asset: failed to load texture '%s'", path.c_str());
         return {};
     }
-    gfx::Texture texture = UploadDecoded(img, opts.wrap);
+    gfx::Texture texture = UploadDecoded(img, opts.wrap, opts.mipmaps);
     if (!texture.Valid()) {
         NEON_LOG_ERROR("Asset: failed to upload texture '%s'", path.c_str());
         return {};
@@ -591,7 +591,7 @@ gfx::Texture AssetManager::LoadTexturePredecoded(const std::string& path,
     return texture;
 }
 
-gfx::Texture AssetManager::UploadDecoded(const DecodedImage& img, gfx::Wrap wrap) {
+gfx::Texture AssetManager::UploadDecoded(const DecodedImage& img, gfx::Wrap wrap, bool mipmaps) {
     if (!img.bc1.empty()) {
         gfx::Texture tex = renderer_->CreateTextureCompressed(
             img.width, img.height, kBc1Format, img.bc1.data(), img.bc1.size());
@@ -609,7 +609,7 @@ gfx::Texture AssetManager::UploadDecoded(const DecodedImage& img, gfx::Wrap wrap
     desc.width = img.width;
     desc.height = img.height;
     desc.rgba = img.rgba.data();
-    desc.mipmaps = true;
+    desc.mipmaps = mipmaps;
     desc.wrap = wrap;
     return renderer_->CreateTexture(desc);
 }
@@ -625,6 +625,7 @@ std::string AssetManager::TextureCacheKey(const std::string& path,
     std::string key = path;
     if (opts.flipVertically) key += std::string("\x1F") + "f";
     if (opts.wrap == gfx::Wrap::Repeat) key += std::string("\x1F") + "r";
+    if (!opts.mipmaps) key += std::string("\x1F") + "n";
     return key;
 }
 
@@ -643,6 +644,7 @@ TextureLoadOptions AssetManager::OptsFromKey(const std::string& key) {
     for (size_t i = cut; i < key.size(); ++i) {
         if (key[i] == 'f') opts.flipVertically = true;
         if (key[i] == 'r') opts.wrap = gfx::Wrap::Repeat;
+        if (key[i] == 'n') opts.mipmaps = false;
     }
     return opts;
 }
@@ -663,7 +665,7 @@ gfx::Texture AssetManager::LoadTexture(const std::string& path, const TextureLoa
     }
 
     DecodedImage img;
-    // G5-4-3: prefer a pre-baked BC1 texture (offline AssetImporter cache) —
+    // G5-4-3: prefer a pre-baked BC1 texture (offline AssetImporter cache) 鈥?
     // upload the blocks directly, skipping the runtime decode+compress. Reads
     // through the VFS when installed (packed game), else the bake dir on disk.
     img = DecodeImageForPath(path, opts.compressBc1 && bc1Supported_);
@@ -672,7 +674,7 @@ gfx::Texture AssetManager::LoadTexture(const std::string& path, const TextureLoa
         NEON_LOG_ERROR("Asset: failed to load texture '%s'", path.c_str());
         return {};
     }
-    gfx::Texture texture = UploadDecoded(img, opts.wrap);
+    gfx::Texture texture = UploadDecoded(img, opts.wrap, opts.mipmaps);
     if (!texture.Valid()) {
         NEON_LOG_ERROR("Asset: failed to upload texture '%s'", path.c_str());
         return {};
@@ -876,7 +878,7 @@ void AssetManager::FinishAsyncTexture(const std::string& path, DecodedImage img,
 
     bool ok = false;
     if (img.channels > 0 && !img.rgba.empty()) {
-        gfx::Texture tex = UploadDecoded(img, opts.wrap);
+        gfx::Texture tex = UploadDecoded(img, opts.wrap, opts.mipmaps);
         if (tex.Valid()) {
             const std::string key = TextureCacheKey(path, opts);
             textures_[key] = tex;
@@ -1050,10 +1052,10 @@ void AssetManager::LoadGLTFAsync(const std::string& path, std::function<void(boo
         else parsed.error = "failed to open '" + path + "'";
         // Decode the glTF's images HERE (worker, pure CPU via
         // DecodeImageForPath) so the main-thread Finish only uploads to the
-        // GPU. Sponza-class assets carry dozens of 1024x1024 JPEGs — decoding
+        // GPU. Sponza-class assets carry dozens of 1024x1024 JPEGs 鈥?decoding
         // them on the main thread was a multi-frame stall per asset.
         // Memory note: decoded RGBA is transient until Finish uploads it (the
-        // upload frees nothing — the map is released when this closure ends).
+        // upload frees nothing 鈥?the map is released when this closure ends).
         std::unordered_map<std::string, DecodedImage> decoded;
         if (parsed.error.empty() && !parsed.dir.empty()) {
             if (const core::Json* images = parsed.root.Get("images")) {
@@ -1328,8 +1330,8 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
     struct RawMesh {
         std::vector<gfx::Vertex3D> verts;
         std::vector<uint16_t> indices;
-        // 大型 glTF mesh（>65535 顶点，如 Poly Haven 扫描树）用 32 位索引。
-        // 底层 Mesh::CreateFromDataU32 已支持；此前导入器直接丢弃这类 mesh。
+        // 澶у瀷 glTF mesh锛?65535 椤剁偣锛屽 Poly Haven 鎵弿鏍戯級鐢?32 浣嶇储寮曘€?
+        // 搴曞眰 Mesh::CreateFromDataU32 宸叉敮鎸侊紱姝ゅ墠瀵煎叆鍣ㄧ洿鎺ヤ涪寮冭繖绫?mesh銆?
         std::vector<uint32_t> indicesU32;
         bool needsU32 = false;
         gfx::Material material;
@@ -1339,9 +1341,9 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
         bool skinned = false;
     };
     std::vector<RawMesh> rawMeshes;
-    // C15 延伸（多 mesh glTF 场景，如 Sponza）：每个 mesh 的 primitive 在
-    // rawMeshes 中的起始索引与数量。一个 node 引用一个 mesh 时，它的全部
-    // primitives（各自材质）都要成为 GltfMeshNode，而非只取第一个。
+    // C15 寤朵几锛堝 mesh glTF 鍦烘櫙锛屽 Sponza锛夛細姣忎釜 mesh 鐨?primitive 鍦?
+    // rawMeshes 涓殑璧峰绱㈠紩涓庢暟閲忋€備竴涓?node 寮曠敤涓€涓?mesh 鏃讹紝瀹冪殑鍏ㄩ儴
+    // primitives锛堝悇鑷潗璐級閮借鎴愪负 GltfMeshNode锛岃€岄潪鍙彇绗竴涓€?
     std::vector<std::pair<int, int>> meshPrimRange;  // mesh index -> (start, count)
     if (const core::Json* meshes = root.Get("meshes")) {
         for (size_t mi = 0; mi < meshes->Size(); ++mi) {
@@ -1459,9 +1461,9 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
                         const uint16_t* src = reinterpret_cast<const uint16_t*>(idxBase);
                         for (int i = 0; i < idxCount; ++i) rm.indices[static_cast<size_t>(i)] = src[i];
                     } else if (idxStride == 4) {
-                        // 大型 mesh（>65535 顶点）：保留 32 位索引，经
-                        // CreateFromDataU32 上传（扫描高模 glTF 必备，此前
-                        // 直接丢弃导致 Poly Haven 树木等不可见）。
+                        // 澶у瀷 mesh锛?65535 椤剁偣锛夛細淇濈暀 32 浣嶇储寮曪紝缁?
+                        // CreateFromDataU32 涓婁紶锛堟壂鎻忛珮妯?glTF 蹇呭锛屾鍓?
+                        // 鐩存帴涓㈠純瀵艰嚧 Poly Haven 鏍戞湪绛変笉鍙锛夈€?
                         const uint32_t* src = reinterpret_cast<const uint32_t*>(idxBase);
                         bool big = false;
                         for (int i = 0; i < idxCount; ++i) {
@@ -1640,9 +1642,9 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
         const NodeInfo& n = nodes[static_cast<size_t>(idx)];
         math::Mat4 world = parent * n.transform;
         if (n.mesh >= 0 && n.mesh < static_cast<int>(rawMeshes.size())) {
-            // C15 延伸：一个 node 引用一个 mesh，该 mesh 的全部 primitives
-            //（各自材质）都要成为 GltfMeshNode，而非只取第一个（Sponza 类
-            // 单 mesh / 多 primitive 的建筑场景）。
+            // C15 寤朵几锛氫竴涓?node 寮曠敤涓€涓?mesh锛岃 mesh 鐨勫叏閮?primitives
+            //锛堝悇鑷潗璐級閮借鎴愪负 GltfMeshNode锛岃€岄潪鍙彇绗竴涓紙Sponza 绫?
+            // 鍗?mesh / 澶?primitive 鐨勫缓绛戝満鏅級銆?
             int pStart = n.mesh, pCount = 1;
             if (n.mesh < static_cast<int>(meshPrimRange.size())) {
                 pStart = meshPrimRange[static_cast<size_t>(n.mesh)].first;
@@ -1709,7 +1711,7 @@ GltfAsset AssetManager::LoadGltfJson(core::Json& root, std::vector<std::vector<u
                 meshRefs_[meshKey] = 1;
                 out.nodes.push_back({world, mesh, rm.material, rm.materialName});
             }
-            }  // for r: 该 mesh 的所有 primitives
+            }  // for r: 璇?mesh 鐨勬墍鏈?primitives
         }
         for (int child : n.children) visit(child, world);
     };
