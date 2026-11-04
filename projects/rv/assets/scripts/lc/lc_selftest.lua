@@ -4288,6 +4288,25 @@ function runSelfTest()
                      tostring(shoulder ~= nil)))
   end
 
+  -- Road paint must sit above the asphalt and win the depth test.
+  do
+    local dash = ReadText and
+      ReadText("assets/prefabs/rv_road_dash.json") or nil
+    local pos = nil
+    if roadDashes ~= nil and roadDashes[1] ~= nil and
+       roadDashes[1].ent ~= nil and GetPosition ~= nil then
+      pos = GetPosition(roadDashes[1].ent)
+    end
+    local lifted = -1
+    if pos ~= nil then
+      lifted = pos.y - ((terrainHeight and terrainHeight(pos.x, pos.z)) or 0)
+    end
+    ok(r, "road paint depth",
+       dash ~= nil and dash:find("polygonOffset", 1, true) ~= nil and
+       dash:find("-4", 1, true) ~= nil and lifted >= 0.12,
+       string.format("dash=%s lift=%.3f", tostring(dash ~= nil), lifted))
+  end
+
   -- 小地图额外标记：未搜刮补给箱和鱼笼
   do
     local kc, kt = roadCaches, pondTrap

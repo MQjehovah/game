@@ -252,7 +252,9 @@ function spawnRoadBetween(ax, az, bx, bz)
     local d = math.min(len, i * SEG + SEG * 0.5)
     local ent = SpawnPrefab("rv_road_seg", { x = 0, y = -50, z = 0 })
     if ent ~= nil then
-      SetScale(ent, 7.5, 0.02, SEG + 0.3)
+      -- Butt the slabs edge-to-edge instead of overlapping them: coplanar
+      -- overlapping tops z-fight into flickering dark patches on the road.
+      SetScale(ent, 7.5, 0.02, SEG)
       placeAt(ent, d, 0.08 + (roadLinkSeq % 6) * 0.0015)
       roadSegments[#roadSegments + 1] = { ent = ent }
     end
@@ -260,7 +262,10 @@ function spawnRoadBetween(ax, az, bx, bz)
   for d = 6, len - 2, 6 do
     local ent = SpawnPrefab("rv_road_dash", { x = 0, y = -50, z = 0 })
     if ent ~= nil then
-      placeAt(ent, d, 0.12 + (roadLinkSeq % 6) * 0.0015)
+      -- Keep the paint clear of the asphalt's polygon offset and its normal
+      -- map; otherwise the line vanishes or turns into road texture at
+      -- grazing angles.
+      placeAt(ent, d, 0.14 + (roadLinkSeq % 6) * 0.0015)
       roadDashes[#roadDashes + 1] = { ent = ent }
     end
   end
@@ -375,10 +380,23 @@ function spawnRoadShoulders(ax, az, bx, bz)
       end
       if clear then
         local gy = (terrainHeight and terrainHeight(x, z)) or 0
+        local pitch, roll = 0, 0
+        if terrainSlope ~= nil then
+          local dhx, dhz = terrainSlope(x, z)
+          local dhF = dhx * ux + dhz * uz
+          local dhR = dhx * uz - dhz * ux
+          pitch = math.max(-0.18, math.min(0.18, -math.atan(dhF)))
+          roll = math.max(-0.18, math.min(0.18, math.atan(dhR)))
+        end
         local e = SpawnPrefab("rv_road_shoulder", { x = x, y = gy + 0.055, z = z })
         if e ~= nil then
-          SetScale(e, 1.40, 0.020, 10.30)
-          SetRotationY(e, yaw)
+          -- No 0.3 m overlap: coplanar shoulder tops also z-fight.
+          SetScale(e, 1.40, 0.020, 10.0)
+          if SetRotationEuler ~= nil then
+            SetRotationEuler(e, pitch, roll, yaw)
+          else
+            SetRotationY(e, yaw)
+          end
           roadShoulders[#roadShoulders + 1] = e
         end
       end

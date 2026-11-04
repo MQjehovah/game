@@ -10,6 +10,7 @@
       "colorHex": "#C8A64A",
       "roughness": 0.9,
       "metallic": 0,
+      "polygonOffset": -4,
       "castShadow": false,
       "receiveShadow": false
     }
