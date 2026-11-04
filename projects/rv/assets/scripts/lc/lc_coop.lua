@@ -466,7 +466,8 @@ end
 local function jobToken()
   if job == nil then return "-" end
   local flags = (job.urgent and 1 or 0) + (job.fragile and 2 or 0) +
-                (job.stops and 4 or 0) + (job.perishable and 8 or 0)
+                (job.stops and 4 or 0) + (job.perishable and 8 or 0) +
+                (job.livestock and 16 or 0) + (job.hazmat and 32 or 0)
   return string.format("%s:%d:%d:%d", job.destId, job.crates or 1,
                        math.floor((job.condition or 1) * 100), flags)
 end
@@ -3167,6 +3168,8 @@ function coopDrawHud()
     if math.floor(f / 1) % 2 == 1 then tags = tags .. "[急]" end
     if math.floor(f / 2) % 2 == 1 then tags = tags .. "[易碎]" end
     if math.floor(f / 8) % 2 == 1 then tags = tags .. "[易腐]" end
+    if math.floor(f / 16) % 2 == 1 then tags = tags .. "[活畜]" end
+    if math.floor(f / 32) % 2 == 1 then tags = tags .. "[危险品]" end
     if math.floor(f / 4) % 2 == 1 then tags = tags .. "[2站]" end
     DrawText(string.format("货运%s 货物 x%d → %s  %.0fm  货况 %.0f%%  （0 放弃）",
              tags, coop.jobCrates or 0, jnd and jnd.name or coop.jobDest, jd,
