@@ -73,6 +73,7 @@
   若同时有生食材和 2 份野浆果，可炖成 `浆果炖肉`（饥饿 -50、回暖 40 分钟）；
   生水不能直接喝（`raw water blocked`，会提示去篝火煮沸且不消耗）；
   没有食材但有咖啡豆 + 15L 净水时，篝火还能煮一壶热咖啡（无电也能提神保暖）；
+  联机时客机走近篝火按 `E` 由服务端自动烹饪（`campfire_cook`）；
   截图 `start_mode=campfiremenu`，自检 `dirty water purification` /
   `raw water blocked` / `campfire menu` / `campfire roasts food` /
   `campfire stew` / `campfire coffee`。
@@ -923,6 +924,8 @@
   `[coop-veh] demo token=72:60:55:80:95:0:...`，验证联机车况/四轮数据同步。
 - `coop_maint.txt`：客户端 3s 按 O 打开保养面板，日志
   `[coop-maint] client open=true rows=8`，验证联机客机也能看车况。
+- `coop_campfire.txt`：服务端 3s 点燃篝火并烤鱼，日志
+  `[coop-campfire] demo ok=true fire=true fuel=645`，验证联机篝火烹饪。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /
