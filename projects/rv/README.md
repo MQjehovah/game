@@ -173,7 +173,10 @@
 - **Blender 建模的普通 POI**：普通程序化地点不再用立方体拼墙，统一改用
   `rv_roadhouse.gltf`（`tools/gen_rv_roadhouse_blender.py`，Blender 3.1.2 生成）：
   6.2×5.2m 木结构、门廊、坡屋顶、窗框/百叶、烟囱和室内柜台/桌子，
-  正门仍对齐脚本碰撞门洞；截图 `start_mode=roadhouse`。
+  正门仍对齐脚本碰撞门洞；护林站旁的瞭望塔也改为
+  `rv_ranger_tower.gltf`（`tools/gen_rv_ranger_tower_blender.py`，通过 Blender MCP 执行）：
+  石基、四柱、横梁/斜撑、平台/护栏、坡屋顶、爬梯和旗杆；
+  截图 `start_mode=roadhouse` / `start_mode=ranger`。
 - **可进入的废宅商店**（`rv_store.gltf`）：实心墙体（内外两面可见）、1.6m 门洞 +
   门框/雨棚/红招牌、两扇透明可破碎橱窗（窗内展示商品）；店内四层商品墙（成排彩色货盒 +
   价签）、中央双层货架、玻璃门冷柜、果蔬木箱、带屏幕/键盘/小票的收银机、挂式价牌、

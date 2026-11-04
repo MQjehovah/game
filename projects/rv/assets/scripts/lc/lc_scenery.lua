@@ -1437,19 +1437,11 @@ function spawnRuinFor(nd)
       end
     end
   elseif style == "ranger" then
-    -- 林间护林站：旁边一座木制瞭望塔 + 门口地图板
+    -- 林间护林站：旁边一座 Blender 建模的木制瞭望塔 + 门口地图板
     local tx, tz = cx + 6.0, cz - 3.0
     local ty = (terrainHeight and terrainHeight(tx, tz)) or 0
-    for _, o in ipairs({ { -0.8, -0.8 }, { 0.8, -0.8 },
-                         { -0.8, 0.8 }, { 0.8, 0.8 } }) do
-      local leg = SpawnPrefab("rv_camp_wood", {
-        x = tx + o[1], y = ty + 2.0, z = tz + o[2] })
-      if leg ~= nil then SetScale(leg, 0.16, 4.0, 0.16) end
-    end
-    local plat = SpawnPrefab("rv_camp_wood", { x = tx, y = ty + 4.0, z = tz })
-    if plat ~= nil then SetScale(plat, 2.2, 0.22, 2.2) end
-    local roof = SpawnPrefab("rv_panel_dark", { x = tx, y = ty + 5.2, z = tz })
-    if roof ~= nil then SetScale(roof, 2.6, 0.18, 2.6) end
+    local tower = SpawnPrefab("rv_ranger_tower", { x = tx, y = ty, z = tz })
+    if tower ~= nil then SetRotationY(tower, 0) end
     local board = SpawnPrefab("rv_panel_light", {
       x = cx - 3.6, y = 1.1, z = cz + 2.6 })
     if board ~= nil then SetScale(board, 1.4, 0.9, 0.08) end
