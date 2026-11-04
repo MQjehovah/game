@@ -347,6 +347,13 @@ function ambientTempC(clockMinutes, weatherValue)
   return math.floor(base + 0.5)
 end
 
+-- 轮胎环境温度：昼夜 + 天气，夹在 5..30°C，避免极端值把抓地压得太低
+function tireAmbientC()
+  local t = 22
+  if ambientTempC ~= nil then t = ambientTempC(clock, weather) end
+  return math.max(5, math.min(30, t))
+end
+
 -- 地图/广播用的天气预报文案（含当前气温）
 function weatherForecastText()
   local now = weatherName()

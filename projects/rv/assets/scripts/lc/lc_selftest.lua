@@ -5853,6 +5853,28 @@ function runSelfTest()
        string.format("noon=%d night=%d snow=%d", noon, night, snow))
   end
 
+  -- 轮胎环境温度：雪天低于晴天、夹在 5..30，低环境温度让胎温降得更低
+  do
+    local sw, sc = weather, clock
+    weather, clock = "clear", 12 * 60
+    local clear = tireAmbientC()
+    weather = "snow"
+    local snow = tireAmbientC()
+    weather, clock = sw, sc
+    local cold = { 90, 90, 90, 90 }
+    local warm = { 90, 90, 90, 90 }
+    for _ = 1, 120 do
+      cold = tireRibStep(cold, 0, 0, 0, 0, 1 / 60, 5)
+      warm = tireRibStep(warm, 0, 0, 0, 0, 1 / 60, 25)
+    end
+    local coldT, warmT = cold[1], warm[1]
+    ok(r, "tire ambient temp",
+       clear >= 5 and clear <= 30 and snow >= 5 and snow <= 30 and
+       snow < clear and coldT < warmT,
+       string.format("clear=%d snow=%d coldT=%.1f warmT=%.1f",
+                     clear, snow, coldT, warmT))
+  end
+
   -- 天气影响步行速度：雪地最慢、雨天略慢、晴天正常
   do
     local snow = walkSpeedScale("snow")

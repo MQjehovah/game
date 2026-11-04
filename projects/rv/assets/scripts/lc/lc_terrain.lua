@@ -1138,7 +1138,8 @@ function updateRvPhysics(dt)
       local next = tireRibStep(ribs, wheelV[i] or 0,
                                wheelSlipSpd[i] or 0,
                                wheelLatSpd[i] or 0,
-                               wheelLoad[i] or 0, step, 22)
+                               wheelLoad[i] or 0, step,
+                               (tireAmbientC and tireAmbientC()) or 22)
       local tempSumI = 0
       local wearSumI = 0
       for k = 1, 4 do
