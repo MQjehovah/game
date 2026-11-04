@@ -5284,17 +5284,17 @@ function runSelfTest()
   -- 小睡：推进 2 小时、恢复部分体力、进入睡饱
   do
     local sc, se, sh, st = clock, needs.energy, needs.hunger, needs.thirst
-    local sr = restedMin
+    local sr, sw = restedMin, wetness
     clock = 12 * 60
     needs.energy, needs.hunger, needs.thirst = 20, 80, 80
-    restedMin = 0
+    restedMin, wetness = 0, 0
     local okNap = napInBed()
     local advanced = (clock or 0) == 14 * 60
     local gotEnergy = needs.energy or 0
     local rested = (restedMin or 0) >= 60
     clock = sc
     needs.energy, needs.hunger, needs.thirst = se, sh, st
-    restedMin = sr
+    restedMin, wetness = sr, sw
     ok(r, "nap in bed",
        okNap and advanced and gotEnergy == 45 and rested,
        string.format("clock=%.0f energy=%.0f rested=%s",
@@ -5305,10 +5305,11 @@ function runSelfTest()
   do
     local sd, sc, se = day, clock, needs.energy
     local sh, st, sg, sr = needs.hunger, needs.thirst, needs.hygiene, restedMin
+    local sw = wetness
     local kt, kv = toast.text, toast.t
     day, clock = 9, 12 * 60
     needs.energy, needs.hunger, needs.thirst, needs.hygiene = 20, 80, 80, 60
-    restedMin = 0
+    restedMin, wetness = 0, 0
     local okEvening = sleepUntilEvening()
     local sameDay = (day == 9 and clock == 19 * 60)
     local energy = needs.energy or 0
@@ -5317,12 +5318,22 @@ function runSelfTest()
     local nextDay = (day == 10 and clock == 19 * 60)
     day, clock, needs.energy = sd, sc, se
     needs.hunger, needs.thirst, needs.hygiene = sh, st, sg
-    restedMin = sr
+    restedMin, wetness = sr, sw
     toast.text, toast.t = kt, kv
     ok(r, "sleep until evening",
        okEvening and sameDay and energy == 55 and okNext and nextDay,
        string.format("sameDay=%s energy=%.0f nextDay=%s", tostring(sameDay),
                      energy, tostring(nextDay)))
+  end
+
+  -- 湿着睡觉恢复打折：30% 以下无影响，越湿越少
+  do
+    local dry = sleepRecoveryScale(0)
+    local damp = sleepRecoveryScale(50)
+    local soaked = sleepRecoveryScale(100)
+    ok(r, "wetness sleep penalty",
+       dry == 1.0 and damp < dry and soaked < damp and soaked >= 0.60,
+       string.format("0=%.2f 50=%.2f 100=%.2f", dry, damp, soaked))
   end
 
   -- 舒适度提高睡眠恢复，最多 +15%

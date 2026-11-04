@@ -700,7 +700,7 @@ function sleepInBed()
   local factor = hygieneEnergyFactor(needs.hygiene) +
                  (atCamp and 0.10 or 0) + comfortSleepBonus(comfort) +
                  (campfireWarm and 0.05 or 0)
-  factor = math.min(1.0, factor)
+  factor = math.min(1.0, factor) * sleepRecoveryScale(wetness)
   if campfireWarm then
     warmthMin = math.max(warmthMin or 0, 120)
   end
@@ -725,6 +725,9 @@ function sleepInBed()
     t = 5.0,
   }
   toast.text = string.format("睡到第 %d 天 07:00 — 体力恢复", day)
+  if (wetness or 0) >= 50 then
+    toast.text = toast.text .. "（衣服还湿着，恢复打折）"
+  end
   toast.t = 3.5
   if autoSave ~= nil then autoSave() end
 end
@@ -733,12 +736,16 @@ end
 function napInBed()
   local before = needs.energy or 0
   advanceGameMinutes(120)
-  needs.energy = math.min(100, before + 25)
+  needs.energy = math.min(100,
+    before + 25 * sleepRecoveryScale(wetness))
   needs.hunger = math.max(0, (needs.hunger or 0) - 8)
   needs.thirst = math.max(0, (needs.thirst or 0) - 10)
   restedMin = math.max(restedMin or 0, 60)
   if PlaySfx then PlaySfx("click") end
   toast.text = string.format("小睡 2 小时 — 体力 %.0f", needs.energy)
+  if (wetness or 0) >= 50 then
+    toast.text = toast.text .. "（湿着睡不踏实）"
+  end
   toast.t = 3.0
   return true
 end
@@ -752,7 +759,8 @@ function sleepUntilEvening()
     day = (day or 1) + 1
     clock = 19 * 60
   end
-  needs.energy = math.min(100, before + 35)
+  needs.energy = math.min(100,
+    before + 35 * sleepRecoveryScale(wetness))
   needs.hunger = math.max(0, (needs.hunger or 0) - 12)
   needs.thirst = math.max(0, (needs.thirst or 0) - 16)
   needs.hygiene = math.max(0, (needs.hygiene or 0) - 5)
@@ -760,6 +768,9 @@ function sleepUntilEvening()
   if PlaySfx then PlaySfx("click") end
   toast.text = string.format("睡到傍晚 19:00 — 体力 %.0f，适合夜间跑单",
                              needs.energy)
+  if (wetness or 0) >= 50 then
+    toast.text = toast.text .. "（湿着睡不踏实）"
+  end
   toast.t = 3.2
   return true
 end
@@ -902,6 +913,13 @@ end
 function wetnessWarningText(wet)
   if (wet or 0) < 60 then return nil end
   return "衣服湿透了——到篝火/取暖器旁烘干，否则体力掉得更快"
+end
+
+-- 湿着睡觉恢复打折：30% 以下无影响，越湿恢复越少（最低 60%）
+function sleepRecoveryScale(wet)
+  local w = math.max(0, math.min(100, wet or 0))
+  if w <= 30 then return 1.0 end
+  return math.max(0.60, 1.0 - (w - 30) * 0.004)
 end
 
 -- 疲劳视觉强度（0–1）：连续夜驾越久越明显，用于屏幕边缘暗角
@@ -1047,7 +1065,8 @@ function updateSurvival(dt)
                        campfireOn ~= false)
   local wetGain = wetnessGainRate(weather, wetExposed)
   local wetDry = wetnessDryRate(weather, wetNearFire,
-                                (stats and stats.heaterOn) or false)
+                                (stats and stats.heaterOn and
+                                 not wetExposed) or false)
   wetness = math.max(0, math.min(100,
     (wetness or 0) + (wetGain - wetDry) * gm))
   local wetExtra = wetnessEnergyExtra(wetness)
