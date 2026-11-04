@@ -347,11 +347,11 @@
 - **视角稳定性**：地形 chunk 的视锥测试给 AABB 留 2m 余量，避免裙边在屏幕边缘
   被过早剔除；草/岩石场整场提交（700/58 个实例，不做逐实例视锥剔除），
   转头时不会出现植被整片闪没。
-- **地形/道具阴影策略**：程序化地形、草簇和岩石不接收投影
-  （`receiveShadow=false`）；同时把场景 `ambientStrength` 从 0.58 提到 0.8、
-  `ssaoIntensity` 从 3 降到 1.0、`shadowSoftness` 提到 1.8。低太阳角或雨天时，
-  桌面、箱体和车厢背光面不再出现整片黑块；截图 `start_mode=tableview`。
-  阴影贴图仍用于车体、建筑和道具自身的受光/背光。
+- **地形/道具阴影与时序稳定性**：程序化地形、草簇和岩石不接收投影
+  （`receiveShadow=false`）；`ambientStrength` 从 0.58 提到 0.8；关闭 SSAO、
+  TAA 和点光 cube shadow；`shadowSoftness=1.8`、`shadowNormalOffset=8`。
+  低太阳角或雨天时桌面、箱体和车厢背光面不再出现黑块，也不再因 TAA/点光
+  阴影产生闪烁和“阴影乱跳”。截图 `start_mode=tableview`。
 - **程序化植被/岩石散布**：`DrawProceduralScatter` 在程序化地形上按世界网格
   哈希生成草簇和岩石，重建放到后台线程（约 25 ms 的采样不占主线程），
   相机移动超过 12m 才换新场，避免行驶时周期卡顿。水塘矩形会跳过，

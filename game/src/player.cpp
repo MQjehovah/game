@@ -285,8 +285,15 @@ bool PlayerApp::OnCreate() {
     }
     if (cfg_.renderScale > 0.0f) renderer_.SetRenderScale(cfg_.renderScale);
     if (cfg_.dynResTargetFps > 0.0f) renderer_.SetDynamicResolution(true, cfg_.dynResTargetFps);
+    // TAA and point-light shadows are temporal/shadow-map sources that can
+    // shimmer or ghost on the large procedural terrain; default them off for
+    // stable play, with --taa as the explicit opt-in.
     if (cfg_.taa) renderer_.SetTaaEnabled(true);
+    else renderer_.SetTaaEnabled(false);
     if (cfg_.noTaa) renderer_.SetTaaEnabled(false);
+    // Point-light shadows are expensive and their 512px cube maps flicker on
+    // moving camp props; the sun CSM still provides the main shadows.
+    renderer_.SetPointShadowsEnabled(false);
     if (cfg_.taaSharpen >= 0.0f) renderer_.SetTaaSharpen(cfg_.taaSharpen);
     if (cfg_.gammaCorrect) renderer_.SetGammaCorrect(true);
     if (cfg_.fxaa) renderer_.SetFxaaEnabled(true);

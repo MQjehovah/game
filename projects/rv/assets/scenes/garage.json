@@ -538,9 +538,9 @@
       1
     ],
     "shadowDistance": 60,
-    "shadowNormalOffset": 3,
+    "shadowNormalOffset": 8,
     "shadowSoftness": 1.8,
-    "ssao": true,
+    "ssao": false,
     "ssaoIntensity": 1.0,
     "ssr": false,
     "ssrStrength": 1,
