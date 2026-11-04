@@ -279,8 +279,12 @@ void DrawSystem::Build(ecs::World& world, AnimationSystem& anims) {
         // through the lit shader's tint self-glow (beacons, pickups, eyes).
         if (!m->tintRgb.empty()) {
             item.mat.tint = {m->tintRgb[0], m->tintRgb[1], m->tintRgb[2], 1.0f};
-        } else {
-            item.mat.tint = bakedColor ? gfx::Color::White : ParseColorHex(m->colorHex);
+        } else if (bakedColor) {
+            item.mat.tint = gfx::Color::White;
+        } else if (!m->colorHex.empty() || !gltfBase) {
+            // Empty colorHex means "no explicit tint"; keep the glTF material's
+            // baked base colour instead of overwriting primitive 0 with white.
+            item.mat.tint = ParseColorHex(m->colorHex);
         }
         item.mat.metallic = m->metallic;
         item.mat.roughness = m->roughness;

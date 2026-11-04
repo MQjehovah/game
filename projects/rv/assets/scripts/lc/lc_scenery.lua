@@ -1576,7 +1576,7 @@ function spawnBirds()
   for i = 1, 7 do
     local e = SpawnPrefab("rv_bird", { x = 0, y = -60, z = 0 })
     if e ~= nil then
-      SetScale(e, 0.18, 0.05, 0.32)
+      SetScale(e, 0.75, 0.75, 0.75)
       birds[#birds + 1] = {
         ent = e,
         angle = math.random() * math.pi * 2,
@@ -1606,9 +1606,9 @@ function updateBirds(dt)
       local y = gy + b.height +
                 math.sin(b.angle * 3 + b.phase) * 0.5
       SetPosition(b.ent, { x = x, y = y, z = z })
-      SetRotationY(b.ent, -b.angle + math.pi * 0.5)
+      SetRotationY(b.ent, -b.angle)
       local flap = 0.35 + 0.65 * math.abs(math.sin(birdsT * b.flap + b.phase))
-      SetScale(b.ent, 0.18, 0.02 + 0.05 * flap, 0.32)
+      SetScale(b.ent, 0.75, 0.75 * (0.90 + 0.10 * flap), 0.75)
     end
   end
 end
@@ -1645,7 +1645,7 @@ function spawnRabbits()
   for i = 1, 5 do
     local e = SpawnPrefab("rv_rabbit", { x = 0, y = -60, z = 0 })
     if e ~= nil then
-      SetScale(e, 0.26, 0.22, 0.34)
+      SetScale(e, 0.95, 0.95, 0.95)
       rabbits[#rabbits + 1] = {
         ent = e,
         angle = math.random() * math.pi * 2,
@@ -1750,7 +1750,7 @@ function updateRabbits(dt)
       rabbitRespawnT = 12
       local e = SpawnPrefab("rv_rabbit", { x = 0, y = -60, z = 0 })
       if e ~= nil then
-        SetScale(e, 0.26, 0.22, 0.34)
+        SetScale(e, 0.95, 0.95, 0.95)
         rabbits[#rabbits + 1] = {
           ent = e,
           angle = math.random() * math.pi * 2,
@@ -1771,8 +1771,8 @@ function updateRabbits(dt)
       local z = az + math.sin(r.angle) * r.radius
       local gy = (terrainHeight and terrainHeight(x, z)) or 0
       local hop = math.abs(math.sin(rabbitsT * 5 + r.phase)) * 0.16
-      SetPosition(r.ent, { x = x, y = gy + 0.12 + hop, z = z })
-      SetRotationY(r.ent, -r.angle + math.pi * 0.5)
+      SetPosition(r.ent, { x = x, y = gy + hop, z = z })
+      SetRotationY(r.ent, -r.angle)
     end
   end
 end
@@ -1788,9 +1788,9 @@ function spawnAmbientDeer()
   local nd = (nodeById ~= nil) and nodeById("farm") or nil
   if nd == nil then return end
   for i = 1, 2 do
-    local e = SpawnPrefab("rv_rabbit", { x = 0, y = -60, z = 0 })
+    local e = SpawnPrefab("rv_deer", { x = 0, y = -60, z = 0 })
     if e ~= nil then
-      SetScale(e, 1.10, 0.85, 1.45)
+      SetScale(e, 0.90, 0.90, 0.90)
       ambientDeer[#ambientDeer + 1] = {
         ent = e,
         ax = nd.x + (i == 1 and -9.0 or 10.0),
@@ -1820,8 +1820,8 @@ function updateAmbientDeer(dt)
         local z = d.az + math.sin(d.angle) * d.radius
         local gy = (terrainHeight and terrainHeight(x, z)) or 0
         local bob = math.abs(math.sin(ambientDeerT * 2.2 + d.phase)) * 0.06
-        SetPosition(d.ent, { x = x, y = gy + 0.55 + bob, z = z })
-        SetRotationY(d.ent, -d.angle + math.pi * 0.5)
+        SetPosition(d.ent, { x = x, y = gy + bob, z = z })
+        SetRotationY(d.ent, -d.angle)
       end
     end
   end
@@ -1838,9 +1838,9 @@ function spawnPondDucks()
   local p = ponds and ponds[1] or nil
   if p == nil then return end
   for i = 1, 3 do
-    local e = SpawnPrefab("rv_bird", { x = p.x, y = 0.1, z = p.z })
+    local e = SpawnPrefab("rv_duck", { x = p.x, y = 0.1, z = p.z })
     if e ~= nil then
-      SetScale(e, 0.55, 0.40, 0.75)
+      SetScale(e, 0.90, 0.90, 0.90)
       pondDucks[#pondDucks + 1] = {
         ent = e, cx = p.x, cz = p.z,
         angle = math.random() * math.pi * 2,
@@ -1868,7 +1868,7 @@ function updatePondDucks(dt)
         local z = d.cz + math.sin(d.angle) * d.radius
         local gy = (terrainHeight and terrainHeight(x, z)) or 0
         local bob = math.sin(pondDucksT * 1.8 + d.phase) * 0.03
-        SetPosition(d.ent, { x = x, y = gy + 0.09 + bob, z = z })
+        SetPosition(d.ent, { x = x, y = gy + 0.02 + bob, z = z })
         SetRotationY(d.ent, -d.angle)
       end
     end

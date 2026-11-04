@@ -4359,6 +4359,24 @@ function runSelfTest()
                      tostring(day), tostring(night)))
   end
 
+  -- Wildlife models (Blender-authored glTF prefabs)
+  do
+    local names = { "rv_rabbit", "rv_bird", "rv_duck", "rv_deer" }
+    local files = { "rabbit", "bird", "duck", "deer" }
+    local missing = {}
+    for i, n in ipairs(names) do
+      local txt = ReadText and
+        ReadText("assets/prefabs/" .. n .. ".json") or nil
+      if txt == nil or
+         txt:find("rv_" .. files[i] .. ".gltf", 1, true) == nil then
+        missing[#missing + 1] = n
+      end
+    end
+    ok(r, "wildlife models", #missing == 0,
+       string.format("ok=%d/%d missing=%s", #names - #missing, #names,
+                     table.concat(missing, ",")))
+  end
+
   -- 农场鹿群：白天可见、夜间隐藏
   do
     local sc = clock

@@ -651,23 +651,33 @@
 - **POI 门头招牌**：每个可进入地点在门头上方挂一块暖光招牌，夜间点亮、白天
   隐藏（`updatePoiSigns`），雨夜远处也能认出建筑；自检 `poi night signs`
   （14 块），截图 `start_mode=poinight`。
-- **白天鸟群**：7 只低多边形鸟剪影绕当前区域飞行，带高度起伏与翅膀缩放，
-  夜间自动隐藏（`birdsActive`）；自检 `birds day cycle`。
-- **白天野兔**：5 只低多边形野兔绕当前区域缓慢移动并蹦跳，夜间自动隐藏
+- **白天鸟群**：7 只 Blender 建模的低多边形鸟 `rv_bird.gltf`
+  （`tools/gen_rv_wildlife_blender.py`，通过 MCP 生成：身体/头/喙/尾羽/双翼），
+  绕当前区域飞行，带高度起伏与轻微翅膀起伏，夜间自动隐藏（`birdsActive`）；
+  飞行朝向已修正为朝速度方向；截图 `start_mode=birdview`，自检 `birds day cycle`。
+- **白天野兔**：5 只 Blender 建模的野兔 `rv_rabbit.gltf`（耳朵/眼睛/尾巴/四足）
+  绕当前区域缓慢移动并蹦跳，朝向跟随移动方向，夜间自动隐藏
   （`rabbitsActive`）；用准星对准 22m 内的野兔开枪即可猎取，获得 1 份野味
-  （生食材），种群约每 12 秒补回 1 只；自检 `rabbits day cycle` /
-  `rabbit hunting`。
-- **农场鹿群**：旧农场附近有 2 只放大的低多边形鹿绕谷仓缓慢游走，
+  （生食材），种群约每 12 秒补回 1 只；截图 `start_mode=rabbitview`，
+  自检 `rabbits day cycle` / `rabbit hunting` / `wildlife models`。
+- **农场鹿群**：旧农场附近有 2 只 Blender 建模的鹿 `rv_deer.gltf`
+  （躯干/脖颈/鹿角/四腿/白腹），绕谷仓缓慢游走，
   白天可见、夜间自动隐藏（`deerActive`）；按喇叭会惊走附近鹿群 20 秒
   （`scareAmbientDeer`）；用准星对准 26m 内的鹿开枪可猎取，获得 2 份野味
-  （`huntAmbientDeer`）；自检 `farm deer` / `scare farm deer` / `hunt deer`。
-- **水塘野鸭**：最近的水塘上有 3 只野鸭绕圈缓慢游动并轻微起伏，
+  （`huntAmbientDeer`）；公路横穿事件也使用同一模型；
+  截图 `start_mode=deerview`，自检 `farm deer` / `scare farm deer` / `hunt deer`。
+- **水塘野鸭**：最近的水塘上有 3 只 Blender 建模的野鸭 `rv_duck.gltf`
+  （绿头/白颈环/黄喙/折叠翅膀）绕圈缓慢游动并轻微起伏，
   白天可见、夜间自动隐藏（`ducksActive`）；按喇叭同样会惊走它们
-  （`scarePondDucks`）；自检 `pond ducks` / `scare pond ducks`。
+  （`scarePondDucks`）；截图 `start_mode=duckview`，
+  自检 `pond ducks` / `scare pond ducks`。
 - **白天蝴蝶**：6 只低多边形蝴蝶在草甸/花丛附近成对扇翅飞舞，
   夜晚与雨天自动隐藏（`butterfliesActive`）；自检 `butterflies day cycle`。
 - **野生动物锚点**：鸟/兔/蝶停留在某一区域，不再绕着行驶中的房车转；
   停车后离锚点超过 45m 时会迁移到新区域重新出现；自检 `wildlife anchor`。
+- **glTF 多材质修正**：prefab 未显式设置 `colorHex` 时，不再用默认白色覆盖
+  glTF 第一个 primitive 的材质颜色；否则兔/鹿的身体、水塔首段钢架等会被洗白。
+  修改在 `engine/src/scene/systems/draw_system.cpp`，野生动物截图可直接验证。
 - 公路电线杆换成 Blender 建模的木杆 `rv_utility_pole.gltf`（锥形杆身、混凝土底座、
   横担、4 个陶瓷绝缘子、变压器、交替脚钉和警示牌），再用 `SetRotationY` 对齐路向；
   杆间补上 **两条电线**（沿横担两端、略低于杆顶），配合
@@ -1126,7 +1136,7 @@
   `cachemap`（地图上的补给箱标记）/ `notemap`（地图上的笔记标记）/
   `smoketest`（车体 25%、引擎 15% 冒烟）。
 
-自检覆盖 433 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、
+自检覆盖 434 项：生存、做饭/鱼汤、咖啡、钓鱼、修车/升级引擎、自由摆放、昼夜灯光、天气、
 高度场剖面/草丘/扩展高度场/地形分块 LOD/道路压平/地面跟随/坡面倾斜/车内倾斜/四轮接地/分轮行程/车轮实体/前轮转向/物理悬挂绑定/姿态回读/轮胎抓地绑定/轮胎抓地模型/偏航姿态回读/路面材质表/路面摩擦/阿克曼转向/转向助力/自动回正/滑移牵引/滑移率/滑移曲线/联合滑移/Pacejka/胎压/载荷敏感/胎温/四轮独立胎温/4 条胎面带/横向传导/逐顶点风摆/Voronoi 碎窗/玻璃种子广播/车轮刚体绑定/车轮刚体/圆柱滚动车轮/客户端车轮预测/姿态外推回正/车轮滚动、废宅商店/加油站/物流仓库/旧农场/购物中心/湖边木屋/路边诊所店内物资箱（6/6）、
 POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃卸货/货损打折、
 货运目标指定/世界标记/地图目标圈、公路反光轮廓桩、营地陈设（遮阳棚/木桌/营地灯）、
@@ -1387,7 +1397,7 @@ POI 墙体碰撞/门洞通行、营地货运板/接单载重/到点结算/放弃
   `rv wheel rolling`（wx=2.00）、
   `rv attitude roundtrip`（pitch=0.15 roll=-0.22）与
   `rv yaw attitude roundtrip`（yaw=0.80 pitch=0.15 roll=-0.22），
-  单机自检 **433/433 PASS**。
+  单机自检 **434/434 PASS**。
   **逐顶点风摆验证**（`start_mode=hills`，相隔 1 秒两帧截图）：
   植被区域（880×370 = 325,600 px 裁剪）变化 **2.28%**（7412 px，
   阈值 |ΣRGB|>12），差异图 `rv_wind_diff.png` 正好落在草叶/花茎上；

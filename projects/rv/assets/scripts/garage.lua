@@ -1127,6 +1127,52 @@ function on_start()
     px, pz = -1.3, -57.0
     pyaw = dirYaw(7.5, -11.0)
   end
+  if startMode == "wildlife" then
+    -- Test-only: line up the four Blender-authored wildlife models.
+    rv.x, rv.z, rv.yaw = 0.0, 0.0, 0.0
+    clock = 15 * 60
+    local camx, camz = 0.0, -19.0
+    local bz = -24.0
+    local line = { { "rv_rabbit", -2.6, 0.0 }, { "rv_duck", -1.3, 0.0 },
+                   { "rv_bird", 0.0, 0.8 }, { "rv_deer", 1.9, 0.0 } }
+    for _, a in ipairs(line) do
+      local ax = a[2]
+      local gy = (terrainHeight and terrainHeight(ax, bz)) or 0
+      local e = SpawnPrefab(a[1], { x = ax, y = gy + a[3], z = bz })
+      if e ~= nil then
+        SetRotationY(e, dirYaw(camx - ax, camz - bz))
+      end
+    end
+    px, pz = camx, camz
+    pyaw = dirYaw(0, -7.0)
+  end
+  local animalPrefab = nil
+  local animalLift = 0.0
+  if startMode == "rabbitview" then
+    animalPrefab = "rv_rabbit"
+  elseif startMode == "duckview" then
+    animalPrefab = "rv_duck"
+  elseif startMode == "birdview" then
+    animalPrefab, animalLift = "rv_bird", 0.9
+  elseif startMode == "deerview" then
+    animalPrefab = "rv_deer"
+  end
+  if animalPrefab ~= nil then
+    -- Test-only: single wildlife model close-up, facing the camera.
+    rv.x, rv.z, rv.yaw = 0.0, 0.0, 0.0
+    clock = 15 * 60
+    local ax, az = 0.0, -24.0
+    local camz = -21.2
+    if startMode == "birdview" then camz = -21.8 end
+    if startMode == "deerview" then camz = -18.5 end
+    local gy = (terrainHeight and terrainHeight(ax, az)) or 0
+    local e = SpawnPrefab(animalPrefab, { x = ax, y = gy + animalLift, z = az })
+    if e ~= nil then
+      SetRotationY(e, dirYaw(0.0 - ax, camz - az))
+    end
+    px, pz = 0.0, camz
+    pyaw = dirYaw(0.0, az - camz)
+  end
   if startMode == "pondview" then
     -- Test-only: fishing dock on the camp pond.
     px, pz = -18.0, -2.5
@@ -1180,6 +1226,12 @@ function on_start()
   elseif startMode == "townview" then player.pitch = 0.20
   elseif startMode == "watertower" then player.pitch = 0.14
   elseif startMode == "poleview" then player.pitch = 0.06
+  elseif startMode == "wildlife" then player.pitch = -0.06
+  elseif startMode == "rabbitview" or startMode == "duckview" then
+    player.pitch = -0.16
+  elseif startMode == "deerview" then
+    player.pitch = -0.04
+  elseif startMode == "birdview" then player.pitch = 0.02
   elseif startMode == "mastview" or startMode == "mastday" then
     player.pitch = 0.30
   end

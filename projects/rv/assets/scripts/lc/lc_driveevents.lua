@@ -117,13 +117,13 @@ function spawnDriveDeer(n)
   local base = 26 + math.random() * 12
   local side = (math.random() < 0.5) and -1 or 1
   for _ = 1, math.min(2, n or 1) do
-    local ent = SpawnPrefab("rv_rabbit", { x = 0, y = -60, z = 0 })
+    local ent = SpawnPrefab("rv_deer", { x = 0, y = -60, z = 0 })
     if ent ~= nil then
       local lx = side * 9.0
       local wx, wz = rotOf(lx, base + (math.random() * 2 - 1) * 4)
       local gy = (terrainHeight and terrainHeight(wx, wz)) or 0
-      SetPosition(ent, { x = wx, y = gy + 0.55, z = wz })
-      SetScale(ent, 1.10, 0.85, 1.45)
+      SetPosition(ent, { x = wx, y = gy, z = wz })
+      SetScale(ent, 0.90, 0.90, 0.90)
       local sp = 3.2 + math.random() * 1.6
       -- 速度方向：世界空间垂直于公路（沿 X）
       local vx = -side * sp
@@ -229,8 +229,8 @@ function updateDriveWorld(dt)
     d.life = d.life - dt
     d.x, d.z = d.x + d.vx * dt, d.z + d.vz * dt
     local gy = (terrainHeight and terrainHeight(d.x, d.z)) or 0
-    SetPosition(d.ent, { x = d.x, y = gy + 0.55 +
-                         math.abs(math.sin(raidT * 7 + d.phase)) * 0.18, z = d.z })
+    SetPosition(d.ent, { x = d.x, y = gy + 0.02 +
+                         math.abs(math.sin(raidT * 7 + d.phase)) * 0.12, z = d.z })
     SetRotationY(d.ent, dirYaw(d.vx, d.vz))
     local dx, dz = rv.x - d.x, rv.z - d.z
     local dist = math.sqrt(dx * dx + dz * dz)

@@ -1,17 +1,14 @@
 {
   "components": {
-    "transform": { "pos": [0, 0, 0], "rot": [0, 0, 0, 1], "scale": [1, 1, 1] },
+    "transform": {
+      "pos": [0, 0, 0],
+      "rot": [0, 0, 0, 1],
+      "scale": [1, 1, 1]
+    },
     "mesh": {
-      "meshKey": "cube",
+      "meshKey": "gltf:assets/models/rv/rv_rabbit.gltf",
       "castShadow": true,
-      "receiveShadow": true,
-      "material": {
-        "ao": 1,
-        "colorHex": "#6B4A32",
-        "metallic": 0,
-        "roughness": 0.85,
-        "uvRepeat": 1
-      }
+      "receiveShadow": true
     }
   }
 }
