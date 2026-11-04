@@ -1078,7 +1078,7 @@ function drawStationMenu()
   local isStove = (stationUI.kind == "stove")
   local rows = isStove and #RECIPES or (#REPAIR_PARTS + 7)
   local pw = 540
-  local ph = 108 + rows * 58
+  local ph = 118 + rows * 54
   local px = math.floor((vw - pw) * 0.5)
   local py = math.floor((vh - ph) * 0.5)
   DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.92)
@@ -1106,7 +1106,7 @@ function drawStationMenu()
       drawTextRight(table.concat(cost, "  ") .. (ok and "" or ("  ✗ " .. why)),
                     px + pw - 24, yy + 8, 12, ok and 0.85 or 1,
                     ok and 0.82 or 0.35, ok and 0.72 or 0.28)
-      yy = yy + 58
+      yy = yy + 54
     end
     drawTextCentered("按 1/2/3 制作    E 关闭", vw * 0.5, py + ph - 30, 13, 0.75, 0.75, 0.68, 1)
   else
@@ -1143,7 +1143,7 @@ function drawStationMenu()
       drawTextRight(rightText, px + pw - 24, yy + 8, 12,
                     (ok or full) and 0.85 or 1, (ok or full) and 0.82 or 0.35,
                     (ok or full) and 0.72 or 0.28)
-      yy = yy + 58
+      yy = yy + 54
     end
     -- 货架升级（第 5 项）：提高载重上限
     do
@@ -1162,7 +1162,7 @@ function drawStationMenu()
       drawTextRight(rightText, px + pw - 24, yy + 8, 12,
                     (ok or maxed) and 0.85 or 1, (ok or maxed) and 0.82 or 0.35,
                     (ok or maxed) and 0.72 or 0.28)
-      yy = yy + 58
+      yy = yy + 54
     end
     -- 鱼竿升级（第 6 项）
     do
@@ -1181,7 +1181,7 @@ function drawStationMenu()
       drawTextRight(rightText, px + pw - 24, yy + 8, 12,
                     (ok or maxed) and 0.85 or 1, (ok or maxed) and 0.82 or 0.35,
                     (ok or maxed) and 0.72 or 0.28)
-      yy = yy + 58
+      yy = yy + 54
     end
     -- 制作修理包（第 7 项）
     do
@@ -1195,7 +1195,7 @@ function drawStationMenu()
                0.80, 0.80, 0.74, 1)
       drawTextRight(costText(cost), px + pw - 24, yy + 8, 12,
                     ok and 0.85 or 1, ok and 0.82 or 0.35, ok and 0.72 or 0.28)
-      yy = yy + 58
+      yy = yy + 54
     end
     -- 制作防雨篷布（第 8 项）
     do
@@ -1210,7 +1210,7 @@ function drawStationMenu()
                px + 66, yy + 21, 12, 0.80, 0.80, 0.74, 1)
       drawTextRight(costText(cost), px + pw - 24, yy + 8, 12,
                     ok and 0.85 or 1, ok and 0.82 or 0.35, ok and 0.72 or 0.28)
-      yy = yy + 58
+      yy = yy + 54
     end
     -- 水箱升级（第 9 项）
     do
@@ -1229,7 +1229,7 @@ function drawStationMenu()
       drawTextRight(rightText, px + pw - 24, yy + 8, 12,
                     (ok or maxed) and 0.85 or 1, (ok or maxed) and 0.82 or 0.35,
                     (ok or maxed) and 0.72 or 0.28)
-      yy = yy + 58
+      yy = yy + 54
     end
     -- 油箱升级（第 10 项，按 0）
     do
@@ -1248,7 +1248,7 @@ function drawStationMenu()
       drawTextRight(rightText, px + pw - 24, yy + 8, 12,
                     (ok or maxed) and 0.85 or 1, (ok or maxed) and 0.82 or 0.35,
                     (ok or maxed) and 0.72 or 0.28)
-      yy = yy + 58
+      yy = yy + 54
     end
     -- 车体装甲升级（按 A）
     do
@@ -1267,7 +1267,7 @@ function drawStationMenu()
       drawTextRight(rightText, px + pw - 24, yy + 8, 12,
                     (ok or maxed) and 0.85 or 1, (ok or maxed) and 0.82 or 0.35,
                     (ok or maxed) and 0.72 or 0.28)
-      yy = yy + 58
+      yy = yy + 54
     end
     drawTextCentered("1-4 维修 / 5 货架 / 6 鱼竿 / 7 修理包 / 8 篷布 / 9 水箱 / 0 油箱 / A 装甲    E 关闭",
                      vw * 0.5, py + ph - 30, 13, 0.75, 0.75, 0.68, 1)
