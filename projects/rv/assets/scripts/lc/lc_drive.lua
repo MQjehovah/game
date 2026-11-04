@@ -290,6 +290,15 @@ function surfaceFuelScale(name)
   return 1.0
 end
 
+-- 非铺装路面极速/加速折减：泥泞最慢，铺装路保持基准
+function surfaceSpeedScale(name)
+  if name == "mud" then return 0.82 end
+  if name == "grass" then return 0.90 end
+  if name == "dirt" then return 0.93 end
+  if name == "gravel" then return 0.97 end
+  return 1.0
+end
+
 -- 天气对油耗的影响：雨/雪/雾增加行驶阻力与暖风负荷
 function weatherFuelScale(weatherValue)
   if weatherValue == "rain" then return 1.05 end
@@ -959,6 +968,10 @@ function updateDrive(dt)
   local chainF = chainsSpeedScale(surfName)
   maxSp = maxSp * chainF
   acc = acc * chainF
+  -- 非铺装路面：泥泞/草地/碎石会压低极速与加速
+  local surfF = surfaceSpeedScale(surfName)
+  maxSp = maxSp * surfF
+  acc = acc * (0.85 + 0.15 * surfF)
   -- 坡度：上坡降速降加速，下坡略升
   local grade = 0
   if terrainHeight ~= nil then

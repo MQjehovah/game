@@ -1769,6 +1769,18 @@ function runSelfTest()
                      road, gravel, grass, mud))
   end
 
+  -- 非铺装路面压低极速/加速：泥泞最慢
+  do
+    local road = surfaceSpeedScale("asphalt")
+    local gravel = surfaceSpeedScale("gravel")
+    local grass = surfaceSpeedScale("grass")
+    local mud = surfaceSpeedScale("mud")
+    ok(r, "surface speed scale",
+       road == 1.0 and gravel < road and grass < gravel and mud < grass,
+       string.format("road=%.2f gravel=%.2f grass=%.2f mud=%.2f",
+                     road, gravel, grass, mud))
+  end
+
   -- 坡度油耗：上坡更费、下坡更省，且有上下限
   do
     local up = slopeFuelScale(0.15)
