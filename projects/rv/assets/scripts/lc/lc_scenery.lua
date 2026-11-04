@@ -274,25 +274,26 @@ function spawnPolesAlong(ax, az, bx, bz, side)
   local ux, uz = dx / len, dz / len
   local rx, rz = uz * (side or 1), -ux * (side or 1)
   local yaw = dirYaw(dx, dz)
-  local lastX, lastZ
+  local lastX, lastZ, lastGY
   for d = 12, len - 8, 28 do
     local x = ax + ux * d + rx * 6.2
     local z = az + uz * d + rz * 6.2
-    local pole = SpawnPrefab("rv_powerpole", { x = x, y = 3.2, z = z })
-    if pole ~= nil then SetScale(pole, 0.16, 6.4, 0.16) end
-    local arm = SpawnPrefab("rv_panel_dark", { x = x, y = 5.9, z = z })
-    if arm ~= nil then
-      SetScale(arm, 1.5, 0.10, 0.10)
-      SetRotationY(arm, yaw)
+    local gy = (terrainHeight and terrainHeight(x, z)) or 0
+    -- Blender 建模的木电线杆：底座/锥形杆身/横担/绝缘子/变压器/脚钉
+    local pole = SpawnPrefab("rv_utility_pole", { x = x, y = gy, z = z })
+    if pole ~= nil then
+      SetRotationY(pole, yaw)
+      roadPoles[#roadPoles + 1] = pole
     end
     -- 相邻两根杆之间拉两条电线（沿横担两端，略低于杆顶）
     if lastX ~= nil then
       local wdx, wdz = x - lastX, z - lastZ
       local wlen = math.sqrt(wdx * wdx + wdz * wdz)
       local wmx, wmz = (x + lastX) * 0.5, (z + lastZ) * 0.5
+      local wy = (gy + (lastGY or gy)) * 0.5 + 6.08
       for _, off in ipairs({ -0.55, 0.55 }) do
         local wire = SpawnPrefab("rv_wire", {
-          x = wmx + rx * off, y = 5.86, z = wmz + rz * off })
+          x = wmx + rx * off, y = wy, z = wmz + rz * off })
         if wire ~= nil then
           SetScale(wire, 0.035, 0.035, wlen)
           SetRotationY(wire, yaw)
@@ -300,7 +301,7 @@ function spawnPolesAlong(ax, az, bx, bz, side)
         end
       end
     end
-    lastX, lastZ = x, z
+    lastX, lastZ, lastGY = x, z, gy
   end
 end
 
@@ -1030,28 +1031,16 @@ function spawnWaterTower(x, z)
   return tower
 end
 
--- 仓库旁的无线电塔：三角支架 + 横撑 + 顶端红色信标（夜间闪烁）
+-- 仓库旁的无线电塔：Blender 建模三角格构塔 + 顶端红色信标（夜间闪烁）
 function spawnRadioMast(x, z)
   local gy = (terrainHeight and terrainHeight(x, z)) or 0
   local mast = { x = x, z = z, parts = {}, beacon = nil, t = 0, lit = false }
-  local legs = { { -0.9, -0.5 }, { 0.9, -0.5 }, { 0.0, 0.95 } }
-  for _, off in ipairs(legs) do
-    local e = SpawnPrefab("rv_powerpole", { x = x + off[1], y = gy + 7.0,
-                                            z = z + off[2] })
-    if e ~= nil then
-      SetScale(e, 0.14, 14.0, 0.14)
-      mast.parts[#mast.parts + 1] = e
-    end
+  local model = SpawnPrefab("rv_radio_mast", { x = x, y = gy, z = z })
+  if model ~= nil then
+    mast.model = model
+    mast.parts[#mast.parts + 1] = model
   end
-  for _, h in ipairs({ 4.0, 8.0, 12.0 }) do
-    local bar = SpawnPrefab("rv_panel_dark", { x = x, y = gy + h, z = z })
-    if bar ~= nil then
-      SetScale(bar, 1.9, 0.08, 0.08)
-      SetRotationY(bar, h * 0.7)
-      mast.parts[#mast.parts + 1] = bar
-    end
-  end
-  local beacon = SpawnPrefab("rv_taillight", { x = x, y = gy + 14.2, z = z })
+  local beacon = SpawnPrefab("rv_taillight", { x = x, y = gy + 13.75, z = z })
   if beacon ~= nil then
     SetScale(beacon, 0.34, 0.34, 0.34)
     SetVisible(beacon, false)

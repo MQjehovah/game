@@ -90,6 +90,7 @@ rvTaillights = {}             -- 刹车/倒车尾灯
 rvReverselights = {}          -- 倒车白灯
 campProps = {}                -- 营地陈设（遮阳棚/木桌/物资箱/营地灯）
 roadWires = {}                -- 电线杆之间的电线
+roadPoles = {}                -- 公路两侧的电线杆（Blender 建模）
 roadShoulders = {}            -- 主路两侧的土肩
 roadDebris = {}               -- 主路两侧的废弃车/石块
 roadDebrisColliders = 0       -- 已添加的静态碰撞盒数量

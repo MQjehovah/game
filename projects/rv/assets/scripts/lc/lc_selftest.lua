@@ -2410,6 +2410,17 @@ function runSelfTest()
     ok(r, "roadside power wires", n >= 20, string.format("wires=%d", n))
   end
 
+  -- Roadside utility poles (Blender-authored model)
+  do
+    local n = #roadPoles
+    local prefab = ReadText and
+      ReadText("assets/prefabs/rv_utility_pole.json") or nil
+    ok(r, "roadside utility poles",
+       n >= 8 and prefab ~= nil and
+       prefab:find("rv_utility_pole.gltf", 1, true) ~= nil,
+       string.format("poles=%d prefab=%s", n, tostring(prefab ~= nil)))
+  end
+
   -- 自动挡：车速升挡 + 挡内转速映射
   do
     local g1 = rvGearInfo(0.5)
@@ -5871,8 +5882,10 @@ function runSelfTest()
     updateRadioMast(0.1)
     local dayOff = (m ~= nil) and (m.lit == false)
     clock = sc
-    ok(r, "radio mast", parts >= 6 and night and dayOff,
-       string.format("parts=%d night=%s dayOff=%s", parts,
+    ok(r, "radio mast",
+       parts >= 1 and m ~= nil and m.model ~= nil and night and dayOff,
+       string.format("parts=%d model=%s night=%s dayOff=%s", parts,
+                     tostring(m ~= nil and m.model ~= nil),
                      tostring(night), tostring(dayOff)))
   end
 

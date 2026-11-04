@@ -1086,8 +1086,8 @@ function on_start()
       px, pz, pyaw = cx, cz + 4.2, math.pi
     end
   end
-  if startMode == "mastview" then
-    -- Test-only: radio mast beside the warehouse, at night.
+  if startMode == "mastview" or startMode == "mastday" then
+    -- Test-only: radio mast beside the warehouse.
     local nd = nodeById("depot")
     if nd ~= nil then
       local cx, cz = poiCenter(nd)
@@ -1120,6 +1120,12 @@ function on_start()
       px, pz = cx + 8.5, cz + 9.0
       pyaw = dirYaw(0, -14.5)
     end
+  end
+  if startMode == "poleview" then
+    -- Test-only: roadside utility pole on the north stretch of the highway.
+    clock = 12 * 60
+    px, pz = -1.3, -57.0
+    pyaw = dirYaw(7.5, -11.0)
   end
   if startMode == "pondview" then
     -- Test-only: fishing dock on the camp pond.
@@ -1173,7 +1179,9 @@ function on_start()
   elseif startMode == "windmillview" then player.pitch = 0.28
   elseif startMode == "townview" then player.pitch = 0.20
   elseif startMode == "watertower" then player.pitch = 0.14
-  elseif startMode == "mastview" then player.pitch = 0.30
+  elseif startMode == "poleview" then player.pitch = 0.06
+  elseif startMode == "mastview" or startMode == "mastday" then
+    player.pitch = 0.30
   end
   SetVar("cameraMouseLock", 1)
   updateInteraction()
