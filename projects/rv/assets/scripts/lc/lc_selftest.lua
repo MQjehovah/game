@@ -2771,6 +2771,29 @@ function runSelfTest()
        string.format("got=%d fish=%d water=%.0f", got, leftFish, leftWater))
   end
 
+  -- 篝火全部烹饪：把生鱼/生食材批量做熟，每份耗 10 分钟燃料
+  do
+    local keepOn, keepFuel = campfireOn, campfireFuelMin
+    local kraw, kfood = inv.rawfish, inv.rawfood
+    local kfish, kmeal = inv.fish, inv.meal
+    local kg = dailyGoal
+    local kt, kv = toast.text, toast.t
+    setCampfireLit(true)
+    campfireFuelMin, dailyGoal = 200, nil
+    inv.rawfish, inv.rawfood, inv.fish, inv.meal = 3, 2, 0, 0
+    local canAll = campfireCan("all")
+    local okAll = campfireCook("all")
+    local fishN, mealN = inv.fish or 0, inv.meal or 0
+    local fuelLeft = campfireFuelMin or 0
+    inv.rawfish, inv.rawfood = kraw, kfood
+    inv.fish, inv.meal = kfish, kmeal
+    campfireOn, campfireFuelMin, dailyGoal = keepOn, keepFuel, kg
+    toast.text, toast.t = kt, kv
+    ok(r, "campfire cook all",
+       canAll and okAll and fishN == 3 and mealN == 2 and fuelLeft == 150,
+       string.format("fish=%d meal=%d fuel=%.0f", fishN, mealN, fuelLeft))
+  end
+
   -- 篝火烹饪消耗燃料：每次 10 游戏分钟
   do
     local keepOn, keepFuel = campfireOn, campfireFuelMin

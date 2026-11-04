@@ -1794,6 +1794,9 @@ function campfireCan(kind)
   if kind == "soup" then
     return hasItem("fish", 1) and (water or 0) >= 20
   end
+  if kind == "all" then
+    return (inv.rawfish or 0) > 0 or hasItem("rawfood", 1)
+  end
   return false
 end
 
@@ -1807,6 +1810,7 @@ function campfireRecipeList()
     { kind = "meal",   label = "热饭（生食材 x1）" },
     { kind = "coffee", label = "热咖啡（咖啡豆 + 15L 水）" },
     { kind = "smoke",  label = "烟熏鱼（生鱼 x2，耐存放）" },
+    { kind = "all",    label = "全部烹饪（生鱼/生食材）" },
   }
 end
 
@@ -1857,6 +1861,35 @@ function campfireCook(kind)
     toast.text = "篝火熏好一条鱼（烟熏鱼 +1，耐存放）"
     toast.t = 2.8
     return true
+  elseif kind == "all" then
+    if (campfireFuelMin or 0) < COOK_FUEL_MIN then
+      toast.text = "篝火燃料不足——先添柴"
+      toast.t = 2.2
+      return false
+    end
+    local cooked = 0
+    while (campfireFuelMin or 0) >= COOK_FUEL_MIN do
+      if (inv.rawfish or 0) > 0 then
+        takeItem("rawfish", 1)
+        addItem("fish", 1)
+        cooked = cooked + 1
+      elseif hasItem("rawfood", 1) then
+        takeItem("rawfood", 1)
+        addItem("meal", 1)
+        cooked = cooked + 1
+      else
+        break
+      end
+      spendCookFuel(COOK_FUEL_MIN)
+    end
+    if addDailyProgress ~= nil and cooked > 0 then
+      addDailyProgress("cook", cooked)
+    end
+    if PlaySfx then PlaySfx("cook") end
+    toast.text = string.format("篝火批量烹饪 %d 份（燃料 -%d 分钟）",
+                               cooked, cooked * COOK_FUEL_MIN)
+    toast.t = 3.0
+    return cooked > 0
   end
   spendCookFuel()
   if PlaySfx then PlaySfx("cook") end
