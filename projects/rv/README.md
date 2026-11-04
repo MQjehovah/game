@@ -1010,6 +1010,8 @@
   `[coop-clinic] demo ok=true health=70 cloth=26 water=76`，验证联机诊所包扎。
 - `coop_tower.txt`：服务端 3s 给材料并修好小镇水塔，日志
   `[coop-tower] demo ok=true fixed=true water=98`，验证联机水塔修复。
+- `coop_highrisk.txt`：服务端 3s 切到夜间 + 开远光并强制计时，日志
+  `[coop-highrisk] horde spawned`，验证联机夜间远光招感染者。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
 - `coop_sitdemo.txt`：在房车旁生成一个播放 `Sit` 骨骼片段的预览角色。
 - `coop_animdemo.txt`：内容 `sit` / `board` / `stand` / `dooropen` / `doorclose` /

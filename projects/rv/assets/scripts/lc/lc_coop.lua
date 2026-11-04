@@ -1464,6 +1464,17 @@ local function serverUpdate(dt)
     pushState()
   end
 
+  -- Test-only co-op high-beam risk: night + high beam + forced timer.
+  if coop.highRiskDemo and not coop.highRiskDemoDone and coop.autoT >= 3.0 then
+    coop.highRiskDemoDone = true
+    clock = 22 * 60
+    highBeam = true
+    coop.highRiskT = 76
+    print(string.format("[coop-highrisk] demo high=%s night=%s timer=%.0f",
+                        tostring(highBeam), tostring(isNight ~= nil and isNight()),
+                        coop.highRiskT))
+  end
+
   -- Test-only co-op clinic: wound the player, give cloth/water, park at clinic.
   if coop.clinicDemo and not coop.clinicDemoDone and coop.autoT >= 3.0 then
     coop.clinicDemoDone = true
@@ -1843,6 +1854,23 @@ local function serverUpdate(dt)
         end
       end
     end
+  end
+
+  -- 合作服务器：夜间远光招感染者（与单机一致）
+  coop.highRiskT = (coop.highRiskT or 0) + dt
+  if highBeam and isNight ~= nil and isNight() and
+     (math.abs(rv.speed or 0) > 1 or coop.highRiskDemo) then
+    if coop.highRiskT > 75 then
+      coop.highRiskT = 0
+      local chance = coop.highRiskDemo and 1.0 or 0.45
+      if math.random() < chance and spawnDriveHorde ~= nil then
+        spawnDriveHorde(1)
+        setToast("远光灯引来了零散感染者——按 H 关远光")
+        print("[coop-highrisk] horde spawned")
+      end
+    end
+  else
+    coop.highRiskT = math.max(0, coop.highRiskT - dt * 2)
   end
 
   -- 合作服务器：修好无线电塔并停稳在废弃小镇时完成信号中继
@@ -2930,6 +2958,7 @@ function coopInitWorld(role)
     coop.napDemo = readFlag("coop_nap.txt")
     coop.clinicDemo = readFlag("coop_clinic.txt")
     coop.towerDemo = readFlag("coop_tower.txt")
+    coop.highRiskDemo = readFlag("coop_highrisk.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
       local v = string.lower((doorTest:gsub("%s+", "")))
@@ -3062,6 +3091,7 @@ function coopInitWorld(role)
     coop.napDemo = readFlag("coop_nap.txt")
     coop.clinicDemo = readFlag("coop_clinic.txt")
     coop.towerDemo = readFlag("coop_tower.txt")
+    coop.highRiskDemo = readFlag("coop_highrisk.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")
     coop.sitDemo = readFlag("coop_sitdemo.txt")
