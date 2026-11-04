@@ -1204,6 +1204,26 @@ bool PlayerApp::SmokeOk() const {
 }
 
 void PlayerApp::CaptureScreenshotIfDue() {
+    if (!cfg_.screenshotSeqPrefix.empty() &&
+        TimeRef().frameIndex >= cfg_.screenshotSeqNext) {
+        char path[1024];
+        std::snprintf(path, sizeof(path), "%s_%llu.png",
+                      cfg_.screenshotSeqPrefix.c_str(),
+                      static_cast<unsigned long long>(TimeRef().frameIndex));
+        std::vector<uint8_t> pixels;
+        if (renderer_.CaptureFrame(pixels)) {
+            int ok = stbi_write_png(path, renderer_.ScreenWidth(),
+                                    renderer_.ScreenHeight(), 4, pixels.data(),
+                                    renderer_.ScreenWidth() * 4);
+            NEON_LOG_INFO("Player: seq screenshot '%s' (%s)", path,
+                          ok ? "ok" : "failed");
+        } else {
+            NEON_LOG_WARN("Player: seq screenshot capture failed");
+        }
+        cfg_.screenshotSeqNext +=
+            static_cast<uint64_t>(std::max(1, cfg_.screenshotSeqStep));
+        if (--cfg_.screenshotSeqLeft <= 0) cfg_.screenshotSeqPrefix.clear();
+    }
     if (cfg_.screenshotPath.empty() || TimeRef().frameIndex < cfg_.screenshotFrame) return;
     std::vector<uint8_t> pixels;
     if (renderer_.CaptureFrame(pixels)) {

@@ -862,6 +862,14 @@ void Renderer::EnableSkyBox(const math::Vec3& sunDir, bool clouds) {
     skyBox_.sunYaw = std::atan2(s.z, s.x);
 }
 
+void Renderer::RecordShadowCaster(const Mesh& mesh, const math::Mat4& model,
+                                  const Material& material) {
+    if (!mesh.Valid() || !shadowSystem_.Enabled() || !shadowSystem_.Recording() ||
+        material.transparent || !material.castShadow)
+        return;
+    shadowSystem_.RecordCaster({mesh.Handle(), model, {}, {}, 0, mesh.Bounds()});
+}
+
 void Renderer::DrawMesh(const Mesh& mesh, const Material& material, const math::Mat4& model) {
     DrawMesh(mesh, material, model, nullptr);
 }

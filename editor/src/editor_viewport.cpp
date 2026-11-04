@@ -177,97 +177,50 @@ void EditorApp::OnRender() {
         const bool gameArea = playActive_;
         DockViewportScope dock(*this, /*designFit=*/gameArea, /*sceneVp=*/true,
                                PlayCameraAspect());
-        // Play renders through GameRuntime::Draw -> scene::DrawSystem; edit mode
-        // renders through the SAME scene::DrawSystem. Both apply the scene
-        // environment (sky/sun/fog) + render stack + sky themselves, so this
-        // host-side copy is redundant - keep it only for the play path, where the
-        // editor toggles must still be pushed onto the renderer before
-        // GameRuntime::Draw. Edit mode skips it entirely: one code path.
-        if (playActive_) {
-        // Day sky + scene lights: shared with the 2D play so edit and
-        // Play render the same environment (see ApplySceneEnvironment).
-        ApplySceneEnvironment();
-        // Scene render stack: when the scene carries one it is authoritative for
-        // post FX, tone mapping, exposure, fog, colour grade and vignette — the
-        // exact same data DrawSystem applies in play/the shipped game, so the
-        // viewport matches. Scenes without one fall back to the editor toggles.
-        if (hasSceneRenderStack_) {
-            const scene::RenderStack& rs = sceneRenderStack_;
-            renderer_.SetSsaoEnabled(rs.ssao);
-            renderer_.SetSsaoIntensity(rs.ssaoIntensity);
-            renderer_.SetVolumetricEnabled(rs.volumetric);
-            renderer_.SetVolumetricIntensity(rs.volumetricStrength);
-            renderer_.SetSsrEnabled(rs.ssr);
-            renderer_.SetSsrIntensity(rs.ssrStrength);
-            renderer_.SetBloomEnabled(rs.bloom);
-            renderer_.SetBloomParams(rs.bloomThreshold, rs.bloomStrength);
-            renderer_.SetBloomWidth(rs.bloomWidth);
-            renderer_.SetShadowDistance(rs.shadowDistance);
-            renderer_.SetShadowSoftness(rs.shadowSoftness);
-            renderer_.SetShadowNormalOffset(rs.shadowNormalOffset);
-            renderer_.SetTonemapEnabled(rs.tonemap);
-            renderer_.SetExposure(rs.exposure);
-            // Composite (density) fog only when the stack enables it: the old
-            // unconditional SetFog(colour, 0, 0) degenerated to full white fog.
-            if (rs.fog) {
-                renderer_.SetFog(rs.fogColor, 0.0f, 1e9f);
-                renderer_.SetVolumetricFogEnabled(true);
-                renderer_.SetVolumetricFogDensity(rs.fogDensity);
-            } else {
-                renderer_.SetVolumetricFogEnabled(false);
-            }
-            renderer_.SetColorGrade({rs.grade, rs.gradeSaturation, rs.gradeContrast,
-                                     rs.gradeGain, rs.gradeGamma, rs.gradeLift,
-                                     {rs.gradeTint.r, rs.gradeTint.g, rs.gradeTint.b}});
-            renderer_.SetAutoExposure({rs.autoExposure, rs.autoExposureKey, 0.05f, 20.0f, 0.02f});
-            renderer_.SetVignette({rs.vignette, rs.vignetteRadius, 0.5f, rs.vignetteIntensity});
-        } else {
-            renderer_.SetSsaoEnabled(postSsao_);
-            renderer_.SetSsaoIntensity(postSsaoIntensity_);
-            renderer_.SetVolumetricEnabled(postVolumetric_);
-            renderer_.SetVolumetricIntensity(postVolumetricIntensity_);
-            renderer_.SetSsrEnabled(postSsr_);
-            renderer_.SetSsrIntensity(postSsrIntensity_);
-            // No authored stack: reset the shadow parameters to the engine
-            // defaults, otherwise a previously loaded scene's stack leaks
-            // (e.g. its shadowDistance 60 kept the wrong cascade splits).
-            const scene::RenderStack rsDefaults{};
-            renderer_.SetShadowDistance(rsDefaults.shadowDistance);
-            renderer_.SetShadowSoftness(rsDefaults.shadowSoftness);
-            renderer_.SetShadowNormalOffset(rsDefaults.shadowNormalOffset);
-        }
-        } // if (playActive_)
+        // Play is rendered by GameRuntime::Draw -> scene::DrawSystem, which owns
+        // the camera, scene environment (sun/ambient/fog/sky), render stack,
+        // sky and shadow pass. Do NOT duplicate any of that here: the old
+        // ApplySceneEnvironment() call drew the sky a second time before the
+        // play camera existed and pushed editor-side light/FX state that the
+        // runtime then overwrote. Edit mode still uses the editor view below.
 
         const float aspect = ViewportAspect();
-        // In play mode the scene's Camera3D object (driven by the game script
-        // every frame) is the authoritative view. Use it for SetCamera too so
-        // the cascade shadow pass is computed from the GAME camera, not the
-        // editor's free/orbit camera - otherwise right-drag orbited the light
-        // frusta and the shadows slid around a stationary world.
         cam = playActive_ ? PlayCamera() : ActiveCamera();
-        renderer_.SetCamera(cam, aspect);
-        // SetCamera's shadow pass restores the scene viewport itself (see
-        // Renderer::SetCamera); DockViewportScope set it before, so nothing
-        // to re-apply here.
-        // P2-editor UX: world-space grid overlay (toggle in the viewport
-        // toolbar). Drawn into the scene so it matches the active camera.
-        if (showViewportGrid_) {
-            const float half = 30.0f;
-            const gfx::Color gridC{0.42f, 0.48f, 0.58f, 0.35f};
-            std::vector<gfx::Renderer::LineVertex> gv;
-            for (float x = -half; x <= half; x += 1.0f) {
-                gv.push_back({{x, 0.0f, -half}, gridC});
-                gv.push_back({{x, 0.0f, half}, gridC});
+        if (playActive_) {
+            // The runtime owns the play camera AND the shadow pass: DrawSystem
+            // resolves the script camera (cameraFocus/cameraYaw/cameraPitch),
+            // calls SetCamera and records/replays the casters exactly once.
+            // Calling SetCamera here first ran the cascade pass with the
+            // editor's camera/aspect and consumed the caster list, so the
+            // runtime's RefreshShadowPass could not rebuild the maps for the
+            // real game view - shadows then tracked a different frustum. Skip
+            // it; only the edit viewport needs the host camera + grid.
+        } else {
+            renderer_.SetCamera(cam, aspect);
+            // SetCamera's shadow pass restores the scene viewport itself (see
+            // Renderer::SetCamera); DockViewportScope set it before, so nothing
+            // to re-apply here.
+            // P2-editor UX: world-space grid overlay (toggle in the viewport
+            // toolbar). Drawn into the scene so it matches the active camera.
+            if (showViewportGrid_) {
+                const float half = 30.0f;
+                const gfx::Color gridC{0.42f, 0.48f, 0.58f, 0.35f};
+                std::vector<gfx::Renderer::LineVertex> gv;
+                for (float x = -half; x <= half; x += 1.0f) {
+                    gv.push_back({{x, 0.0f, -half}, gridC});
+                    gv.push_back({{x, 0.0f, half}, gridC});
+                }
+                for (float z = -half; z <= half; z += 1.0f) {
+                    gv.push_back({{-half, 0.0f, z}, gridC});
+                    gv.push_back({{half, 0.0f, z}, gridC});
+                }
+                renderer_.DrawLines(gv.data(), static_cast<uint32_t>(gv.size()),
+                                    math::Mat4::Identity());
             }
-            for (float z = -half; z <= half; z += 1.0f) {
-                gv.push_back({{-half, 0.0f, z}, gridC});
-                gv.push_back({{half, 0.0f, z}, gridC});
-            }
-            renderer_.DrawLines(gv.data(), static_cast<uint32_t>(gv.size()),
-                                math::Mat4::Identity());
         }
-        // The scene's DirectionalLight object drives the world light (Unity-style).
-        // (Handled inside ApplySceneEnvironment, together with the sky/fog.)
+        // The scene's DirectionalLight object drives the world light
+        // (Unity-style); in play GameRuntime::DrawSystem applies it together
+        // with the sky/fog, and in edit ApplySceneEnvironment does so below.
         // G-camera: the camera object's frustum gizmo already shows the real
         // view (and follows the camera), so the fixed design/camera border is
         // no longer needed - the game is driven by the camera's actual view.
@@ -477,6 +430,23 @@ void EditorApp::OnRender() {
     // so it coexists with the edit/play scene.
     RenderModelPreviewPanel();
 
+    if (!screenshotSeqPrefix_.empty() &&
+        TimeRef().frameIndex >= screenshotSeqNext_) {
+        char path[1024];
+        std::snprintf(path, sizeof(path), "%s_%llu.png",
+                      screenshotSeqPrefix_.c_str(),
+                      static_cast<unsigned long long>(TimeRef().frameIndex));
+        std::vector<uint8_t> pixels;
+        if (renderer_.CaptureFrame(pixels)) {
+            stbi_write_png(path, renderer_.ScreenWidth(), renderer_.ScreenHeight(), 4,
+                           pixels.data(), renderer_.ScreenWidth() * 4);
+            NEON_LOG_INFO("Editor screenshot: %s", path);
+        } else {
+            NEON_LOG_WARN("Editor screenshot capture failed");
+        }
+        screenshotSeqNext_ += static_cast<uint64_t>(screenshotSeqStep_);
+        if (--screenshotSeqLeft_ <= 0) screenshotSeqPrefix_.clear();
+    }
     if (!screenshotPath_.empty() && TimeRef().frameIndex >= screenshotFrame_) {
         std::vector<uint8_t> pixels;
         if (renderer_.CaptureFrame(pixels)) {

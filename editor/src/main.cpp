@@ -71,6 +71,10 @@ int main(int argc, char** argv) {
     std::string screenshot;
     std::string previewPath;
     uint64_t screenshotFrame = 0;
+    std::string screenshotSeqPrefix;
+    uint64_t screenshotSeqNext = 0;
+    int screenshotSeqStep = 1;
+    int screenshotSeqCount = 0;
     int exitAfterFrames = 0;
     std::string packVersion = "0.1.0";
     std::string packUpdateUrl;
@@ -134,6 +138,11 @@ int main(int argc, char** argv) {
         } else if (std::strcmp(argv[i], "--screenshot") == 0 && i + 2 < argc) {
             screenshot = argv[++i];
             screenshotFrame = static_cast<uint64_t>(std::atoll(argv[++i]));
+        } else if (std::strcmp(argv[i], "--screenshot-seq") == 0 && i + 4 < argc) {
+            screenshotSeqPrefix = argv[++i];
+            screenshotSeqNext = static_cast<uint64_t>(std::atoll(argv[++i]));
+            screenshotSeqStep = std::atoi(argv[++i]);
+            screenshotSeqCount = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
             exitAfterFrames = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--disable-fbo") == 0 ||
@@ -167,6 +176,8 @@ int main(int argc, char** argv) {
                         "  --package <project> <out>  validate + pack a project into\n"
                         "                         <out>/game.pack (run.bat + neon_game.exe)\n"
                         "  --screenshot <path> <frame>  capture a PNG at frame N\n"
+                        "  --screenshot-seq <prefix> <first> <step> <count>\n"
+                        "                         capture a run of PNGs in one launch\n"
                         "  --disable-fbo          force-disable CSM shadow maps\n"
                         "  --no-shadows           alias for --disable-fbo\n"
                         "  --no-bloom             disable the HDR bloom post-process\n"
@@ -204,6 +215,9 @@ int main(int argc, char** argv) {
         app.SetSmokeTestFrames(exitAfterFrames);
     }
     if (!screenshot.empty()) app.RequestScreenshot(screenshot, screenshotFrame);
+    if (!screenshotSeqPrefix.empty())
+        app.RequestScreenshotSeq(screenshotSeqPrefix, screenshotSeqNext,
+                                 screenshotSeqStep, screenshotSeqCount);
     if (disableShadows) app.SetDisableShadows(true);
     if (disableBloom) app.SetBloomEnabled(false);
     if (disableMsaa) app.SetMsaaEnabled(false);

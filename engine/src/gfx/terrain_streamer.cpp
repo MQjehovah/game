@@ -146,14 +146,17 @@ void TerrainStreamer::Draw(Renderer& renderer, const math::Mat4& viewProj,
         // camera: the streamer keeps a square window around the focus, but only
         // the view frustum needs to be submitted. The 8 m margin keeps a chunk
         // whose bounds are just outside the frustum from popping while the
-        // camera turns (the skirt can still be visible at the edge).
+        // camera turns: the skirt below the chunk edge can still enter the
+        // view, and a 2 m margin dropped it one frame before the skirt was
+        // visible (a hard "hole" at the screen edge while driving).
         math::AABB bounds = kv.second.mesh.Bounds();
-        bounds.min.x -= 2.0f;
-        bounds.min.y -= 2.0f;
-        bounds.min.z -= 2.0f;
-        bounds.max.x += 2.0f;
-        bounds.max.y += 2.0f;
-        bounds.max.z += 2.0f;
+        constexpr float kCullMargin = 8.0f;
+        bounds.min.x -= kCullMargin;
+        bounds.min.y -= kCullMargin;
+        bounds.min.z -= kCullMargin;
+        bounds.max.x += kCullMargin;
+        bounds.max.y += kCullMargin;
+        bounds.max.z += kCullMargin;
         if (!viewFrustum.Intersects(bounds)) continue;
         Material chunkMaterial = material;
         chunkMaterial.tint = Color{kv.second.tint.x, kv.second.tint.y,

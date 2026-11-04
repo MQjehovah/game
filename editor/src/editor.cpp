@@ -220,6 +220,12 @@ bool EditorApp::OnCreate() {
         NEON_LOG_ERROR("Editor: renderer init failed");
         return false;
     }
+    // Match the shipped player's stability defaults: TAA's history and the
+    // 512px point-light cube maps both produce temporal shimmer on the large
+    // procedural terrain, and the editor playtest must not look different from
+    // neon_game. The sun CSM still supplies the main shadows.
+    renderer_.SetTaaEnabled(false);
+    renderer_.SetPointShadowsEnabled(false);
     assetMgr_.Init(&renderer_);
     MountAssetVfs();
 

@@ -344,9 +344,17 @@
   chunk 做**视锥剔除**，只提交相机视野内的块。1m 单元会把 RTX 2060 的营地
   视角压到约 12 FPS；2m/512m 在保持细节和完整视野的同时，营地静态约 54 FPS、
   夜间驾驶约 75 FPS。自检 `terrain render budget` 锁定 512m / ≥2m 的预算。
-- **视角稳定性**：地形 chunk 的视锥测试给 AABB 留 2m 余量，避免裙边在屏幕边缘
-  被过早剔除；草/岩石场整场提交（700/58 个实例，不做逐实例视锥剔除），
+- **视角稳定性**：地形 chunk 的视锥测试给 AABB 留 8m 余量，避免裙边在屏幕边缘
+  被过早剔除；新块 `buildsPerFrame=6`（原 2）填环更快，`maxResident=512` 防止
+  驾驶时前沿缺块；草/岩石场整场提交（700/58 个实例，不做逐实例视锥剔除），
   转头时不会出现植被整片闪没。
+- **渲染管线顺序（编辑器 playtest）**：`GameRuntime::Draw` 现在先解析脚本相机、
+  应用场景 Sun/Ambient/PointLight，再调用 `SetCamera` 触发 CSM；编辑器不再在
+  `play_->Draw` 前重复 `SetCamera`/`ApplySceneEnvironment`（原来会先跑一遍
+  阴影 pass、重复画天空、并把模型预览/缩略图的相机和灯光状态带给主场景）。
+  被相机视锥预剔除的 batch/glTF 子节点仍通过 `RecordShadowCaster` 进入阴影
+  caster 列表，CSM 的 caster 边界和深度范围不再随转头跳变；草/岩石不再投射
+  阴影。编辑器默认关闭物理碰撞体线框（F3 里再开）。
 - **地形/道具阴影与时序稳定性**：程序化地形、草簇和岩石不接收投影
   （`receiveShadow=false`）；`ambientStrength` 从 0.58 提到 0.8；关闭 SSAO、
   TAA 和点光 cube shadow；`shadowSoftness=1.8`、`shadowNormalOffset=8`。

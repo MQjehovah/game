@@ -48,6 +48,10 @@ struct PlayerConfig {
     int smokeFrames = 0;          // --smoke-test <n>: run n fixed ticks then exit 0
     std::string screenshotPath;   // --screenshot <file> <frame>: capture a PNG
     uint64_t screenshotFrame = 0;
+    std::string screenshotSeqPrefix; // --screenshot-seq <prefix> <first> <step> <count>
+    uint64_t screenshotSeqNext = 0;
+    int screenshotSeqStep = 1;
+    int screenshotSeqLeft = 0;
     bool keep = false;            // --keep: leave the unpacked dir on exit (debug)
     bool dumpVars = false;        // --dump-vars: log every GameVar at exit
     // T6.4 --connect host:port: join a GameServer, send inputs, receive

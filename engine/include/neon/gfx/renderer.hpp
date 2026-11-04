@@ -238,6 +238,14 @@ public:
     // pollutes the main scene's shadow pass. Enabled by default.
     void SetShadowRecording(bool enabled) { shadowSystem_.SetShadowRecording(enabled); }
     bool ShadowRecording() const { return shadowSystem_.Recording(); }
+    // Record a caster without drawing it. The draw-list pre-cull skips items
+    // outside the CAMERA frustum, but they can still cast into the visible
+    // region (sun behind the camera) and their presence/absence made the
+    // per-frame caster bounds - and therefore the CSM depth range - jump as the
+    // view turned. The cull branch calls this for every skipped caster so the
+    // shadow pass sees a stable, view-independent set.
+    void RecordShadowCaster(const Mesh& mesh, const math::Mat4& model,
+                            const Material& material);
     // True when a shadow map pass actually ran this frame (maps are valid).
     bool ShadowMapActive() const { return shadowSystem_.CsmActive(); }
     // Shadow map size in pixels per cascade.

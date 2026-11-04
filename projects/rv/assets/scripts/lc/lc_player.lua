@@ -139,6 +139,7 @@ function updatePlayer(dt)
   local dym = (math.abs(rawY) > 110) and 0 or math.max(-70, math.min(70, rawY))
   player.yaw = player.yaw - dxm * SENSITIVITY
   player.pitch = math.max(-1.25, math.min(1.25, player.pitch - dym * SENSITIVITY))
+  if startMode == "spinlive" then player.yaw = player.yaw + (dt or 0) * 0.8 end
 
   -- WASD：相对视角移动，A/D 横移
   local ix = (ActionDown("d") and 1 or 0) - (ActionDown("a") and 1 or 0)

@@ -355,6 +355,13 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
             terrainWorld_ = std::make_unique<world::TerrainWorld>(std::move(worldCfg));
             gfx::TerrainStreamerConfig streamCfg;
             streamCfg.viewDistance = terr->terrainViewDistance;
+            // Fill the ring faster than the old 2/frame budget: at driving
+            // speed a 2-chunk budget left the leading edge of the ground
+            // missing for several frames, which reads as terrain popping in
+            // and out. Residency has plenty of headroom (<100 chunks for a
+            // 512 m window), so raise the budgets rather than evict.
+            streamCfg.buildsPerFrame = 6;
+            streamCfg.maxResident = 512;
             if (terr->terrainCellSize > 0.01f) {
                 const float chunk = world::TerrainChunkSize(0);
                 streamCfg.cells = static_cast<int>(chunk / terr->terrainCellSize);

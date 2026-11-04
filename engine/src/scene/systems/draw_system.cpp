@@ -1033,6 +1033,12 @@ void DrawSystem::DrawProceduralScatter(gfx::Renderer& renderer,
         scatterGrassMat_.windSway = 1.0f;
         scatterGrassMat_.roughness = 0.92f;
         scatterGrassMat_.receiveShadow = false;
+        // The scatter field is a whole-field instanced draw with hundreds of
+        // blades; caster-recording every instance made the shadow pass pay for
+        // grass that cannot show a readable shadow at this scale, and the
+        // field's bounds shifted every 12 m rebuild, which rescaled the CSM
+        // depth range. Ground clutter stays out of the shadow maps.
+        scatterGrassMat_.castShadow = false;
         if (content_.assets && content_.fullAssetPath) {
             scatterGrassMat_.albedo =
                 content_.assets
@@ -1045,6 +1051,7 @@ void DrawSystem::DrawProceduralScatter(gfx::Renderer& renderer,
         scatterRockMat_ = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
         scatterRockMat_.roughness = 0.96f;
         scatterRockMat_.receiveShadow = false;
+        scatterRockMat_.castShadow = false;
         scatterReady_ = true;
     }
     if (!scatterGrassMesh_.Valid() && !scatterRockMesh_.Valid()) return;
@@ -1377,12 +1384,12 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
     // editor, the full target in the standalone player) so the runtime render
     // matches whatever rasterization rect the host set up - otherwise the
     // playtest FOV would differ from the edit-mode viewport.
-    renderer.SetCamera(cam, drawAspect);
-    // G3: the editor may have already run the cascade shadow pass with its free
-    // orbit camera this frame (before play resolved its game camera). Re-run it
-    // for the RESOLVED camera so the shadow frusta track the game view, not the
-    // editor's; otherwise orbiting the editor camera slides the shadows.
-    renderer.RefreshShadowPass();
+    // SetCamera is deferred until AFTER the light state below: it also runs the
+    // cascade pass, and running it here (the old order) used whatever scene
+    // camera/sun the host had left behind - e.g. the editor's model-preview
+    // camera or the previous frame's light - so every cascade was projected for
+    // the wrong view and the shadows visibly jumped. The pass now sees both the
+    // resolved camera and this frame's directional/ambient/point lights.
     // Data-driven scene environment: apply the scene's DirectionalLight +
     // AmbientLight objects (Unity-style) so every host renders the same scene
     // the same way (the editor's playtest and the standalone player both go
@@ -1566,6 +1573,12 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                              "Renderer: active spot lights = %d", activeSpots);
             }
         }
+        // Camera + environment are now both current: run the cascade pass for
+        // the resolved game camera with this frame's sun / point lights. The
+        // host must not pre-run SetCamera for a play frame (the editor no longer
+        // does); a pre-run would consume the caster list before this point.
+        renderer.SetCamera(cam, drawAspect);
+        renderer.RefreshShadowPass();
         renderer.DrawSky();
     }
     // Procedural terrain: after the resolved camera, shadow cascades and sky /
@@ -1958,9 +1971,16 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
                                // it can also emit a motion vector.
                                !(velocityActive && moved);
         if (batchable) {
-            if (!bvhVisible_.empty() && bvhVisible_[idx] == 0) continue; // pre-culled
             gfx::Mesh drawMesh = SelectLodMesh(item.mesh, item.chain, worldPos, cam.position);
             if (!drawMesh.Valid()) continue;
+            if (!bvhVisible_.empty() && bvhVisible_[idx] == 0) {
+                // Pre-culled from the CAMERA view, but it may still cast into
+                // the visible region (sun behind/beside the camera). Record it
+                // without drawing so the CSM caster set - and its bounds/depth
+                // range - does not change as the camera turns.
+                renderer.RecordShadowCaster(drawMesh, model, item.mat);
+                continue;
+            }
             // O(1) lookup instead of a linear scan over every open batch (the
             // Rift map alone opens hundreds of distinct materials per frame).
             const uint64_t key = batchKey(drawMesh, item.mat);
@@ -2046,8 +2066,12 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
         for (const assets::GltfMeshNode& sub : item.gltfSubNodes) {
             if (!sub.mesh.Valid()) continue;
             const math::Mat4 subModel = model * sub.transform;
-            if (!viewFrustum.Intersects(math::TransformAABB(sub.mesh.Bounds(), subModel)))
+            if (!viewFrustum.Intersects(math::TransformAABB(sub.mesh.Bounds(), subModel))) {
+                // Same rule as the item pre-cull: an off-screen sub-node can
+                // still cast into view, so keep it in the shadow caster list.
+                if (item.mat.castShadow) renderer.RecordShadowCaster(sub.mesh, subModel, sub.material);
                 continue;
+            }
             // Sub-nodes inherit the node transform: reuse the same previous
             // transform so a moving multi-node glTF gets motion vectors too.
             const math::Mat4 prevSubModel =

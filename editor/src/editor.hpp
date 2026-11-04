@@ -334,6 +334,16 @@ public:
         screenshotPath_ = path;
         screenshotFrame_ = frame;
     }
+    // Capture a run of frames in one launch: prefix_<frame>.png starting at
+    // `first`, then every `step` frames, `count` images. Used to diff the
+    // render pipeline over time (flicker/popping) without restarting the app.
+    void RequestScreenshotSeq(const std::string& prefix, uint64_t first, int step,
+                              int count) {
+        screenshotSeqPrefix_ = prefix;
+        screenshotSeqNext_ = first;
+        screenshotSeqStep_ = step > 0 ? step : 1;
+        screenshotSeqLeft_ = count;
+    }
 
 private:
     void SetupScene();
@@ -876,6 +886,10 @@ private:
     bool renderThreadEnabled_ = false;  // ThreadedBackend on a render thread
     std::string screenshotPath_;
     uint64_t screenshotFrame_ = 0;
+    std::string screenshotSeqPrefix_;
+    uint64_t screenshotSeqNext_ = 0;
+    int screenshotSeqStep_ = 1;
+    int screenshotSeqLeft_ = 0;
 
     // ImGui tool UI state.
     std::string pendingText_; // UTF-8 characters queued for ImGui this frame
@@ -894,7 +908,10 @@ private:
     // 开关状态保留在此（视口画物理线框 editor_viewport:241 直接读 debugColliders_）；
     // 探针字段缓存（原 debugProbeField_ 等）已迁入 DebugOverlayPanel（Task 10）。
     bool showDebugOverlay_ = false;
-    bool debugColliders_ = true;  // physics wireframe (on by default, keeps old UX)
+    // Physics wireframe: opt-in via the debug overlay (F3). Drawing thousands of
+    // collider boxes every play frame hides the game and used to muddy the
+    // viewport; gameplay should start clean.
+    bool debugColliders_ = false;
     bool debugNavMesh_ = false;
     bool debugProbes_ = false;
     bool debugAudio_ = false;

@@ -172,6 +172,11 @@ int main(int argc, char** argv) {
         } else if (std::strcmp(argv[i], "--screenshot") == 0 && i + 2 < argc) {
             cfg.screenshotPath = argv[++i];
             cfg.screenshotFrame = static_cast<uint64_t>(std::atoll(argv[++i]));
+        } else if (std::strcmp(argv[i], "--screenshot-seq") == 0 && i + 4 < argc) {
+            cfg.screenshotSeqPrefix = argv[++i];
+            cfg.screenshotSeqNext = static_cast<uint64_t>(std::atoll(argv[++i]));
+            cfg.screenshotSeqStep = std::atoi(argv[++i]);
+            cfg.screenshotSeqLeft = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--dump-vars") == 0) {
             cfg.dumpVars = true;
         } else if (std::strcmp(argv[i], "--keep") == 0) {
