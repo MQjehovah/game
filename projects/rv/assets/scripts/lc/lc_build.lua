@@ -246,6 +246,9 @@ function recomputeStats()
           elseif weather == "snow" then gen = gen * 0.3
           elseif weather == "cloudy" then gen = gen * 0.7 end
         end
+        if solarDirtScale ~= nil then
+          gen = gen * solarDirtScale((rv and rv.dirt) or 0)
+        end
       end
       s.powerGen   = s.powerGen   + gen
       s.powerDraw  = s.powerDraw  + (c.powerDraw  or 0)

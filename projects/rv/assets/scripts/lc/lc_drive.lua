@@ -350,6 +350,12 @@ function dirtWarningText(value)
   return "车身太脏了——油耗上升，到营地/加油站洗车，驾驶中按 G 喷玻璃水"
 end
 
+-- 太阳能板积灰：灰尘遮挡最多损失 25% 发电
+function solarDirtScale(dirt)
+  local d = math.max(0, math.min(1, dirt or 0))
+  return 1.0 - 0.25 * d
+end
+
 -- 驾驶中喷玻璃水：消耗 1L 水，清除一部分挡风玻璃泥点
 function useWindshieldWasher()
   if rv == nil or (rv.dirt or 0) < 0.2 then

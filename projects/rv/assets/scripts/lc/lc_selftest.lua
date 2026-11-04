@@ -2203,6 +2203,16 @@ function runSelfTest()
                      tostring(clean), tostring(dry)))
   end
 
+  -- 太阳能板积灰：干净 100%，脏满最多损失 25%
+  do
+    local clean = solarDirtScale(0)
+    local mid = solarDirtScale(0.5)
+    local dirty = solarDirtScale(1)
+    ok(r, "solar dirt scale",
+       clean == 1.0 and mid < clean and dirty < mid and dirty >= 0.75,
+       string.format("0=%.2f 0.5=%.2f 1=%.2f", clean, mid, dirty))
+  end
+
   -- 夜间远光招感染者：只在“远光 + 夜晚”成立
   do
     local both = highBeamAttracts(true, true)
