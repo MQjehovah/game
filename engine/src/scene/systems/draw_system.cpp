@@ -1032,7 +1032,7 @@ void DrawSystem::DrawProceduralScatter(gfx::Renderer& renderer,
         scatterGrassMat_.doubleSided = true;
         scatterGrassMat_.windSway = 1.0f;
         scatterGrassMat_.roughness = 0.92f;
-        scatterGrassMat_.receiveShadow = true;
+        scatterGrassMat_.receiveShadow = false;
         if (content_.assets && content_.fullAssetPath) {
             scatterGrassMat_.albedo =
                 content_.assets
@@ -1044,7 +1044,7 @@ void DrawSystem::DrawProceduralScatter(gfx::Renderer& renderer,
         }
         scatterRockMat_ = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
         scatterRockMat_.roughness = 0.96f;
-        scatterRockMat_.receiveShadow = true;
+        scatterRockMat_.receiveShadow = false;
         scatterReady_ = true;
     }
     if (!scatterGrassMesh_.Valid() && !scatterRockMesh_.Valid()) return;

@@ -1258,6 +1258,10 @@ function on_start()
   if startMode == "spin" then
     local a = tonumber(ReadText("spin_angle.txt") or "0") or 0
     player.yaw = (rv.yaw or 0) + math.rad(a)
+    if ReadText("spin_sunset.txt") ~= nil and
+       ReadText("spin_sunset.txt") ~= "" then
+      clock = 18 * 60 + 20
+    end
   end
   SetVar("cameraMouseLock", 1)
   updateInteraction()

@@ -131,7 +131,10 @@ void TerrainStreamer::Draw(Renderer& renderer, const math::Mat4& viewProj,
     if (!material.shader.Valid()) material.shader = renderer.TerrainLayersShader();
     material.lit = true;
     material.castShadow = false;
-    material.receiveShadow = true;
+    // Large terrain-shadow patches at low sun angles read as rendering bugs on
+    // the low-poly ground (the terrain has no fine geometry to justify them).
+    // Keep object shadows, but let the ground itself stay evenly lit.
+    material.receiveShadow = false;
     material.doubleSided = true;
 
     const math::Mat4 identity = math::Mat4::Identity();
