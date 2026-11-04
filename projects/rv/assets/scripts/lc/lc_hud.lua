@@ -1108,7 +1108,7 @@ function drawStationMenu()
                     ok and 0.82 or 0.35, ok and 0.72 or 0.28)
       yy = yy + 54
     end
-    drawTextCentered("按 1/2/3 制作    E 关闭", vw * 0.5, py + ph - 30, 13, 0.75, 0.75, 0.68, 1)
+    drawTextCentered("按 1-5 选择配方    E 关闭", vw * 0.5, py + ph - 30, 13, 0.75, 0.75, 0.68, 1)
   else
     for i, part in ipairs(REPAIR_PARTS) do
       local value = partValue(part.id)
