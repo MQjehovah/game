@@ -340,6 +340,13 @@
   chunk 做**视锥剔除**，只提交相机视野内的块。1m 单元会把 RTX 2060 的营地
   视角压到约 12 FPS；2m/512m 在保持细节和完整视野的同时，营地静态约 54 FPS、
   夜间驾驶约 75 FPS。自检 `terrain render budget` 锁定 512m / ≥2m 的预算。
+- **程序化植被/岩石散布**：`DrawProceduralScatter` 在程序化地形上按世界网格
+  哈希生成草簇和岩石，相机移动超过 12m 才重建，位置由世界格点决定，不会
+  随相机移动整片刷新。草用 64×64 透明草叶贴图 + alpha cutout + 顶点风摆；
+  岩石使用低模 boulder 网格。`TerrainWorld::FlattenWeight` 会跳过公路/场地
+  压实区，陡坡和雪线以上也不生成。两层都是 GPU instancing，视锥剔除和
+  前后排序由 renderer 统一处理；实测路边视角约 70 FPS、夜间驾驶约 82 FPS。
+  引擎回归测试 `TerrainWorldFlattenWeightMarksRoadsAndPads`。
   `lc_terrain.lua` 对 JSON 做双线性采样，`terrainHeight(x,z)` 给出任意点
   高度、`terrainSlope(x,z)` 给出梯度；公路段按高度抬升并按坡度倾斜
   （5m 分段、坡度限幅 10°，像切进坡里的土路），新生成的地点会拒绝落在

@@ -24,6 +24,8 @@
 #include "neon/gfx/trail.hpp"
 #include "neon/gfx/scene_props.hpp"
 #include "neon/gfx/terrain.hpp"
+#include "neon/world/noise.hpp"
+#include "neon/world/terrain_world.hpp"
 #include "neon/scene/render_stack.hpp"
 #include "neon/scene/scene_file.hpp"
 #include "neon/scene/skinned_model.hpp"
@@ -1015,6 +1017,134 @@ void DrawSystem::DrawVegetation(gfx::Renderer& renderer, const gfx::Camera& came
     }
 }
 
+void DrawSystem::DrawProceduralScatter(gfx::Renderer& renderer,
+                                       const gfx::Camera& camera,
+                                       const world::TerrainWorld* terrain) {
+    if (terrain == nullptr) return;
+    if (!scatterReady_) {
+        // Procedural low-poly meshes keep the scatter layer asset-free and
+        // deterministic; the same meshes are reused by every instance.
+        scatterGrassMesh_ = ResolveMeshKey(renderer, "grass");
+        scatterRockMesh_ = ResolveMeshKey(renderer, "rock");
+        scatterGrassMat_ = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
+        scatterGrassMat_.doubleSided = true;
+        scatterGrassMat_.windSway = 1.0f;
+        scatterGrassMat_.roughness = 0.92f;
+        scatterGrassMat_.receiveShadow = true;
+        if (content_.assets && content_.fullAssetPath) {
+            scatterGrassMat_.albedo =
+                content_.assets
+                    ->LoadTexture(content_.fullAssetPath(
+                        "assets/textures/grass_blade.png"))
+                    .Handle();
+            scatterGrassMat_.alphaTest = true;
+            scatterGrassMat_.alphaCutoff = 0.35f;
+        }
+        scatterRockMat_ = gfx::Material::Lit({}, gfx::Color::White, 8.0f);
+        scatterRockMat_.roughness = 0.96f;
+        scatterRockMat_.receiveShadow = true;
+        scatterReady_ = true;
+    }
+    if (!scatterGrassMesh_.Valid() && !scatterRockMesh_.Valid()) return;
+
+    const math::Vec3& c = camera.position;
+    const float mdx = c.x - terrainScatter_.center.x;
+    const float mdz = c.z - terrainScatter_.center.z;
+    if (!terrainScatter_.built || mdx * mdx + mdz * mdz > 12.0f * 12.0f) {
+        terrainScatter_.center = c;
+        terrainScatter_.grass.clear();
+        terrainScatter_.rocks.clear();
+
+        auto hash01 = [](uint32_t h) {
+            return static_cast<float>(h & 0x00FFFFFFu) * (1.0f / 16777216.0f);
+        };
+
+        // Grass: one deterministic candidate per 5.5 m world cell, so moving
+        // the camera only adds/removes edge cells (no population popping).
+        {
+            constexpr float cell = 4.5f;
+            constexpr float radius = 80.0f;
+            const int x0 = static_cast<int>(std::floor((c.x - radius) / cell));
+            const int x1 = static_cast<int>(std::floor((c.x + radius) / cell));
+            const int z0 = static_cast<int>(std::floor((c.z - radius) / cell));
+            const int z1 = static_cast<int>(std::floor((c.z + radius) / cell));
+            for (int gz = z0; gz <= z1; ++gz) {
+                for (int gx = x0; gx <= x1; ++gx) {
+                    const uint32_t h = world::Hash2D(gx, gz, 0x51A7u);
+                    const float wx = (static_cast<float>(gx) + 0.15f +
+                                      0.70f * hash01(h)) * cell;
+                    const float wz = (static_cast<float>(gz) + 0.15f +
+                                      0.70f * hash01(h ^ 0x9E3779B9u)) * cell;
+                    const float dx = wx - c.x;
+                    const float dz = wz - c.z;
+                    if (dx * dx + dz * dz > radius * radius) continue;
+                    if (terrain->FlattenWeight(wx, wz) > 0.04f) continue;
+                    const math::Vec3 n = terrain->Normal(wx, wz);
+                    if (1.0f - n.y > 0.38f) continue;
+                    const float wy = terrain->SurfaceHeight(wx, wz);
+                    if (wy > 92.0f) continue;
+                    const float s = 0.45f + 0.45f *
+                        hash01(h * 1664525u + 1013904223u);
+                    const float yaw = 6.2831853f *
+                        hash01(h * 1103515245u + 12345u);
+                    terrainScatter_.grass.push_back(
+                        math::Mat4::Translation({wx, wy, wz}) *
+                        math::Quat::FromEuler(0.0f, yaw, 0.0f).ToMat4() *
+                        math::Mat4::Scale({s, s, s}));
+                }
+            }
+        }
+
+        // Boulders: sparser grid, partly buried, no grass-thin slopes.
+        {
+            constexpr float cell = 18.0f;
+            constexpr float radius = 120.0f;
+            const int x0 = static_cast<int>(std::floor((c.x - radius) / cell));
+            const int x1 = static_cast<int>(std::floor((c.x + radius) / cell));
+            const int z0 = static_cast<int>(std::floor((c.z - radius) / cell));
+            const int z1 = static_cast<int>(std::floor((c.z + radius) / cell));
+            for (int gz = z0; gz <= z1; ++gz) {
+                for (int gx = x0; gx <= x1; ++gx) {
+                    const uint32_t h = world::Hash2D(gx, gz, 0xB0DEu);
+                    if (hash01(h) > 0.55f) continue;  // sparse boulder field
+                    const float wx = (static_cast<float>(gx) + 0.20f +
+                                      0.60f * hash01(h ^ 0x85EBCA6Bu)) * cell;
+                    const float wz = (static_cast<float>(gz) + 0.20f +
+                                      0.60f * hash01(h ^ 0xC2B2AE35u)) * cell;
+                    const float dx = wx - c.x;
+                    const float dz = wz - c.z;
+                    if (dx * dx + dz * dz > radius * radius) continue;
+                    if (terrain->FlattenWeight(wx, wz) > 0.05f) continue;
+                    const math::Vec3 n = terrain->Normal(wx, wz);
+                    if (1.0f - n.y > 0.55f) continue;
+                    const float wy = terrain->SurfaceHeight(wx, wz);
+                    if (wy > 95.0f) continue;
+                    const float s = 0.35f + 0.55f *
+                        hash01(h * 22695477u + 1u);
+                    const float yaw = 6.2831853f *
+                        hash01(h * 1103515245u + 12345u);
+                    terrainScatter_.rocks.push_back(
+                        math::Mat4::Translation({wx, wy - 0.10f * s, wz}) *
+                        math::Quat::FromEuler(0.0f, yaw, 0.0f).ToMat4() *
+                        math::Mat4::Scale({s, s * 0.85f, s}));
+                }
+            }
+        }
+        terrainScatter_.built = true;
+    }
+
+    if (!terrainScatter_.grass.empty()) {
+        renderer.DrawMeshInstanced(
+            scatterGrassMesh_, scatterGrassMat_, terrainScatter_.grass.data(),
+            static_cast<uint32_t>(terrainScatter_.grass.size()));
+    }
+    if (!terrainScatter_.rocks.empty()) {
+        renderer.DrawMeshInstanced(
+            scatterRockMesh_, scatterRockMat_, terrainScatter_.rocks.data(),
+            static_cast<uint32_t>(terrainScatter_.rocks.size()));
+    }
+}
+
 void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const DrawParams& params,
                       ecs::World& world, script::ScriptContext& scriptCtx,
                       script::IScriptHost* luaHost, script::IScriptHost* jsHost,
@@ -1857,6 +1987,7 @@ void DrawSystem::Draw(gfx::Renderer& renderer, const gfx::Camera& camera, const 
     // yaw to face the camera) would follow the host's free/orbit camera, so
     // right-drag orbits the foliage billboards while the world stays put.
     DrawVegetation(renderer, cam, world, sceneTree);
+    DrawProceduralScatter(renderer, cam, params.terrainWorld);
     // Script VFX particles: world-space camera-facing billboards (additive +
     // alpha batches), drawn INSIDE the HDR target so bright particles bloom.
     particles.Draw(renderer);
@@ -2010,6 +2141,9 @@ void DrawSystem::Clear() {
     drawBvh_.Clear();
     bvhVisible_.clear();
     drawOrder_.clear();
+    terrainScatter_.built = false;
+    terrainScatter_.grass.clear();
+    terrainScatter_.rocks.clear();
     // vegCache_ intentionally NOT cleared here: the pre-split Stop() only
     // cleared draws_, and stale entries are pruned by DrawVegetation's
     // per-frame alive check (same Start/Stop semantics preserved).
@@ -2025,6 +2159,10 @@ void DrawSystem::Reset() {
     skyTex_ = {};
     skyTexPath_.clear();
     skyIblFromTex_ = false;
+    terrainScatter_ = {};
+    scatterGrassMesh_ = {};
+    scatterRockMesh_ = {};
+    scatterReady_ = false;
 }
 
 } // namespace neon::scene

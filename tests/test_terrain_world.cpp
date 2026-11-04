@@ -13,8 +13,26 @@ TEST(TerrainWorldCampIsFlatAndNorthRises) {
     CHECK(w.Height(0.0f, 800.0f) > 30.0f);
 }
 
-TEST(TerrainWorldDeterministicAndFinite) {
-    neon::world::TerrainWorld a({7, 1.0f / 420.0f, {}, 300.0f});
+TEST(TerrainWorldFlattenWeightMarksRoadsAndPads) {
+    neon::world::WorldFeatures features;
+    neon::world::RoadSpec road;
+    road.points = {{0.0f, -20.0f}, {0.0f, 20.0f}};
+    road.halfWidth = 4.0f;
+    road.shoulder = 2.0f;
+    features.roads.push_back(road);
+    neon::world::AddPad(features, {40.0f, 0.0f}, 8.0f, 6.0f);
+
+    neon::world::TerrainWorldConfig cfg;
+    cfg.seed = 1337;
+    cfg.features = features;
+    neon::world::TerrainWorld w(cfg);
+
+    CHECK(w.FlattenWeight(0.0f, 0.0f) > 0.9f);   // road core
+    CHECK(w.FlattenWeight(40.0f, 0.0f) > 0.9f);  // pad core
+    CHECK(w.FlattenWeight(80.0f, 80.0f) < 0.01f); // open terrain
+}
+
+TEST(TerrainWorldDeterministicAndFinite) {    neon::world::TerrainWorld a({7, 1.0f / 420.0f, {}, 300.0f});
     neon::world::TerrainWorld b({7, 1.0f / 420.0f, {}, 300.0f});
     for (int i = 0; i < 200; ++i) {
         float x = static_cast<float>(i) * 37.0f - 3700.0f;

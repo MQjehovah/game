@@ -1293,6 +1293,7 @@ void GameRuntime::Draw(gfx::Renderer& renderer, const gfx::Camera& camera,
                                   postSsrIntensity_};
     params.terrainStreamer = terrainWorld_ ? &terrainStreamer_ : nullptr;
     params.terrainMaterial = terrainWorld_ ? &terrainMaterial_ : nullptr;
+    params.terrainWorld = terrainWorld_.get();
     lastRenderer_ = &renderer;
     drawSystem_.Draw(
         renderer, camera, params,

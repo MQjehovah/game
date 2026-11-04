@@ -32,6 +32,9 @@ public:
     float SurfaceHeight(float x, float z) const;
     math::Vec3 Normal(float x, float z) const;
     BiomeWeights Weights(float x, float z) const;
+    // 0 = untouched terrain, 1 = fully flattened road/pad. Scatter systems use
+    // this to keep grass/rocks off asphalt and POI pads.
+    float FlattenWeight(float x, float z) const;
     const TerrainWorldConfig& Config() const { return config_; }
 
 private:

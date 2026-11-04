@@ -69,6 +69,15 @@ def main() -> int:
             if not target.is_file():
                 errors.append(f"{path.relative_to(root)}: missing {rel}")
 
+    # Runtime code references that are not expressed in a prefab JSON.
+    runtime_assets = [
+        "assets/textures/grass_blade.png",  # procedural terrain scatter
+    ]
+    for rel in runtime_assets:
+        checked_refs += 1
+        if not (root / rel).is_file():
+            errors.append(f"runtime: missing {rel}")
+
     # glTF buffers/images are referenced relative to the .gltf file itself.
     for gltf in sorted((root / "assets/models").rglob("*.gltf")):
         try:

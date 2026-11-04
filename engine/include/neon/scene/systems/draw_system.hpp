@@ -38,6 +38,9 @@
 namespace neon::assets {
 class AssetManager;
 }
+namespace neon::world {
+class TerrainWorld;
+}
 namespace neon::gfx {
 struct Camera;
 class Renderer;
@@ -81,6 +84,9 @@ public:
         // setup and before the entity draw list. Null keeps the legacy path.
         gfx::TerrainStreamer* terrainStreamer = nullptr;
         gfx::Material* terrainMaterial = nullptr;
+        // Procedural world used by the scatter pass (grass/rocks) when the
+        // legacy heightfield vegetation cache has no authored heights.
+        const world::TerrainWorld* terrainWorld = nullptr;
     };
 
     // 运行时持有的共享状态（Start 时由 GameRuntime 注入；ChangeScene 复用时刷新）。
@@ -274,6 +280,11 @@ private:
     // for near instances plus yaw-billboard impostors past the swap distance.
     void DrawVegetation(gfx::Renderer& renderer, const gfx::Camera& camera,
                         ecs::World& world, SceneTreeSystem& sceneTree);
+    // Procedural-terrain scatter: camera-centred grass tufts + boulders with a
+    // fixed instance budget. Rebuilt only when the camera moves far enough, so
+    // it is an engine-side streaming layer rather than per-frame spawning.
+    void DrawProceduralScatter(gfx::Renderer& renderer, const gfx::Camera& camera,
+                               const world::TerrainWorld* terrain);
     // Resolves a vegetation meshKey ("tree"/"bush"/"rock"/obj:/gltf:) to a mesh.
     gfx::Mesh VegetationMesh(gfx::Renderer& renderer, const std::string& meshKey);
 
@@ -297,6 +308,19 @@ private:
     std::unordered_map<uint64_t, std::vector<uint32_t>> batchLookup_;
     // G2-3 vegetation cache (EntityKey -> VegField); rebuilt lazily per Start.
     std::unordered_map<uint64_t, VegField> vegCache_;
+    // Procedural-terrain scatter cache (engine-side, not scene entities).
+    struct ProceduralScatterField {
+        bool built = false;
+        math::Vec3 center{0.0f, 0.0f, 0.0f};
+        std::vector<math::Mat4> grass;
+        std::vector<math::Mat4> rocks;
+    };
+    ProceduralScatterField terrainScatter_;
+    gfx::Mesh scatterGrassMesh_;
+    gfx::Mesh scatterRockMesh_;
+    gfx::Material scatterGrassMat_;
+    gfx::Material scatterRockMat_;
+    bool scatterReady_ = false;
     // Procedural primitive cache (meshKey -> GPU mesh). A scene may contain
     // hundreds of trees/rocks/bushes; without this every entity uploaded its
     // own identical vertex/index buffers. File-backed meshes are already

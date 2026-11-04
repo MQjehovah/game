@@ -107,4 +107,12 @@ BiomeWeights TerrainWorld::Weights(float x, float z) const {
     return SampleBiomeWeights(x, z, config_.seed);
 }
 
+float TerrainWorld::FlattenWeight(float x, float z) const {
+    if (config_.features.roads.empty() && config_.features.pads.empty()) return 0.0f;
+    const FlattenSample f = SampleFlattening(
+        config_.features, x, z,
+        [this](float fx, float fz) { return RawHeight(fx, fz); });
+    return f.weight;
+}
+
 } // namespace neon::world
