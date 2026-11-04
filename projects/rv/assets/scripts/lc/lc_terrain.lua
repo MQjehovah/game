@@ -85,6 +85,18 @@ function terrainHeight(x, z)
   return top + (bot - top) * tz
 end
 
+-- Ground contact for the vehicle: the asphalt/gravel slab sits ~7-9 cm above
+-- the terrain, so sampling the terrain alone sinks the tires into the road.
+function driveGroundAt(x, z)
+  local g = terrainHeight(x, z)
+  if distToRoadSq ~= nil then
+    local d2 = distToRoadSq(x, z)
+    if d2 < 12.0 then return g + 0.09 end
+    if d2 < 30.0 then return g + 0.07 end
+  end
+  return g
+end
+
 -- Smoothly approach the sampled terrain height (avoids stair-stepping when
 -- walking or driving over the crest).
 function terrainFollow(current, x, z, dt, rate)
@@ -868,7 +880,7 @@ function updateWheelPrediction(dt)
       local bp = PhysicsGetPosition(wb.body)
       local bv = PhysicsGetVelocity(wb.body)
       if bp ~= nil then
-        local ground = terrainHeight(bp.x, bp.z)
+        local ground = driveGroundAt(bp.x, bp.z)
         local target = ground + SUSP_R
         local vy = bv and bv.y or 0
         local force = SUSP_K * (target - bp.y) - SUSP_C * vy
@@ -992,7 +1004,7 @@ function updateRvPhysics(dt)
       wx, wy, wz = bp.x, bp.y, bp.z
       vp = PhysicsGetPointVelocity and
            PhysicsGetPointVelocity(wb.body, { x = wx, y = wy, z = wz }) or bv
-      ground = terrainHeight(wx, wz)
+      ground = driveGroundAt(wx, wz)
       -- Target the contact height (centre = radius): the tire then presses on
       -- the ground so friction can produce/absorb the wheel spin.
       local targetY = ground + SUSP_R
@@ -1022,7 +1034,7 @@ function updateRvPhysics(dt)
       local ox = x1 * cyw + z2 * syw
       local oz = -x1 * syw + z2 * cyw
       wx, wy, wz = p.x + ox, p.y + y2, p.z + oz
-      ground = terrainHeight(wx, wz)
+      ground = driveGroundAt(wx, wz)
       local compression = ground + SUSP_REST - (wy - SUSP_R)
       vp = PhysicsGetPointVelocity and
            PhysicsGetPointVelocity(rvBody, { x = wx, y = wy, z = wz }) or nil

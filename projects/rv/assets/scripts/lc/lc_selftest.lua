@@ -530,12 +530,17 @@ function runSelfTest()
       for i, w in ipairs(rvWheels) do
         local p = GetPosition(w.ent)
         if p ~= nil then
-          local g = terrainHeight(p.x, p.z)
-          if p.y < g + 0.34 then sunk = i end
+          -- Road slab included: the tire bottom must sit on the asphalt, not
+          -- on the terrain 9 cm below it.
+          local g = driveGroundAt(p.x, p.z)
+          if p.y < g + 0.38 then sunk = i end
         end
       end
+      local wp = GetPosition(rvWheels[1].ent)
+      local wg = wp and driveGroundAt(wp.x, wp.z) or 0
       ok(r, "rv wheels grounded", sunk == nil,
-         sunk and ("wheel " .. sunk .. " sunk") or "ok")
+         sunk and ("wheel " .. sunk .. " sunk")
+              or string.format("tire-bottom offset=%.3fm", (wp and wp.y or 0) - (wg + 0.40)))
     end
     if ReadText ~= nil and Json ~= nil then
       -- Sculpted geometry: the RV shell uses swept wheel-arch lips plus a

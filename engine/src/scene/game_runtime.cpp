@@ -346,6 +346,8 @@ core::Status GameRuntime::Start(const std::string& sceneJson, GameRuntimeConfig 
             if (!terr || !terr->procedural) continue;
             world::TerrainWorldConfig worldCfg;
             worldCfg.seed = terr->worldSeed;
+            if (terr->terrainCellSize > 0.01f)
+                worldCfg.surfaceCellSize = terr->terrainCellSize;
             const std::string featuresText =
                 ReadScript(FullScriptPath("assets/data/world_features.json"));
             if (!featuresText.empty())
@@ -1226,7 +1228,9 @@ void GameRuntime::SetPostFx(bool ssao, bool volumetric, bool ssr,
 }
 
 float GameRuntime::GroundHeight(float x, float z) {
-    if (terrainWorld_) return terrainWorld_->Height(x, z);
+    // SurfaceHeight matches the rendered triangle mesh; Height would be the
+    // bilinear analytic sample and visibly sinks wheels into slopes.
+    if (terrainWorld_) return terrainWorld_->SurfaceHeight(x, z);
     auto view = world_.ViewAll<SceneTerrain>();
     for (size_t i = 0; i < view.Size(); ++i) {
         ecs::Entity ent = world_.EntityAt<SceneTerrain>(i);

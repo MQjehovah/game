@@ -71,6 +71,22 @@ float TerrainWorld::Height(float x, float z) const {
     return h;
 }
 
+float TerrainWorld::SurfaceHeight(float x, float z) const {
+    const float cell = config_.surfaceCellSize > 1e-3f ? config_.surfaceCellSize : 1.0f;
+    const float x0 = std::floor(x / cell) * cell;
+    const float z0 = std::floor(z / cell) * cell;
+    const float fx = (x - x0) / cell;
+    const float fz = (z - z0) / cell;
+    const float h00 = Height(x0, z0);
+    const float h10 = Height(x0 + cell, z0);
+    const float h01 = Height(x0, z0 + cell);
+    const float h11 = Height(x0 + cell, z0 + cell);
+    // Same diagonal as the chunk mesh (b=(+x,0) .. c=(0,+z)).
+    if (fx + fz <= 1.0f)
+        return h00 + (h10 - h00) * fx + (h01 - h00) * fz;
+    return h11 + (h01 - h11) * (1.0f - fx) + (h10 - h11) * (1.0f - fz);
+}
+
 math::Vec3 TerrainWorld::Normal(float x, float z) const {
     const float e = 0.5f;
     const float hl = Height(x - e, z);

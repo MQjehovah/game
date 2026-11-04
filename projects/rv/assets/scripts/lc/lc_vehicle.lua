@@ -199,7 +199,8 @@ function applyRvTransform()
         -- circle, so placing it at bp.y buried the bottom of the tire in the
         -- ground. Clamp the visual centre to ground + radius; airborne wheels
         -- keep their body height.
-        local g = groundAt and groundAt(bp.x, bp.z) or 0
+        local g = driveGroundAt and driveGroundAt(bp.x, bp.z)
+                  or (groundAt and groundAt(bp.x, bp.z) or 0)
         local y = math.max(bp.y, g + WHEEL_RADIUS)
         SetPosition(w.ent, { x = bp.x, y = y, z = bp.z })
       else

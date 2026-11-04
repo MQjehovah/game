@@ -49,3 +49,17 @@ TEST(TerrainWorldPoiPadFlattensToAuthoredZero) {
     CHECK_NEAR(w.Height(160.5f, -51.5f), 0.0f, 0.01f);
     CHECK_NEAR(w.Height(160.5f + 5.0f, -51.5f), 0.0f, 0.01f);
 }
+
+TEST(TerrainWorldSurfaceMatchesRenderedTriangles) {
+    neon::world::TerrainWorld w({1337, 1.0f / 420.0f, {}, 300.0f, 4.0f});
+    // At a grid corner the triangle surface and the analytic height agree.
+    CHECK_NEAR(w.SurfaceHeight(64.0f, 400.0f), w.Height(64.0f, 400.0f), 1e-4);
+    // At the centre of the (00,10,01) triangle the surface is the barycentric
+    // average of those three corners.
+    const float h00 = w.Height(64.0f, 400.0f);
+    const float h10 = w.Height(68.0f, 400.0f);
+    const float h01 = w.Height(64.0f, 404.0f);
+    // (65,401) is fx=fz=0.25 inside the (00,10,01) triangle.
+    CHECK_NEAR(w.SurfaceHeight(65.0f, 401.0f),
+               0.5f * h00 + 0.25f * h10 + 0.25f * h01, 1e-3);
+}
