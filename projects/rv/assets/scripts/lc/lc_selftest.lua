@@ -4038,6 +4038,21 @@ function runSelfTest()
        string.format("near=%d tiny=%d", #near, #tiny))
   end
 
+  -- 地图服务标签：营地/加油站/诊所/仓库可识别
+  do
+    local camp = mapServiceTag({ id = "camp", name = "营地" })
+    local gas = mapServiceTag({ id = "gasstop", name = "废弃加油站" })
+    local clinic = mapServiceTag({ id = "clinic", name = "路边诊所" })
+    local depot = mapServiceTag({ id = "depot", name = "物流仓库" })
+    local cabin = mapServiceTag({ id = "poi_9", name = "林间木屋 #9" })
+    ok(r, "map service tags",
+       camp == "营" and gas == "油" and clinic == "医" and depot == "仓" and
+       cabin == "屋",
+       string.format("camp=%s gas=%s clinic=%s depot=%s cabin=%s",
+                     tostring(camp), tostring(gas), tostring(clinic),
+                     tostring(depot), tostring(cabin)))
+  end
+
   -- 按位置找最近可取补给箱（联机服务器用）
   do
     local c = roadCaches and roadCaches[1] or nil

@@ -1676,6 +1676,26 @@ function drawHelp()
                    vw * 0.5, py + ph - 30, 12, 0.82, 0.76, 0.54, 1)
 end
 
+-- 地图地点服务标签（帮助快速找到营地/加油站/诊所等）
+function mapServiceTag(nd)
+  if nd == nil then return nil end
+  local id = nd.id or ""
+  local nm = nd.name or ""
+  if id == "camp" then return "营" end
+  if id == "gasstop" or nm:find("加油站", 1, true) then return "油" end
+  if id == "clinic" or nm:find("诊所", 1, true) or nm:find("医院", 1, true) then
+    return "医"
+  end
+  if id == "depot" or nm:find("仓库", 1, true) then return "仓" end
+  if id == "mall" or nm:find("商场", 1, true) then return "商" end
+  if id == "farm" or nm:find("农场", 1, true) then return "农" end
+  if id == "lakecamp" or nm:find("湖边", 1, true) then return "湖" end
+  if id == "town" or nm:find("小镇", 1, true) then return "镇" end
+  if nm:find("木屋", 1, true) then return "屋" end
+  if nm:find("邮局", 1, true) then return "邮" end
+  return nil
+end
+
 function drawMapHud()
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
@@ -1723,6 +1743,10 @@ function drawMapHud()
     if known then
       DrawCircle(mx2, my2, cur and 7 or 5, cur and 2 or 1.5,
                  0.45 + danger * 0.17, 0.85 - danger * 0.18, 0.32, 1, true)
+      local tag = mapServiceTag(nd)
+      if tag ~= nil then
+        drawTextCentered(tag, mx2 + 13, my2 - 5, 10, 0.95, 0.86, 0.52, 0.95)
+      end
       drawTextCentered(nd.name .. (danger > 0 and string.rep("!", danger) or ""),
                        mx2, my2 - 20, 12, cur and 1 or 0.82,
                        cur and 0.9 or 0.78, cur and 0.6 or 0.68, 1)
@@ -1789,8 +1813,8 @@ function drawMapHud()
       drawTextCentered("笔记", nx2, ny2 + 12, 10, 0.90, 0.90, 0.82, 1)
     end
   end
-  DrawText("● 房车    ● 地点（越红越危险）  ? 未探索    — 公路    ◎ 货运目标",
-           px + 16, py + ph - 24, 12, 0.7, 0.7, 0.65, 1)
+  DrawText("● 房车  ● 地点（越红越危险）  ? 未探索  — 公路  ◎ 货运目标  营/油/医/仓=服务",
+           px + 16, py + ph - 24, 11, 0.7, 0.7, 0.65, 1)
   local exploreText = string.format("已探索 %d / %d 个地点", visitedCount or 0, #NODES)
   if loreProgressText ~= nil then
     local lp = loreProgressText()
