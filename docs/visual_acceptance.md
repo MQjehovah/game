@@ -1011,3 +1011,11 @@ set NEON_SHADOW_DEBUG=1   :: 直接输出级联阴影因子（白=受光，黑=�
 - skyTop/skyHorizon 仅在 useAtmosphere=true 时生效（否则用硬编码默认天），
   自定义天色但不开启 atmosphere 的场景两端一致地被忽略（不算分歧，属设计
   门槛，但作者容易踩）。
+
+## P1 分层地形 shader（OpenGL）
+
+```bat
+build\release\neon_game.exe --scene projects\rv\assets\scenes\garage.json --scripts projects\rv --screenshot shots\p1_shader.png 30
+```
+
+预期：控制台无 `shader compile failed`；截图非纯色（此时场景还没切到新地形，材质层次在 P1 验收时看）。

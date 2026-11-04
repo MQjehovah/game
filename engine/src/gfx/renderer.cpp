@@ -178,6 +178,7 @@ void Renderer::InitBuiltinResources() {
     createShader("lit_skinned", kLitVertexShader, kLitFragmentShader, "#define SKINNED 1\n");
     shaders_["unlit"] = backend_->CreateShader(kUnlitVertexShader, kUnlitFragmentShader, "unlit");
     createShader("lit_terrain", kLitVertexShader, kLitFragmentShader, "#define TERRAIN_SPLAT 1\n");
+    createShader("lit_terrain_layers", kLitVertexShader, kLitFragmentShader, "#define TERRAIN_LAYERS 1\n");
     shaders_["lines"] = backend_->CreateShader(kLineVertexShader, kLineFragmentShader, "lines");
     createShader("gbuffer", kLitVertexShader, kLitFragmentShader, "#define GBUFFER 1\n");
     createShader("gbuffer_skinned", kLitVertexShader, kLitFragmentShader,

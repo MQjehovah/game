@@ -97,6 +97,20 @@ uniform sampler2D uOcclusion;
 uniform sampler2D uEmissive;
 uniform sampler2D uGrassTex;
 uniform sampler2D uNormalMap;
+// Layered terrain (TERRAIN_LAYERS): three 2D arrays shared by every chunk.
+uniform sampler2DArray uTerrainAlbedo;
+uniform sampler2DArray uTerrainNormal;
+uniform sampler2DArray uTerrainOrm;
+uniform int uHasTerrainLayers;
+uniform int uTerrainLayer0;
+uniform int uTerrainLayer1;
+uniform int uTerrainLayer2;
+uniform int uTerrainLayer3;
+uniform float uTerrainUvScale0;
+uniform float uTerrainUvScale1;
+uniform float uTerrainUvScale2;
+uniform float uTerrainUvScale3;
+uniform float uTerrainSnowLine;
 uniform vec4 uDirtColor;
 uniform vec4 uRockColor;
 uniform bool uHasGrassTex;
@@ -505,7 +519,52 @@ vec3 OctIblSampleRough(sampler2D s, vec3 dir, float rough) {
     return mix(a, b, lv - l0);
 }
 void main() {
-#ifdef TERRAIN_SPLAT
+    // Layered terrain roughness override; -1 keeps the material value.
+    float terrainRough = -1.0;
+#if defined(TERRAIN_LAYERS)
+    vec4 albedo = vec4(1.0);
+    vec3 terrainNormalTex = vec3(0.0, 0.0, 1.0);
+    if (uHasTerrainLayers != 0) {
+        vec3 N0 = normalize(vNormal);
+        // Triplanar blend weight: steep faces blend toward the YZ/XY planes so
+        // cliff textures do not stretch.
+        vec3 tp = pow(abs(N0), vec3(4.0));
+        tp /= max(tp.x + tp.y + tp.z, 1e-4);
+
+        float wSoil = clamp(vColor.r, 0.0, 1.0);
+        float wRock = clamp(vColor.g, 0.0, 1.0);
+        float wSnow = clamp(vColor.b, 0.0, 1.0);
+        float wSum = wSoil + wRock + wSnow;
+        if (wSum > 1.0) { wSoil /= wSum; wRock /= wSum; wSnow /= wSum; }
+
+        vec2 uvXZ = vWorldPos.xz;
+        vec3 soil = texture(uTerrainAlbedo, vec3(uvXZ * uTerrainUvScale0, float(uTerrainLayer0))).rgb;
+        vec3 snow = texture(uTerrainAlbedo, vec3(uvXZ * uTerrainUvScale2, float(uTerrainLayer2))).rgb;
+        vec3 rock = texture(uTerrainAlbedo, vec3(vWorldPos.xz * uTerrainUvScale1, float(uTerrainLayer1))).rgb * tp.y
+                  + texture(uTerrainAlbedo, vec3(vWorldPos.zy * uTerrainUvScale1, float(uTerrainLayer1))).rgb * tp.x
+                  + texture(uTerrainAlbedo, vec3(vWorldPos.xy * uTerrainUvScale1, float(uTerrainLayer1))).rgb * tp.z;
+
+        // Two-scale macro variation breaks up the visible tiling of 2K maps.
+        float macro = 0.86 + 0.28 * (0.5 + 0.5 * sin(vWorldPos.x * 0.021 +
+                                                       sin(vWorldPos.z * 0.017) * 2.0));
+        vec3 albedoSplat = (soil * wSoil + rock * wRock + snow * wSnow) * macro;
+        if (uTerrainSnowLine > 0.0) {
+            float sl = smoothstep(uTerrainSnowLine, uTerrainSnowLine + 25.0, vWorldPos.y);
+            albedoSplat = mix(albedoSplat, vec3(0.92, 0.94, 0.98), sl * 0.85);
+        }
+        albedo = vec4(albedoSplat, 1.0);
+
+        vec3 orm = texture(uTerrainOrm, vec3(uvXZ * uTerrainUvScale0, float(uTerrainLayer0))).rgb * wSoil
+                 + texture(uTerrainOrm, vec3(uvXZ * uTerrainUvScale1, float(uTerrainLayer1))).rgb * wRock
+                 + texture(uTerrainOrm, vec3(uvXZ * uTerrainUvScale2, float(uTerrainLayer2))).rgb * wSnow;
+        terrainRough = clamp(orm.g, 0.25, 1.0);
+
+        vec3 n0 = texture(uTerrainNormal, vec3(uvXZ * uTerrainUvScale0, float(uTerrainLayer0))).rgb * 2.0 - 1.0;
+        vec3 n1 = texture(uTerrainNormal, vec3(uvXZ * uTerrainUvScale1, float(uTerrainLayer1))).rgb * 2.0 - 1.0;
+        terrainNormalTex = normalize(vec3(n0.xy * wSoil + n1.xy * wRock, 1.0));
+    }
+    albedo *= uTint;
+#elif defined(TERRAIN_SPLAT)
     // G4 terrain splatmap: layer a realistic grass texture, dirt color and rock
     // color by the vertex splat weights (vColor.r = grass, .g = dirt, .b = rock).
     vec3 grassAlbedo = uHasGrassTex ? texture(uGrassTex, vUV).rgb : vec3(1.0);
@@ -532,6 +591,12 @@ void main() {
     // default so existing content is unchanged.
     if (uGammaCorrect != 0) albedo.rgb = pow(max(albedo.rgb, vec3(0.0)), vec3(2.2));
     vec3 N = normalize(vNormal);
+#if defined(TERRAIN_LAYERS)
+    // Layered terrain has no per-vertex tangents; perturb the geometric normal
+    // with the blended tangent-space map in world space (approximate, but it
+    // restores the surface detail the flat splat path loses).
+    N = normalize(N + vec3(terrainNormalTex.xy, 0.0) * 0.35);
+#endif
     // A2 normal mapping without per-vertex tangents: reconstruct the tangent
     // basis from screen-space derivatives of world position + UV (the standard
     // dFdx/dFdy triangle method, good for the common single-UV mesh). The
@@ -580,7 +645,8 @@ void main() {
     float ndl = max(dot(N, L), 0.0);
     vec3 H = normalize(L + V);
     float metallic = uHasMR ? texture(uMR, vUV).b : uMetallic;
-    float roughness = uHasMR ? texture(uMR, vUV).g : uRoughness;
+    float roughness = uHasMR ? texture(uMR, vUV).g
+                             : (terrainRough >= 0.0 ? terrainRough : uRoughness);
     roughness = clamp(roughness, 0.045, 1.0);
     float a = roughness * roughness;
     float ndv = max(dot(N, V), 1e-4);

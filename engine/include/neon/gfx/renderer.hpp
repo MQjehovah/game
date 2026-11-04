@@ -53,6 +53,10 @@ public:
     // material so the Draw path selects it instead of the plain lit shader.
     ShaderHandle TerrainShader() const { return Program("lit_terrain"); }
 
+    // Layered terrain variant: samples the material's three 2D texture arrays
+    // with the four per-material layer indices (biome material sets).
+    ShaderHandle TerrainLayersShader() const { return Program("lit_terrain_layers"); }
+
     // Selects the graphics backend before Init. "gl" (default) uses OpenGL;
     // "vulkan" uses the Vulkan backend when built with NEON_ENABLE_VULKAN=ON
     // (falls back to OpenGL with a log otherwise).
@@ -340,8 +344,8 @@ public:
     // frame corners. Both off by default -> existing scenes unchanged.
     void SetAutoExposure(const AutoExposure& ae) { autoExposure_ = ae; }
     const AutoExposure& GetAutoExposure() const { return autoExposure_; }
-    // 丢弃自动曝光的适应历史（场景加�?切换时调用）：下一�?AE 帧从种子 1.0
-    // 重新收敛，而不是从上一个场景的适应亮度漂移过来�?
+    // 丢弃自动曝光的适应历史（场景加�?切换时调用）：下一�?AE 帧从种子 1.0
+    // 重新收敛，而不是从上一个场景的适应亮度漂移过来�?
     void ResetAutoExposure();
     void SetVignette(const Vignette& v) { vignette_ = v; }
     const Vignette& GetVignette() const { return vignette_; }
