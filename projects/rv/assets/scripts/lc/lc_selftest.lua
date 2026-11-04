@@ -1866,6 +1866,19 @@ function runSelfTest()
        string.format("2.4=%.2f 1.6=%.2f 2.8=%.2f", base, low, high))
   end
 
+  -- 胎压不足降低极速：2.2bar 以上无影响，越低越慢且有下限
+  do
+    local base = tirePressureSpeedScale(2.4)
+    local edge = tirePressureSpeedScale(2.2)
+    local low = tirePressureSpeedScale(1.6)
+    local floorV = tirePressureSpeedScale(1.0)
+    ok(r, "tire pressure speed",
+       base == 1.0 and edge == 1.0 and low < 1.0 and low > 0.9 and
+       floorV >= 0.90,
+       string.format("2.4=%.2f 2.2=%.2f 1.6=%.3f 1.0=%.2f",
+                     base, edge, low, floorV))
+  end
+
   -- 胎压偏低预警阈值（1.95bar 以下）
   do
     ok(r, "tire pressure warning",

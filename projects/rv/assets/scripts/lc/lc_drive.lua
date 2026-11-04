@@ -42,6 +42,14 @@ function avgTirePressure()
   return s / 4
 end
 
+-- 胎压不足滚动阻力变大：极速略降（1.6bar 时 ×0.925）
+function tirePressureSpeedScale(p)
+  local v = p or 2.4
+  if v >= 2.2 then return 1.0 end
+  if v <= 1.4 then return 0.90 end
+  return 0.90 + 0.10 * (v - 1.4) / 0.8
+end
+
 -- 机油寿命低于 20% 时动力下降（最低 75%），到加油站可更换
 function engineOilPowerScale()
   local o = oilLife or 100
@@ -998,6 +1006,10 @@ function updateDrive(dt)
   local surfF = surfaceSpeedScale(surfName)
   maxSp = maxSp * surfF
   acc = acc * (0.85 + 0.15 * surfF)
+  -- 胎压不足：滚阻增加，极速略降（同时更费油、抓地更差）
+  local pressF = tirePressureSpeedScale(avgTirePressure())
+  maxSp = maxSp * pressF
+  acc = acc * (0.90 + 0.10 * pressF)
   -- 坡度：上坡降速降加速，下坡略升
   local grade = 0
   if terrainHeight ~= nil then
