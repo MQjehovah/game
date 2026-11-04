@@ -710,7 +710,9 @@
   撞上会掉耐久；自检 `roadside debris`（debris=8 colliders=8）。
 - 旧农场谷仓外摆 5 捆干草（避开正门与侧墙），强化农场地点辨识度；
   自检 `farm hay bales`。
-- **农场风车**：谷仓东侧立一座低多边形风车（7m 塔身 + 4 片 2.8m 叶片），
+- **农场风车**：谷仓东侧立一座 Blender 建模风车
+  `rv_windmill_tower.gltf` + `rv_windmill_blade.gltf`
+  （`tools/gen_rv_windmill_blender.py`，通过 MCP 生成；7m 格构塔 + 4 片 2.8m 叶片），
   叶片以 0.55 rad/s 持续旋转；走近按 `E` 可用风车水泵接 **30L** 水，
   每 60 游戏分钟一次；按 `R` 花金属 3 + 木材 2 升级水泵，冷却缩短到 30 分钟
   （升级状态随存档保存）；联机时客机走近按 `E` 同样由服务端接水；

@@ -3978,8 +3978,11 @@ function runSelfTest()
     local a0 = windmill and (windmill.angle or 0) or 0
     updateWindmill(1.0)
     local a1 = windmill and (windmill.angle or 0) or 0
-    ok(r, "farm windmill", blades == 4 and a1 > a0,
-       string.format("blades=%d angle %.2f->%.2f", blades, a0, a1))
+    ok(r, "farm windmill",
+       blades == 4 and a1 > a0 and windmill ~= nil and
+       windmill.tower ~= nil,
+       string.format("blades=%d angle %.2f->%.2f tower=%s", blades, a0, a1,
+                     tostring(windmill ~= nil and windmill.tower ~= nil)))
   end
 
   -- 风车水泵：接水 +30L，进入 60 游戏分钟冷却

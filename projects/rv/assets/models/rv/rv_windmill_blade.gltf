@@ -1,0 +1,271 @@
+{
+    "asset" : {
+        "generator" : "Khronos glTF Blender I/O v1.8.19",
+        "version" : "2.0"
+    },
+    "scene" : 0,
+    "scenes" : [
+        {
+            "name" : "Scene",
+            "nodes" : [
+                0
+            ]
+        }
+    ],
+    "nodes" : [
+        {
+            "mesh" : 0,
+            "name" : "RV_WindmillBlade"
+        }
+    ],
+    "materials" : [
+        {
+            "doubleSided" : true,
+            "name" : "blade_trim",
+            "pbrMetallicRoughness" : {
+                "baseColorFactor" : [
+                    0.25999999046325684,
+                    0.18000000715255737,
+                    0.10999999940395355,
+                    1
+                ],
+                "metallicFactor" : 0,
+                "roughnessFactor" : 0.8500000238418579
+            }
+        },
+        {
+            "doubleSided" : true,
+            "name" : "blade_wood",
+            "pbrMetallicRoughness" : {
+                "baseColorFactor" : [
+                    0.550000011920929,
+                    0.41999998688697815,
+                    0.27000001072883606,
+                    1
+                ],
+                "metallicFactor" : 0,
+                "roughnessFactor" : 0.8500000238418579
+            }
+        },
+        {
+            "doubleSided" : true,
+            "name" : "blade_metal",
+            "pbrMetallicRoughness" : {
+                "baseColorFactor" : [
+                    0.30000001192092896,
+                    0.3100000023841858,
+                    0.28999999165534973,
+                    1
+                ],
+                "metallicFactor" : 0.4000000059604645,
+                "roughnessFactor" : 0.550000011920929
+            }
+        }
+    ],
+    "meshes" : [
+        {
+            "name" : "\u7acb\u65b9\u4f53.063",
+            "primitives" : [
+                {
+                    "attributes" : {
+                        "POSITION" : 0,
+                        "NORMAL" : 1,
+                        "TEXCOORD_0" : 2
+                    },
+                    "indices" : 3,
+                    "material" : 0
+                },
+                {
+                    "attributes" : {
+                        "POSITION" : 4,
+                        "NORMAL" : 5,
+                        "TEXCOORD_0" : 6
+                    },
+                    "indices" : 7,
+                    "material" : 1
+                },
+                {
+                    "attributes" : {
+                        "POSITION" : 8,
+                        "NORMAL" : 9,
+                        "TEXCOORD_0" : 10
+                    },
+                    "indices" : 11,
+                    "material" : 2
+                }
+            ]
+        }
+    ],
+    "accessors" : [
+        {
+            "bufferView" : 0,
+            "componentType" : 5126,
+            "count" : 934,
+            "max" : [
+                0.25999999046325684,
+                1.409999966621399,
+                0.03999999910593033
+            ],
+            "min" : [
+                -0.25999999046325684,
+                -1.409999966621399,
+                -0.057499997317790985
+            ],
+            "type" : "VEC3"
+        },
+        {
+            "bufferView" : 1,
+            "componentType" : 5126,
+            "count" : 934,
+            "type" : "VEC3"
+        },
+        {
+            "bufferView" : 2,
+            "componentType" : 5126,
+            "count" : 934,
+            "type" : "VEC2"
+        },
+        {
+            "bufferView" : 3,
+            "componentType" : 5123,
+            "count" : 1620,
+            "type" : "SCALAR"
+        },
+        {
+            "bufferView" : 4,
+            "componentType" : 5126,
+            "count" : 432,
+            "max" : [
+                0.23999999463558197,
+                1.3600000143051147,
+                0.010500000789761543
+            ],
+            "min" : [
+                -0.23999999463558197,
+                -1.159999966621399,
+                -0.03450000286102295
+            ],
+            "type" : "VEC3"
+        },
+        {
+            "bufferView" : 5,
+            "componentType" : 5126,
+            "count" : 432,
+            "type" : "VEC3"
+        },
+        {
+            "bufferView" : 6,
+            "componentType" : 5126,
+            "count" : 432,
+            "type" : "VEC2"
+        },
+        {
+            "bufferView" : 7,
+            "componentType" : 5123,
+            "count" : 648,
+            "type" : "SCALAR"
+        },
+        {
+            "bufferView" : 8,
+            "componentType" : 5126,
+            "count" : 432,
+            "max" : [
+                0.09000000357627869,
+                1.459999918937683,
+                0.05999999865889549
+            ],
+            "min" : [
+                -0.09000000357627869,
+                -1.4200000762939453,
+                -0.05999999865889549
+            ],
+            "type" : "VEC3"
+        },
+        {
+            "bufferView" : 9,
+            "componentType" : 5126,
+            "count" : 432,
+            "type" : "VEC3"
+        },
+        {
+            "bufferView" : 10,
+            "componentType" : 5126,
+            "count" : 432,
+            "type" : "VEC2"
+        },
+        {
+            "bufferView" : 11,
+            "componentType" : 5123,
+            "count" : 648,
+            "type" : "SCALAR"
+        }
+    ],
+    "bufferViews" : [
+        {
+            "buffer" : 0,
+            "byteLength" : 11208,
+            "byteOffset" : 0
+        },
+        {
+            "buffer" : 0,
+            "byteLength" : 11208,
+            "byteOffset" : 11208
+        },
+        {
+            "buffer" : 0,
+            "byteLength" : 7472,
+            "byteOffset" : 22416
+        },
+        {
+            "buffer" : 0,
+            "byteLength" : 3240,
+            "byteOffset" : 29888
+        },
+        {
+            "buffer" : 0,
+            "byteLength" : 5184,
+            "byteOffset" : 33128
+        },
+        {
+            "buffer" : 0,
+            "byteLength" : 5184,
+            "byteOffset" : 38312
+        },
+        {
+            "buffer" : 0,
+            "byteLength" : 3456,
+            "byteOffset" : 43496
+        },
+        {
+            "buffer" : 0,
+            "byteLength" : 1296,
+            "byteOffset" : 46952
+        },
+        {
+            "buffer" : 0,
+            "byteLength" : 5184,
+            "byteOffset" : 48248
+        },
+        {
+            "buffer" : 0,
+            "byteLength" : 5184,
+            "byteOffset" : 53432
+        },
+        {
+            "buffer" : 0,
+            "byteLength" : 3456,
+            "byteOffset" : 58616
+        },
+        {
+            "buffer" : 0,
+            "byteLength" : 1296,
+            "byteOffset" : 62072
+        }
+    ],
+    "buffers" : [
+        {
+            "byteLength" : 63368,
+            "uri" : "rv_windmill_blade.bin"
+        }
+    ]
+}

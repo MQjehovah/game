@@ -1300,18 +1300,17 @@ function spawnRuinFor(nd)
         end
       end
     end
-    -- 农场风车（低多边形地标，叶片持续旋转）
+    -- 农场风车（Blender 建模：格构塔 + 独立叶片，叶片继续由 updateWindmill 旋转）
     local wx, wz = cx + 8.5, cz - 5.5
     local wy = (terrainHeight and terrainHeight(wx, wz)) or 0
-    local tower = SpawnPrefab("rv_camp_wood", { x = wx, y = wy + 3.5, z = wz })
-    if tower ~= nil then SetScale(tower, 0.55, 7.0, 0.55) end
-    local hub = SpawnPrefab("rv_camp_wood", { x = wx, y = wy + 7.0, z = wz })
-    if hub ~= nil then SetScale(hub, 0.34, 0.34, 0.34) end
-    windmill = { x = wx, y = wy + 7.0, z = wz + 0.35, angle = 0, blades = {} }
+    local tower = SpawnPrefab("rv_windmill_tower", { x = wx, y = wy, z = wz })
+    if tower ~= nil then SetRotationY(tower, 0) end
+    windmill = { x = wx, y = wy + 7.0, z = wz + 0.35, angle = 0,
+                 blades = {}, tower = tower }
     for i = 1, 4 do
-      local b = SpawnPrefab("rv_panel_light", { x = wx, y = wy + 7.0, z = wz + 0.35 })
+      local b = SpawnPrefab("rv_windmill_blade",
+                            { x = wx, y = wy + 7.0, z = wz + 0.35 })
       if b ~= nil then
-        SetScale(b, 0.28, 2.80, 0.08)
         windmill.blades[#windmill.blades + 1] = b
       end
     end
