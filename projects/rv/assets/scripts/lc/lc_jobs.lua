@@ -81,6 +81,7 @@ local CARGO_PREFAB = {
   grain = "rv_cargo_crate",  -- 木色粮袋
   livestock = "rv_cargo_crate", -- 活畜：木栏箱
   coldmed = "rv_cargo_med",  -- 冷藏药品：白色医疗箱
+  hazmat = "rv_cargo_crate", -- 化工原料：木箱
 }
 
 function jobCargoPrefab(cargoId)
@@ -163,6 +164,13 @@ function jobRefreshOffers(preferId)
       cargo = { id = "livestock", name = "活畜", kg = 52, mat = "wood" }
       pay.metal = math.max(1, math.floor(pay.metal * 1.30 + 0.5))
     end
+    -- 约 6% 是危险品：报酬 ×1.55，但重撞会泄漏并伤到驾驶员
+    local hazmat = (not fragile) and (not perishable) and (not livestock) and
+                   (math.random() < 0.06)
+    if hazmat then
+      cargo = { id = "hazmat", name = "化工原料", kg = 50, mat = "metal" }
+      pay.metal = math.max(1, math.floor(pay.metal * 1.55 + 0.5))
+    end
     -- 约 25% 是双站路线：两个卸货点，报酬更高
     local stops = nil
     if math.random() < 0.25 then
@@ -203,6 +211,7 @@ function jobRefreshOffers(preferId)
       fragile = fragile,
       perishable = perishable,
       livestock = livestock,
+      hazmat = hazmat,
       bonusItem = bonusItem,
       stops = stops,
       stopIndex = 1,
@@ -353,7 +362,7 @@ function jobAccept(idx)
     urgent = offer.urgent, deadlineAbs = offer.deadlineAbs,
     acceptedAbs = jobNowAbs(),
     fragile = offer.fragile, perishable = offer.perishable,
-    livestock = offer.livestock,
+    livestock = offer.livestock, hazmat = offer.hazmat,
     bonusItem = offer.bonusItem,
     startTripDist = tripDistance or 0,
     startTripFuel = tripFuel or 0,
@@ -372,17 +381,33 @@ function jobAccept(idx)
 end
 
 -- 撞击损伤货物：drop 是前后速度差（m/s）；货况过低时结算打折。
+-- 危险品泄漏：重撞时对驾驶员造成少量伤害（drop > 4）
+function hazmatLeakDamage(drop)
+  local d = drop or 0
+  if d <= 4 then return 0 end
+  return math.min(12, (d - 4) * 2)
+end
+
 function jobApplyImpact(drop)
   if job == nil then return end
   local before = job.condition or 1.0
   local mult = 0.05
   if job.fragile then mult = 0.10
-  elseif job.livestock then mult = 0.12 end
+  elseif job.livestock then mult = 0.12
+  elseif job.hazmat then mult = 0.14 end
   job.condition = math.max(0, before - math.min(0.5, (drop or 0) * mult))
   if before >= 0.5 and job.condition < 0.5 then
     toast.text = job.fragile and "易碎货物受损过半！报酬会大幅打折"
                               or "货物受损过半！送达报酬会明显打折"
     toast.t = 3.2
+  end
+  if job.hazmat then
+    local dmg = hazmatLeakDamage(drop)
+    if dmg > 0 and needs ~= nil then
+      needs.health = math.max(0, (needs.health or 100) - dmg)
+      toast.text = string.format("危险品泄漏！小心有毒气体（生命 -%.0f）", dmg)
+      toast.t = 3.6
+    end
   end
 end
 
@@ -697,7 +722,8 @@ function updateJobs(dt)
         latG = rv.latG
         rv.latGSet = false
       end
-      local loss = cornerCargoLoss(latG, job.fragile or job.livestock, dt)
+      local loss = cornerCargoLoss(latG,
+        job.fragile or job.livestock or job.hazmat, dt)
       if loss > 0 then
         job.condition = math.max(0, (job.condition or 1) - loss)
         if not job.tossWarned and job.condition < 0.85 then

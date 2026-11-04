@@ -1595,6 +1595,27 @@ function runSelfTest()
        string.format("livestock=%.2f", liveDrop))
   end
 
+  -- 危险品：重撞泄漏并伤驾驶员（drop > 4）
+  do
+    local light = hazmatLeakDamage(3.0)
+    local hit = hazmatLeakDamage(7.0)
+    local cap = hazmatLeakDamage(100)
+    local kh = needs.health
+    jobRefreshOffers("gasstop")
+    jobAccept(1)
+    job.hazmat, job.fragile, job.livestock = true, false, false
+    needs.health = 100
+    jobApplyImpact(7.0)
+    local hurt = (needs.health or 100) < 100
+    local drop = 1.0 - (job.condition or 1)
+    needs.health = kh
+    jobAbandon()
+    ok(r, "hazmat cargo",
+       light == 0 and hit > 0 and cap <= 12 and hurt and drop >= 0.5,
+       string.format("light=%.0f hit=%.0f cap=%.0f hurt=%s drop=%.2f",
+                     light, hit, cap, tostring(hurt), drop))
+  end
+
   -- 限时急单：超时作废，不结算报酬
   jobRefreshOffers("gasstop")
   jobAccept(1)
