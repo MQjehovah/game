@@ -1134,6 +1134,9 @@ function on_start()
 
   if startMode == "inv" then
     invOpen = true
+  elseif startMode == "invall" then
+    for _, id in ipairs(ITEM_ORDER) do inv[id] = 3 end
+    invOpen = true
   elseif startMode == "stove" then
     stationUI = { kind = "stove", inst = hasModule("stove") }
   elseif startMode == "bench" then

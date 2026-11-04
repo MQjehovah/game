@@ -5596,6 +5596,17 @@ function runSelfTest()
                      tostring(normalHint)))
   end
 
+  -- 背包面板布局：物品多时自动两栏且不超 720p
+  do
+    local pw1, ph1, cols1 = inventoryPanelLayout(5, 1280, 720)
+    local pw2, ph2, cols2 = inventoryPanelLayout(21, 1280, 720)
+    ok(r, "inventory layout",
+       cols1 == 1 and ph1 <= 720 and cols2 == 2 and pw2 == 760 and
+       ph2 <= 720,
+       string.format("small=%dx%d/%d big=%dx%d/%d", pw1, ph1, cols1,
+                     pw2, ph2, cols2))
+  end
+
   -- 旅行日志：记录、封顶与内容
   do
     local keep = journal
