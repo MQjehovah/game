@@ -1736,9 +1736,36 @@ function helpHitchhiker()
   if PlaySfx then PlaySfx("pickup") end
   toast.text = "搭车客道谢：" .. table.concat(got, " ")
   toast.t = 3.4
+  local hint = hitchhikerHintText()
+  if hint ~= nil then
+    toast.text = toast.text .. " · " .. hint
+  end
+  toast.t = 4.2
   if addJournal ~= nil then addJournal("帮助路边搭车客（燃料-5L）", "explore") end
   if despawnHitchhiker ~= nil then despawnHitchhiker() end
   return true
+end
+
+-- 搭车客指路：指出最近的未探索地点方向与距离（+Z 北 / +X 东）
+function hitchhikerHintText(candidates)
+  local list = candidates or NODES or {}
+  local best, bestD = nil, math.huge
+  for _, nd in ipairs(list) do
+    if nd.generated and not (visitedPois and visitedPois[nd.id]) then
+      local dx = (nd.x or 0) - (rv.x or 0)
+      local dz = (nd.z or 0) - (rv.z or 0)
+      local d = math.sqrt(dx * dx + dz * dz)
+      if d < bestD then best, bestD = nd, d end
+    end
+  end
+  if best == nil then return nil end
+  local dx = (best.x or 0) - (rv.x or 0)
+  local dz = (best.z or 0) - (rv.z or 0)
+  local deg = math.deg(math.atan(dx, dz)) % 360
+  local names = { "北", "东北", "东", "东南", "南", "西南", "西", "西北" }
+  local dir = names[math.floor((deg + 22.5) / 45) % 8 + 1]
+  return string.format("搭车客指路：往%s约 %.0fm 有个没去过的地方（%s）",
+                       dir, bestD, best.name or "?")
 end
 
 -- 每次篝火烹饪消耗的燃料（游戏分钟）

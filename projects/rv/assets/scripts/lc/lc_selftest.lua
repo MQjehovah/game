@@ -3984,6 +3984,24 @@ function runSelfTest()
                      (materials.metal or 0) - sm, tostring(cleared)))
   end
 
+  -- 搭车客指路：指出最近未探索地点的方向/距离，全探索后返回 nil
+  do
+    local sx, sz = rv.x, rv.z
+    rv.x, rv.z = 0, 0
+    local cand = {
+      { id = "poi_a", name = "林间木屋 #1", x = 0, z = 100, generated = true },
+      { id = "poi_b", name = "路边废宅 #2", x = 100, z = 0, generated = true },
+    }
+    local north = hitchhikerHintText({ cand[1] })
+    local east = hitchhikerHintText({ cand[2] })
+    local none = hitchhikerHintText({})
+    rv.x, rv.z = sx, sz
+    ok(r, "hitchhiker hint",
+       north ~= nil and north:find("北", 1, true) ~= nil and
+       east ~= nil and east:find("东", 1, true) ~= nil and none == nil,
+       string.format("north=%s east=%s", tostring(north), tostring(east)))
+  end
+
   -- 地图标记：搭车客/抛锚车会出现在路边事件列表，已搜完的抛锚车不显示
   do
     local kh, ks = hitchhiker, strandedCar
