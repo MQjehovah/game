@@ -3672,6 +3672,25 @@ function runSelfTest()
        string.format("hit=%s miss=%s", tostring(hit), tostring(miss)))
   end
 
+  -- 雨天高速压过积水：水滑让局部抓地再降
+  do
+    local sw, sp = weather, rv.speed
+    local sx, sz, keepP = rv.x, rv.z, puddles
+    weather, rv.speed = "rain", 10
+    rv.x, rv.z = 0, 0
+    puddles = { { x = 0, z = 0 } }
+    local wet = puddleGripScale()
+    puddles = { { x = 50, z = 50 } }
+    local far = puddleGripScale()
+    weather = "clear"
+    local clear = puddleGripScale()
+    weather, rv.speed = sw, sp
+    rv.x, rv.z, puddles = sx, sz, keepP
+    ok(r, "puddle hydroplane",
+       wet < 1.0 and wet > 0.8 and far == 1.0 and clear == 1.0,
+       string.format("wet=%.2f far=%.2f clear=%.2f", wet, far, clear))
+  end
+
   -- 农场风车：4 片叶片且会旋转
   do
     local blades = windmill and #(windmill.blades or {}) or 0

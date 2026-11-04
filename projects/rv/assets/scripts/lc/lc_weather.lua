@@ -141,6 +141,20 @@ function drawWipers(vw, vh)
   end
 end
 
+-- 雨天高速压过积水：水滑效应让抓地再降（车速越快越明显，最多 -0.14）
+function puddleGripScale()
+  if weather ~= "rain" then return 1.0 end
+  local v = math.abs(rv.speed or 0)
+  if v < 6 then return 1.0 end
+  for _, p in ipairs(puddles or {}) do
+    local dx, dz = (rv.x or 0) - p.x, (rv.z or 0) - p.z
+    if dx * dx + dz * dz < 3.2 * 3.2 then
+      return 1.0 - math.min(0.14, (v - 6) * 0.02)
+    end
+  end
+  return 1.0
+end
+
 -- 路面抓地折减：雨天湿滑、雪天更滑；带防滑链时雨雪抓地提高
 function weatherGripScale()
   local base = 1.0
@@ -154,6 +168,8 @@ function weatherGripScale()
   if base < 1.0 and onSnowPatch ~= nil and onSnowPatch(rv.x, rv.z, 2.2) then
     base = math.max(0.55, base - 0.08)
   end
+  -- 雨天高速压过积水：水滑
+  base = base * (puddleGripScale and puddleGripScale() or 1.0)
   return base
 end
 
