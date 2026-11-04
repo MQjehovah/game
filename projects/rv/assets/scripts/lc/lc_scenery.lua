@@ -1388,45 +1388,23 @@ function spawnRuinFor(nd)
   poiShellParts = poiShellParts or {}
   local shell = {}
   poiShellParts[nd.id] = shell
-  local function cube(pre, x, y, z, sx, sy, sz)
-    local e = SpawnPrefab(pre, { x = x, y = y, z = z })
-    if e ~= nil then
-      SetScale(e, sx, sy, sz)
-      shell[#shell + 1] = { ent = e, x = x, y = y, z = z, sx = sx, sy = sy, sz = sz }
-    end
-    return e
+  -- Blender 建模的通用路边建筑：木结构、门廊、坡屋顶、窗框与内部柜台；
+  -- 保留 6.2 x 5.2 的碰撞/搜刮 Footprint，门洞在 +Z 正前方。
+  local house = SpawnPrefab("rv_roadhouse", { x = cx, y = -0.14, z = cz })
+  if house ~= nil then
+    SetScale(house, 1, 1, 1)
+    shell[#shell + 1] = { ent = house, x = cx, y = -0.14, z = cz,
+                          sx = 1, sy = 1, sz = 1 }
   end
-  -- 地板 / 后墙 / 两侧墙 / 屋顶
-  cube("rv_panel_dark",  cx, 0.03, cz, 6.2, 0.06, 5.2)
-  cube("rv_panel_light", cx, 1.25, cz - 2.55, 6.2, 2.5, 0.16)
-  cube("rv_panel_light", cx - 3.05, 1.25, cz, 0.16, 2.5, 5.2)
-  cube("rv_panel_light", cx + 3.05, 1.25, cz, 0.16, 2.5, 5.2)
-  cube("rv_panel_dark",  cx, 2.55, cz, 6.4, 0.16, 5.4)
-  -- 内衬：立方体材质单面，站在室内看到的是外墙背面（被剔除）。
-  -- 补一层朝内的墙板/顶板，让建筑真正可以走进去。
-  cube("rv_panel_light", cx, 1.25, cz - 2.44, 6.0, 2.50, 0.06)
-  cube("rv_panel_light", cx - 2.94, 1.25, cz, 0.06, 2.50, 5.0)
-  cube("rv_panel_light", cx + 2.94, 1.25, cz, 0.06, 2.50, 5.0)
-  cube("rv_panel_light", cx, 2.47, cz, 6.0, 0.06, 5.0)
-  -- 前墙内衬同样留门洞
-  cube("rv_panel_light", cx - 1.90, 1.25, cz + 2.44, 2.20, 2.50, 0.06)
-  cube("rv_panel_light", cx + 1.90, 1.25, cz + 2.44, 2.20, 2.50, 0.06)
-  -- 前墙两段（中间留门洞）
-  cube("rv_panel_light", cx - 1.9, 1.25, cz + 2.55, 2.3, 2.5, 0.16)
-  cube("rv_panel_light", cx + 1.9, 1.25, cz + 2.55, 2.3, 2.5, 0.16)
-  -- 窗与门框
-  cube("rv_panel_window", cx - 3.0, 1.55, cz + 0.3, 0.04, 0.7, 1.4)
-  cube("rv_panel_window", cx + 3.0, 1.55, cz + 0.3, 0.04, 0.7, 1.4)
-
-  -- 门框 + 半开的门板：所有建筑统一，正门是唯一墙体开口
-  cube("rv_panel_dark", cx - 0.86, 1.20, cz + 2.55, 0.20, 2.40, 0.24)
-  cube("rv_panel_dark", cx + 0.86, 1.20, cz + 2.55, 0.20, 2.40, 0.24)
-  cube("rv_panel_dark", cx, 2.36, cz + 2.55, 1.92, 0.22, 0.24)
-  local leaf = SpawnPrefab("rv_panel_dark", { x = cx - 0.86, y = 1.14, z = cz + 2.62 })
-  if leaf ~= nil then
-    SetScale(leaf, 0.07, 2.04, 0.92)
-    SetRotationY(leaf, -1.92)
-  end
+  -- 门廊与室内各一盏暖光，避免阴影面完全发黑
+  local porchLamp = SpawnPrefab("rv_lamp", {
+    x = cx - 1.65, y = 2.35, z = cz + 2.66 })
+  if porchLamp ~= nil then SetScale(porchLamp, 0.85, 0.85, 0.85) end
+  local roomLamp = SpawnPrefab("rv_lamp", {
+    x = cx, y = 2.06, z = cz - 0.7 })
+  if roomLamp ~= nil then SetScale(roomLamp, 0.55, 0.55, 0.55) end
+  -- 不可见的补光，从门廊前方照亮阴影里的立面
+  SpawnPrefab("rv_poi_light", { x = cx, y = 2.0, z = cz + 6.5 })
 
   -- 类型化外景装饰：让程序化地点不只是一间通用小屋
   local style = poiDecorStyle(nd.name)

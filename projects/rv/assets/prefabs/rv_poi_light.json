@@ -1,0 +1,27 @@
+{
+  "components": {
+    "transform": {
+      "pos": [0, 0, 0],
+      "rot": [0, 0, 0, 1],
+      "scale": [0.02, 0.02, 0.02]
+    },
+    "mesh": {
+      "meshKey": "cube",
+      "material": {
+        "colorHex": "#FFE1B0",
+        "emissiveIntensity": 0,
+        "metallic": 0,
+        "roughness": 0.8,
+        "ao": 1
+      },
+      "castShadow": false,
+      "receiveShadow": false
+    },
+    "light": {
+      "type": "point",
+      "color": [1.0, 0.86, 0.68, 1],
+      "intensity": 30.0,
+      "radius": 20
+    }
+  }
+}

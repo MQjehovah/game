@@ -1028,6 +1028,30 @@ function on_start()
       px, pz, pyaw = cx, cz + 3.6, math.pi
     end
   end
+  if startMode == "roadhouse" then
+    -- 生成一个普通程序化地点，站到正门前检查 Blender 建筑
+    clock = 12 * 60
+    for _ = 1, 8 do
+      if trySpawnPoi ~= nil then trySpawnPoi(true) end
+    end
+    local target = nil
+    for _, nd in ipairs(NODES) do
+      if nd.generated and poiDecorStyle ~= nil and
+         poiDecorStyle(nd.name) == nil then
+        target = nd
+      end
+    end
+    if target == nil then
+      for _, nd in ipairs(NODES) do
+        if nd.generated then target = nd break end
+      end
+    end
+    if target ~= nil then
+      local cx, cz = poiCenter(target)
+      px, pz = cx - 10.0, cz + 10.0
+      pyaw = dirYaw(cx - px, cz - pz)
+    end
+  end
   if startMode == "gas" or startMode == "poinight" then
     -- 加油站商店门口
     local nd = nodeById("gasstop")
