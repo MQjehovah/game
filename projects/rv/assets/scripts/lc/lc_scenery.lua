@@ -1138,6 +1138,14 @@ function repairRadioMast()
   return true
 end
 
+-- 程序化地点的外景装饰风格（按名字识别）
+function poiDecorStyle(name)
+  local nm = name or ""
+  if nm:find("木屋") ~= nil then return "woodcabin" end
+  if nm:find("邮局") ~= nil then return "postoffice" end
+  return nil
+end
+
 function spawnRuinFor(nd)
   if nd.ruinSpawned then return end
   nd.ruinSpawned = true
@@ -1371,6 +1379,35 @@ function spawnRuinFor(nd)
     SetRotationY(leaf, -1.92)
   end
 
+  -- 类型化外景装饰：让程序化地点不只是一间通用小屋
+  local style = poiDecorStyle(nd.name)
+  if style == "woodcabin" then
+    -- 林间木屋：门口三层柴堆 + 屋顶烟囱
+    for i = 1, 3 do
+      local log = SpawnPrefab("rv_camp_wood", {
+        x = cx - 3.9, y = 0.20 + (i - 1) * 0.26, z = cz + 1.3 })
+      if log ~= nil then
+        SetScale(log, 1.7, 0.24, 0.26)
+        SetRotationY(log, 0.18 + i * 0.14)
+      end
+    end
+    local chimney = SpawnPrefab("rv_panel_dark", { x = cx - 1.9, y = 3.15, z = cz - 1.3 })
+    if chimney ~= nil then SetScale(chimney, 0.62, 1.15, 0.62) end
+  elseif style == "postoffice" then
+    -- 废弃邮局：门口邮箱 + 散落的包裹箱
+    local box = SpawnPrefab("rv_panel_light", { x = cx - 2.5, y = 0.82, z = cz + 3.05 })
+    if box ~= nil then SetScale(box, 0.52, 0.86, 0.46) end
+    local flag = SpawnPrefab("rv_panel_dark", { x = cx - 2.5, y = 1.28, z = cz + 2.80 })
+    if flag ~= nil then SetScale(flag, 0.06, 0.30, 0.18) end
+    for i = 1, 2 do
+      local crate = SpawnPrefab("rv_cargo_crate", {
+        x = cx + 2.1 + i * 0.75, y = 0.28, z = cz + 2.7 })
+      if crate ~= nil then
+        SetScale(crate, 0.58, 0.58, 0.58)
+        SetRotationY(crate, i * 0.55)
+      end
+    end
+  end
   -- 其余地点保留原来的立方体拼装（商场已改为可进入 glTF）
 end
 

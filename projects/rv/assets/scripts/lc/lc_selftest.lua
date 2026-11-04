@@ -359,6 +359,17 @@ function runSelfTest()
                      tostring(names["林间木屋"]), tostring(names["废弃邮局"])))
   end
 
+  -- 类型化外景装饰：木屋/邮局可识别，普通地点不带装饰
+  do
+    local cabin = poiDecorStyle("林间木屋 #7")
+    local post = poiDecorStyle("废弃邮局 #9")
+    local plain = poiDecorStyle("路边废宅 #3")
+    ok(r, "poi decor style",
+       cabin == "woodcabin" and post == "postoffice" and plain == nil,
+       string.format("cabin=%s post=%s plain=%s", tostring(cabin),
+                     tostring(post), tostring(plain)))
+  end
+
   -- 昼夜
   clock = 22 * 60
   local nightOn = nightAmount() > 0.5
