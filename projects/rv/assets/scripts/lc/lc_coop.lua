@@ -1162,6 +1162,28 @@ local function serverUpdate(dt)
   if (coop.pingT or 0) > 0 then
     coop.pingT = math.max(0, coop.pingT - dt)
   end
+  -- 夜间篝火烟味也会招来感染者（与单机一致）
+  local smokeDanger = false
+  if campfire ~= nil and campfireOn ~= false and
+     isNight ~= nil and isNight() and math.abs(rv.speed or 0) < 0.4 then
+    local sdx, sdz = rv.x - campfire.x, rv.z - campfire.z
+    smokeDanger = campfireSmokeRisk(true, true, math.sqrt(sdx * sdx + sdz * sdz))
+  end
+  if smokeDanger then
+    coop.smokeT = (coop.smokeT or 0) + dt
+    if coop.smokeT >= 180 then
+      coop.smokeT = 0
+      local chance = coop.smokeForce and 1.0 or 0.25
+      coop.smokeForce = false
+      if math.random() < chance and spawnDriveHorde ~= nil then
+        spawnDriveHorde(1)
+        setToast("篝火的烟味引来了感染者——先躲进车里，或远离篝火")
+        print("[coop-smoke] horde spawned")
+      end
+    end
+  else
+    coop.smokeT = 0
+  end
 
   -- 顺路货运：服务器权威地判定到点（不限驾驶席，任何人在车上开到了就算送达）
   if job ~= nil and job.stage == "carry" then
@@ -1578,6 +1600,19 @@ local function serverUpdate(dt)
     print(string.format("[coop-highrisk] demo high=%s night=%s timer=%.0f",
                         tostring(highBeam), tostring(isNight ~= nil and isNight()),
                         coop.highRiskT))
+  end
+
+  -- Test-only co-op campfire smoke: night + lit fire + forced timer.
+  if coop.smokeDemo and not coop.smokeDemoDone and coop.autoT >= 3.0 then
+    coop.smokeDemoDone = true
+    clock = 22 * 60
+    campfireOn = true
+    if campfire ~= nil then rv.x, rv.z = campfire.x, campfire.z end
+    coop.smokeT = 181
+    coop.smokeForce = true
+    print(string.format("[coop-smoke] demo night=%s fire=%s timer=%.0f",
+                        tostring(isNight ~= nil and isNight()),
+                        tostring(campfireOn), coop.smokeT))
   end
 
   -- Test-only co-op job offer picker: open the board with three offers.
@@ -3126,6 +3161,7 @@ function coopInitWorld(role)
     coop.clinicDemo = readFlag("coop_clinic.txt")
     coop.towerDemo = readFlag("coop_tower.txt")
     coop.highRiskDemo = readFlag("coop_highrisk.txt")
+    coop.smokeDemo = readFlag("coop_smoke.txt")
     coop.offerDemo = readFlag("coop_offer.txt")
     local doorTest = ReadText("coop_doortest.txt")
     if doorTest ~= nil and doorTest ~= "" then
@@ -3260,6 +3296,7 @@ function coopInitWorld(role)
     coop.clinicDemo = readFlag("coop_clinic.txt")
     coop.towerDemo = readFlag("coop_tower.txt")
     coop.highRiskDemo = readFlag("coop_highrisk.txt")
+    coop.smokeDemo = readFlag("coop_smoke.txt")
     coop.offerDemo = readFlag("coop_offer.txt")
     coop.buildUi = readFlag("coop_buildmode.txt")
     coop.boardDemo = readFlag("coop_board.txt")

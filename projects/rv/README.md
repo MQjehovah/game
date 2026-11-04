@@ -1028,6 +1028,8 @@
   `[coop-tower] demo ok=true fixed=true water=98`，验证联机水塔修复。
 - `coop_highrisk.txt`：服务端 3s 切到夜间 + 开远光并强制计时，日志
   `[coop-highrisk] horde spawned`，验证联机夜间远光招感染者。
+- `coop_smoke.txt`：服务端 3s 把房车停到篝火旁、点篝火并强制计时，日志
+  `[coop-smoke] horde spawned`，验证联机夜间篝火烟味招感染者。
 - `coop_offer.txt`：服务端 3s 打开货运板并广播三张合同，日志
   `[coop-offer] demo offers=3 token=...`，客机 HUD 弹出 `1/2/3` 选择面板。
 - `coop_walk.txt`：客户端按住前进，便于网络 smoke 看到受控角色位移。
