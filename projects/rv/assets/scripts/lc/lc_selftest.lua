@@ -3413,6 +3413,18 @@ function runSelfTest()
        string.format("80=%d 40=%d 20=%d 5=%d", okD, mid, low, bad))
   end
 
+  -- 车身越脏，挡风玻璃泥点越多
+  do
+    local clean = windshieldDirtCount(0.2)
+    local dirty = windshieldDirtCount(0.5)
+    local bad = windshieldDirtCount(0.7)
+    local worst = windshieldDirtCount(0.95)
+    ok(r, "windshield dirt",
+       clean == 0 and dirty == 3 and bad == 6 and worst == 9,
+       string.format("0.2=%d 0.5=%d 0.7=%d 0.95=%d",
+                     clean, dirty, bad, worst))
+  end
+
   -- 雨刷：在 -0.20~0.42 之间来回摆动
   do
     local a0 = wiperAngle(0)

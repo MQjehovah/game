@@ -1315,6 +1315,11 @@ function on_start()
     setWeather("rain")
     setPhase("driving")
     driveView = "cab"
+  elseif startMode == "dirtycab" then
+    rv.dirt = 0.9
+    setWeather("clear")
+    setPhase("driving")
+    driveView = "cab"
   elseif startMode == "inside_dark" then
     setInteriorLights(false)
   elseif startMode == "tripview" then

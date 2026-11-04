@@ -105,6 +105,15 @@ function windshieldCrackCount(durValue)
   return 9
 end
 
+-- 车身越脏，驾驶席挡风玻璃上的泥点越多
+function windshieldDirtCount(dirtValue)
+  local d = dirtValue or 0
+  if d < 0.4 then return 0 end
+  if d < 0.6 then return 3 end
+  if d < 0.8 then return 6 end
+  return 9
+end
+
 -- 挡风玻璃积雪数量：仅雪天 + 驾驶席视角
 function windshieldSnowCount()
   if weather == "snow" and phase == "driving" and driveView == "cab" then
@@ -432,6 +441,16 @@ function drawWeatherOverlay()
       DrawLine(x, y, x + len, y + len * 0.5, 1, 0.10, 0.11, 0.13, 0.32)
       DrawLine(x + len, y + len * 0.5, x + len * 1.6, y - len * 0.3, 1,
                0.10, 0.11, 0.13, 0.28)
+    end
+  end
+  -- 车身积灰：驾驶席挡风玻璃上的泥点
+  if driveView == "cab" and phase == "driving" and rv ~= nil then
+    local n = windshieldDirtCount(rv.dirt or 0)
+    for i = 1, n do
+      local x = (i * 181 + 59) % vw
+      local y = (i * 117 + 31) % vh
+      DrawCircle(x, y, 2 + (i % 3), 1, 0.42, 0.34, 0.24, 0.20, false)
+      DrawLine(x, y, x + 3, y + 4, 1, 0.42, 0.34, 0.24, 0.14)
     end
   end
 end
