@@ -4573,6 +4573,19 @@ function runSelfTest()
                      c0, c15, c50, s0, s50))
   end
 
+  -- 老顾客折扣文案：新客不显示，可靠/传奇分别显示 -10%/-20%
+  do
+    local none = loyaltyStatusText(0)
+    local trusted = loyaltyStatusText(15)
+    local legend = loyaltyStatusText(50)
+    ok(r, "loyalty status text",
+       none == nil and trusted ~= nil and
+       trusted:find("-10%", 1, true) ~= nil and legend ~= nil and
+       legend:find("-20%", 1, true) ~= nil,
+       string.format("0=%s 15=%s 50=%s", tostring(none),
+                     tostring(trusted), tostring(legend)))
+  end
+
   -- 长线目标：修好加油站油泵，加油永久 7 折；重复修复无效
   do
     local kfix = fuelPumpFixed

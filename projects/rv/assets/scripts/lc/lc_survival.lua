@@ -475,6 +475,13 @@ function discountedServiceCost(base, delivered)
   return math.max(1, math.floor((base or 0) * loyaltyDiscount(delivered) + 0.5))
 end
 
+-- 当前老顾客折扣文案（没有折扣时返回 nil）
+function loyaltyStatusText(delivered)
+  local d = loyaltyDiscount(delivered)
+  if d >= 0.999 then return nil end
+  return string.format("老顾客 -%d%%", math.floor((1 - d) * 100 + 0.5))
+end
+
 function fuelServiceCost(need, delivered, pumpFixed)
   if (need or 0) <= 0.5 then return 0, 1.0, 1.0 end
   local discount = fuelLoyaltyDiscount(delivered)

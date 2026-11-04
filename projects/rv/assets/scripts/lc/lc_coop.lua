@@ -3624,7 +3624,7 @@ function coopDrawHud()
            26, 382, 9, 0.66, 0.68, 0.64, 1)
   DrawText("G 灶台  R 维修  Q 加油  K 工台  C 做饭  N 修塔  T 柴  V 果  Z 鱼笼  J 链条",
            26, 394, 9, 0.66, 0.68, 0.64, 1)
-  DrawText("O 保养  X 鸣笛  H 远光  P 说明", 26, 406, 9, 0.66, 0.68, 0.64, 1)
+  DrawText("O 保养  X 鸣笛  H 远光  P 说明  Y 油泵", 26, 406, 9, 0.66, 0.68, 0.64, 1)
 
   DrawText(string.format("网络 %s", (GetVar("netConnected") == 1) and "已连接" or "未连接"),
            vw - 170, 22, 12, 0.72, 0.78, 0.76, 1)

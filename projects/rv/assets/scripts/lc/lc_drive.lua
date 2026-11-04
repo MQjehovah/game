@@ -265,7 +265,10 @@ function maintenanceCostText()
     parts[#parts + 1] = string.format("洗车 %d", washCost)
   end
   if #parts == 0 then return nil end
-  return "加油站服务：" .. table.concat(parts, " · ") .. " 金属"
+  local text = "加油站服务：" .. table.concat(parts, " · ") .. " 金属"
+  local loyalty = loyaltyStatusText and loyaltyStatusText(jobDelivered)
+  if loyalty ~= nil then text = text .. "  · " .. loyalty end
+  return text
 end
 
 -- 机油劣化对油耗的影响：低于 40% 时油耗略升（最高 +8%）
