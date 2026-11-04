@@ -1063,6 +1063,9 @@ function drawDriveHud()
   if (coffeeBoostMin or 0) > 0 then
     top = top .. string.format("   · 咖啡清醒 %.0f 分钟", coffeeBoostMin)
   end
+  if (wetness or 0) >= 30 then
+    top = top .. string.format("   · 湿透 %.0f%%", wetness)
+  end
   if maintenanceWarningActive ~= nil and maintenanceWarningActive() then
     top = top .. "   · 保养!"
   end

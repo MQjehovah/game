@@ -196,6 +196,7 @@ nightDriveMin = 0             -- 连续夜间驾驶累计（游戏分钟）
 warmthMin = 0                 -- 热食保暖剩余（游戏分钟，抵消雪天寒冷）
 restedMin = 0                 -- 睡饱状态剩余（游戏分钟，减缓夜间疲劳）
 coffeeBoostMin = 0            -- 咖啡清醒剩余（游戏分钟，进一步减缓夜驾疲劳）
+wetness = 0                   -- 衣服潮湿 0-100（雨天在车外淋湿，篝火/取暖器烘干）
 ponds = {}
 campfire = nil
 weather, weatherT, weatherNext = "clear", 0, 15

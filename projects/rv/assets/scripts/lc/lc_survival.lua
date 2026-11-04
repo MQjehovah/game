@@ -876,6 +876,34 @@ function nightFatigueExtra(minutes, rested, coffee)
   return extra
 end
 
+-- 潮湿系统：在车外淋雨/雪会湿透，篝火和取暖器能烘干
+function wetnessGainRate(weatherValue, exposed, sheltered)
+  if not exposed or sheltered then return 0 end
+  if weatherValue == "rain" then return 1.4 end
+  if weatherValue == "snow" then return 0.55 end
+  if weatherValue == "fog" then return 0.15 end
+  return 0
+end
+
+function wetnessDryRate(weatherValue, nearFire, heaterOn)
+  if nearFire then return 4.0 end
+  if heaterOn then return 1.6 end
+  if weatherValue == "clear" or weatherValue == "cloudy" then return 0.5 end
+  return 0.25
+end
+
+-- 湿透后体温流失更快：30% 以上开始额外消耗体力，最高 +0.012/游戏分钟
+function wetnessEnergyExtra(wet)
+  local w = wet or 0
+  if w <= 30 then return 0 end
+  return math.min(0.012, (w - 30) * 0.0002)
+end
+
+function wetnessWarningText(wet)
+  if (wet or 0) < 60 then return nil end
+  return "衣服湿透了——到篝火/取暖器旁烘干，否则体力掉得更快"
+end
+
 -- 疲劳视觉强度（0–1）：连续夜驾越久越明显，用于屏幕边缘暗角
 function fatigueAlpha(minutes)
   local m = minutes or 0
@@ -1011,6 +1039,18 @@ function updateSurvival(dt)
   local sprinting = onFoot and not buildMode and ActionDown("w") and ActionDown("shift")
   local coldExtra = coldEnergyExtra(weather, (stats and stats.heaterOn) or false,
                                     warmthMin)
+  -- 潮湿：在车外淋雨/雪会湿透，篝火/取暖器烘干；湿透额外消耗体力
+  local wetExposed = onFoot and not buildMode and
+    not (isPlayerInsideRv ~= nil and isPlayerInsideRv())
+  local wetNearFire = onFoot and not buildMode and campfire ~= nil and
+    campfireWarmthNear(player.x, player.z, campfire.x, campfire.z,
+                       campfireOn ~= false)
+  local wetGain = wetnessGainRate(weather, wetExposed)
+  local wetDry = wetnessDryRate(weather, wetNearFire,
+                                (stats and stats.heaterOn) or false)
+  wetness = math.max(0, math.min(100,
+    (wetness or 0) + (wetGain - wetDry) * gm))
+  local wetExtra = wetnessEnergyExtra(wetness)
   local nightDriving = phase == "driving" and (isNight ~= nil and isNight()) and
                        math.abs(rv.speed or 0) > 1.0
   if nightDriving then
@@ -1022,7 +1062,7 @@ function updateSurvival(dt)
   local fatigue = nightFatigueExtra(nightDriveMin, restedMin, coffeeBoostMin)
   needs.energy = math.max(0, needs.energy -
     (SURVIVAL.energyRate + (sprinting and SURVIVAL.sprintExtra or 0) +
-     coldExtra + fatigue) * gm)
+     coldExtra + fatigue + wetExtra) * gm)
   if weather == "snow" and coldExtra > 0 and needs.energy < 30 and
      not lastWarn.cold then
     lastWarn.cold = true
@@ -1037,6 +1077,14 @@ function updateSurvival(dt)
     toast.t = 3.6
   elseif nightDriveMin < 90 then
     lastWarn.fatigue = false
+  end
+  local wetWarn = wetnessWarningText(wetness)
+  if wetWarn ~= nil and not lastWarn.wet then
+    lastWarn.wet = true
+    toast.text = wetWarn
+    toast.t = 3.8
+  elseif (wetness or 0) < 35 then
+    lastWarn.wet = false
   end
   -- 夜里坐在营地篝火旁：缓慢回体力，并持续取暖
   if campfireRestAvailable ~= nil and campfireRestAvailable() then

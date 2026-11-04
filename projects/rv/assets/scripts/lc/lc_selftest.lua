@@ -6152,6 +6152,28 @@ function runSelfTest()
        string.format("noon=%d night=%d snow=%d", noon, night, snow))
   end
 
+  -- 潮湿：淋雨比下雪湿得快，有掩体不湿；篝火烘干最快，湿透更耗体力
+  do
+    local rainGain = wetnessGainRate("rain", true, false)
+    local snowGain = wetnessGainRate("snow", true, false)
+    local clearGain = wetnessGainRate("clear", true, false)
+    local shelterGain = wetnessGainRate("rain", true, true)
+    local fireDry = wetnessDryRate("rain", true, false)
+    local heatDry = wetnessDryRate("rain", false, true)
+    local normalDry = wetnessDryRate("rain", false, false)
+    local wetExtra = wetnessEnergyExtra(80)
+    local dryExtra = wetnessEnergyExtra(20)
+    local warn = wetnessWarningText(80)
+    local noWarn = wetnessWarningText(40)
+    ok(r, "wetness model",
+       rainGain > snowGain and snowGain > 0 and clearGain == 0 and
+       shelterGain == 0 and fireDry > heatDry and heatDry > normalDry and
+       wetExtra > 0 and dryExtra == 0 and
+       warn ~= nil and noWarn == nil,
+       string.format("rain=%.1f snow=%.1f fire=%.1f heat=%.1f wetExtra=%.3f",
+                     rainGain, snowGain, fireDry, heatDry, wetExtra))
+  end
+
   -- 轮胎环境温度：雪天低于晴天、夹在 5..30，低环境温度让胎温降得更低
   do
     local sw, sc = weather, clock

@@ -204,7 +204,8 @@ function saveLayout(silent)
                 blowout = rv.blowout and 1 or 0,
                 dirt = rv.dirt or 0 },
     survival = { health = needs.health, hunger = needs.hunger, thirst = needs.thirst,
-                 energy = needs.energy, hygiene = needs.hygiene },
+                 energy = needs.energy, hygiene = needs.hygiene,
+                 wetness = wetness or 0 },
     inventory = inv, water = water,
     day = day, clock = clock, modules = rows, pois = generatedPois,
     weather = { id = weather, t = weatherT, next = weatherNext,
@@ -410,6 +411,7 @@ function loadLayout()
     needs.thirst = tonumber(data.survival.thirst) or needs.thirst
     needs.energy = tonumber(data.survival.energy) or needs.energy
     needs.hygiene = tonumber(data.survival.hygiene) or needs.hygiene
+    wetness = math.max(0, math.min(100, tonumber(data.survival.wetness) or 0))
   end
   if type(data.lights) == "table" then
     interiorLightsOn = (tonumber(data.lights.interior) or 1) ~= 0
@@ -1318,6 +1320,11 @@ function on_start()
   elseif startMode == "dirtycab" then
     rv.dirt = 0.9
     setWeather("clear")
+    setPhase("driving")
+    driveView = "cab"
+  elseif startMode == "wet" then
+    wetness = 85
+    setWeather("rain")
     setPhase("driving")
     driveView = "cab"
   elseif startMode == "inside_dark" then

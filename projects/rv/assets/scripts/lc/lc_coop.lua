@@ -609,6 +609,7 @@ local function pushDetail()
     veh = vehicleConditionToken and vehicleConditionToken() or "-",
     warm = math.floor(warmthMin or 0),
     rest = math.floor(restedMin or 0),
+    wet = math.floor(wetness or 0),
     chains = (chainsOn ~= false) and 1 or 0,
     notes = notesMask(),
   })
@@ -2239,6 +2240,9 @@ local function applyState(s)
   if s.rest ~= nil and setRested ~= nil then
     setRested(s.rest)
   end
+  if s.wet ~= nil then
+    wetness = math.max(0, math.min(100, tonumber(s.wet) or 0))
+  end
   if s.chains ~= nil then
     chainsOn = (s.chains == 1 or s.chains == true)
   end
@@ -3448,10 +3452,12 @@ function coopDrawHud()
 
   DrawText(string.format("房车  X %.1f  Z %.1f  朝向 %.0f°  速度 %.1f", rv.x, rv.z,
            math.deg(rv.yaw), rv.speed or 0), 26, 72, 12, 0.86, 0.88, 0.82, 1)
-  DrawText(string.format("燃油 %.0f%%   水 %.1fL   车门 %s   时间 第%d天 %02d:%02d   灯 %s",
+  local wetTag = ((wetness or 0) >= 30)
+    and string.format("   湿透 %.0f%%", wetness) or ""
+  DrawText(string.format("燃油 %.0f%%   水 %.1fL   车门 %s   时间 第%d天 %02d:%02d   灯 %s%s",
            fuel, water, (coop.state and coop.state.door == 1) and "开" or "关",
            day, math.floor(clock / 60) % 24, math.floor(clock % 60),
-           coop.lights and "开" or "关"), 26, 91, 12, 0.80, 0.82, 0.76, 1)
+           coop.lights and "开" or "关", wetTag), 26, 91, 12, 0.80, 0.82, 0.76, 1)
   DrawText(string.format("材料 金属%d 电子%d 布料%d 木材%d",
            materials.metal or 0, materials.electronics or 0,
            materials.cloth or 0, materials.wood or 0), 26, 110, 12, 0.80, 0.82, 0.76, 1)
