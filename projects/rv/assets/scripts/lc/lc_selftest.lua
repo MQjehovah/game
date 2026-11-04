@@ -4497,6 +4497,16 @@ function runSelfTest()
                      colLines[2], lineH))
   end
 
+  -- 货运板布局：8 条交易 + 3 张合同也能放进 720p
+  do
+    local ph1, sy1 = jobPanelLayout(3, 8, false)
+    local ph2, sy2 = jobPanelLayout(3, 8, true)
+    ok(r, "job panel layout",
+       ph1 <= 700 and ph2 <= 700 and sy1 == 70 and sy2 == 112 and
+       ph2 > ph1,
+       string.format("ph=%d/%d start=%d/%d", ph1, ph2, sy1, sy2))
+  end
+
   -- 联机随身物资摘要：包含热饭/净水/烤鱼/修理包/燃油罐/烟熏鱼
   do
     local km, kw, kf = inv.meal, inv.water, inv.fish

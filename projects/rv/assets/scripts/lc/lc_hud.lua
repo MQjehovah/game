@@ -2071,12 +2071,23 @@ function drawJobWaypoint(vw)
 end
 
 -- 营地货运板菜单：列 3 张合同，1-3 接单，0 放弃当前，E 关闭
+-- 货运板布局：按合同数/交易数动态算高度，避免交易列表溢出
+function jobPanelLayout(offerCount, tradeCount, hasJob)
+  local rows = math.max(1, offerCount or 0)
+  local startY = hasJob and 112 or 70
+  local trades = math.max(0, tradeCount or 0)
+  local ph = startY + rows * 62 + 26 + trades * 30 + 52
+  return ph, startY
+end
+
 function drawJobPanel()
   local vp = GetViewportSize()
   local vw = (vp and vp.w) or 1280
   local vh = (vp and vp.h) or 720
   local rows = math.max(1, #jobOffers)
-  local pw, ph = 620, 158 + rows * 62 + 162
+  local tradeRows = (TRADES ~= nil) and #TRADES or 0
+  local pw = 620
+  local ph, startY = jobPanelLayout(rows, tradeRows, job ~= nil)
   local px = math.floor((vw - pw) * 0.5)
   local py = math.floor((vh - ph) * 0.5)
   DrawRect(px, py, pw, ph, 0.04, 0.05, 0.06, 0.93)
@@ -2113,7 +2124,7 @@ function drawJobPanel()
              px + 24, py + 78, 14, 0.68, 0.68, 0.62, 1)
   end
 
-  local yy = py + (job ~= nil and 112 or 70)
+  local yy = py + startY
   for i, o in ipairs(jobOffers) do
     local hot = job == nil
     DrawRect(px + 16, yy, pw - 32, 54, hot and 0.09 or 0.06, 0.09, 0.10, 0.85)
