@@ -1993,7 +1993,7 @@ function runSelfTest()
     dur, parts.engine, parts.tires, parts.battery = 100, 100, 100, 100
     oilLife, coolant, engineTemp, brakeHeat = 100, 100, 20, 0
     local rows = maintenanceRows()
-    local allOk = #rows == 8
+    local allOk = #rows == 9
     for _, r in ipairs(rows) do
       if not r.ok then allOk = false end
     end
