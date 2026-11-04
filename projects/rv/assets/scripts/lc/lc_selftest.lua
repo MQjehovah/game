@@ -4444,6 +4444,8 @@ function runSelfTest()
   -- 到站加油：营地免费、加油站按缺口扣金属、金属不足不加油
   do
     local sf, sm = fuel, materials.metal or 0
+    local sj = jobDelivered
+    jobDelivered = 0
     -- 营地：即使金属为 0 也免费加满
     materials.metal = 0
     fuel = 10
@@ -4459,12 +4461,30 @@ function runSelfTest()
     local richFull = math.abs(fuel - fuelMax()) < 1e-6
     local charged = (materials.metal or 0) == 6 and cost == 4
     fuel, materials.metal = sf, sm
+    jobDelivered = sj
     ok(r, "gas station refuel cost",
        campOk and campFull and (okPoor == false) and poorKept and
        okRich and richFull and charged,
        string.format("camp=%s free=%s poor=%s kept=%s rich=%s cost=%d",
                      tostring(campOk), tostring(campFull), tostring(okPoor),
                      tostring(poorKept), tostring(richFull), cost or 0))
+  end
+
+  -- 老顾客加油折扣：跑单越多每 15L 越便宜，最低 8 折
+  do
+    local new = fuelLoyaltyDiscount(0)
+    local regular = fuelLoyaltyDiscount(5)
+    local trusted = fuelLoyaltyDiscount(15)
+    local veteran = fuelLoyaltyDiscount(30)
+    local legend = fuelLoyaltyDiscount(50)
+    local c0 = fuelServiceCost(150, 0)
+    local c50 = fuelServiceCost(150, 50)
+    ok(r, "fuel loyalty discount",
+       new == 1.0 and regular < new and trusted < regular and
+       veteran < trusted and legend < veteran and legend >= 0.80 and
+       c50 < c0,
+       string.format("1/%.2f 5/%.2f 15/%.2f 30/%.2f 50/%.2f cost %d->%d",
+                     new, regular, trusted, veteran, legend, c0, c50))
   end
 
   -- 低油量导航：最近加油站的距离

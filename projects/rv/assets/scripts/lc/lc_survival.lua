@@ -455,6 +455,23 @@ end
 
 -- 到站补给：营地免费加满；加油站按油量缺口收金属（每 15L 1 金属，至少 1）
 -- 返回 ok, cost, note；金属不足时不加油、不扣材料。
+-- 老顾客加油折扣：跑单越多，加油站每 15L 的收费越低（最低 8 折）
+function fuelLoyaltyDiscount(delivered)
+  local n = delivered or 0
+  if n >= 50 then return 0.80 end
+  if n >= 30 then return 0.85 end
+  if n >= 15 then return 0.90 end
+  if n >= 5 then return 0.95 end
+  return 1.0
+end
+
+function fuelServiceCost(need, delivered)
+  if (need or 0) <= 0.5 then return 0, 1.0 end
+  local discount = fuelLoyaltyDiscount(delivered)
+  local cost = math.max(1, math.ceil(((need or 0) / 15) * discount))
+  return cost, discount
+end
+
 function refuelAtNode(id)
   local need = fuelMax() - (fuel or 0)
   if id == "camp" then
@@ -467,10 +484,15 @@ function refuelAtNode(id)
     fuelWarned = false
     return true, 0, "油箱已满"
   end
-  local cost = math.max(1, math.ceil(need / 15))
+  local cost, discount = fuelServiceCost(need, jobDelivered)
+  local discountTag = ""
+  if discount < 0.999 then
+    discountTag = string.format("（老顾客 -%d%%）",
+                                math.floor((1 - discount) * 100 + 0.5))
+  end
   if (materials.metal or 0) < cost then
-    toast.text = string.format("加油需要 %d 金属（现有 %d）— 去搜刮或到营地免费加",
-                               cost, materials.metal or 0)
+    toast.text = string.format("加油需要 %d 金属%s（现有 %d）— 去搜刮或到营地免费加",
+                               cost, discountTag, materials.metal or 0)
     toast.t = 3.0
     return false, cost, "金属不足"
   end
@@ -478,7 +500,8 @@ function refuelAtNode(id)
   fuel = fuelMax()
   fuelWarned = false
   if PlaySfx then PlaySfx("pickup") end
-  return true, cost, string.format("加油 %dL 花费 %d 金属", math.floor(need + 0.5), cost)
+  return true, cost, string.format("加油 %dL 花费 %d 金属%s",
+                                   math.floor(need + 0.5), cost, discountTag)
 end
 
 -- 拖车：野外抛锚时花 4 金属把房车拉回营地（不修车、不补油）
@@ -545,7 +568,8 @@ function lowFuelHintText()
   if st == nil then return nil end
   local km = ((rangeEstimateM and rangeEstimateM()) or 0) / 1000
   local need = fuelMax() - (fuel or 0)
-  local cost = math.max(1, math.ceil(need / 15))
+  local cost = (fuelServiceCost and fuelServiceCost(need, jobDelivered)) or
+               math.max(1, math.ceil(need / 15))
   local tail = ""
   if (materials.metal or 0) < cost then
     local camp = (nodeById ~= nil) and nodeById("camp") or nil
