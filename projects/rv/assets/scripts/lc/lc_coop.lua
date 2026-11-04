@@ -3234,10 +3234,12 @@ function coopDrawHud()
       local names = { "左前", "右前", "左后", "右后" }
       blow = "  爆胎:" .. (names[coop.veh.blowoutWheel or 1] or "?")
     end
-    DrawText(string.format("车况  车体%d%% 引擎%d%% 轮胎%d%% 电瓶%d%% 水温%d°C%s",
+    DrawText(string.format("车况 体%d 引%d 胎%d 电%d 水%d°C 洁%d 甲%d%s",
              coop.veh.dur, coop.veh.engine, coop.veh.tires,
-             coop.veh.battery, coop.veh.temp, blow),
-             26, 146, 11, 0.74, 0.80, 0.72, 1)
+             coop.veh.battery, coop.veh.temp,
+             math.floor((1 - (coop.veh.dirt or 0)) * 100 + 0.5),
+             coop.veh.armor or 0, blow),
+             26, 146, 10, 0.74, 0.80, 0.72, 1)
   end
 
   drawBar(26, 164, 200, "生命", (needs.health or 0) / 100, 0.85, 0.30, 0.30)

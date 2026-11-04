@@ -109,6 +109,7 @@ function vehicleConditionToken()
   out[#out + 1] = rv.blowout and "1" or "0"
   out[#out + 1] = tostring(rv.blowoutWheel or 0)
   out[#out + 1] = string.format("%.0f", (rv.dirt or 0) * 100)
+  out[#out + 1] = tostring((upgrades and upgrades.armor) or 0)
   return table.concat(out, ":")
 end
 
@@ -132,6 +133,7 @@ function parseVehicleCondition(str)
     v.blowout = (out[19] or 0) == 1
     v.blowoutWheel = (out[20] ~= nil and out[20] > 0) and out[20] or nil
     v.dirt = (out[21] or 0) / 100
+    v.armor = out[22] or 0
   end
   return v
 end
@@ -161,7 +163,7 @@ function maintenanceRows()
   row("水温", string.format("%.0f°C", temp), temp < (VEH.tempOverheat or 110))
   row("刹车", string.format("%.0f%% 热", (brakeHeat or 0) * 100),
       (brakeHeat or 0) < 0.7)
-  local armor = (upgrades and upgrades.armor) or 0
+  local armor = (veh and veh.armor) or (upgrades and upgrades.armor) or 0
   row("装甲", string.format("Lv%d", armor), true)
   local dirt = (veh and veh.dirt) or rv.dirt or 0
   row("清洁", string.format("%.0f%%", (1 - dirt) * 100), dirt < 0.6)

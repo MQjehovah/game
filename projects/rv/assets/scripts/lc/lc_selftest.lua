@@ -2085,12 +2085,15 @@ function runSelfTest()
     local kheat = brakeHeat
     local kp, ktt, kw = rv.tirePressureCold, rv.tireTemps, rv.tireWear
     local kbw, kbb = rv.blowoutWheel, rv.blowout
+    local kdirt = rv.dirt
+    local karmor = upgrades.armor
     dur, parts.engine, parts.tires, parts.battery = 80, 70, 60, 55
     engineTemp, brakeHeat = 90, 0.4
     rv.tirePressureCold = { 2.4, 2.2, 2.0, 1.8 }
     rv.tireTemps = { 22, 40, 60, 80 }
     rv.tireWear = { 90, 80, 70, 60 }
     rv.blowout, rv.blowoutWheel = true, 4
+    rv.dirt, upgrades.armor = 0.4, 2
     local token = vehicleConditionToken()
     local veh = parseVehicleCondition(token)
     local bad = parseVehicleCondition("nope")
@@ -2098,11 +2101,14 @@ function runSelfTest()
                     math.abs(veh.pressures[4] - 1.8) < 1e-6 and
                     veh.temps[4] == 80 and veh.wear[4] == 60 and
                     math.abs((veh.brake or 0) - 0.4) < 1e-6 and
-                    veh.blowout == true and veh.blowoutWheel == 4
+                    veh.blowout == true and veh.blowoutWheel == 4 and
+                    math.abs((veh.dirt or 0) - 0.4) < 1e-6 and
+                    veh.armor == 2
     dur, parts.engine, parts.tires = kd, ke, kt
     parts.battery, engineTemp, brakeHeat = kb, kt2, kheat
     rv.tirePressureCold, rv.tireTemps, rv.tireWear = kp, ktt, kw
     rv.blowout, rv.blowoutWheel = kbb, kbw
+    rv.dirt, upgrades.armor = kdirt, karmor
     ok(r, "vehicle condition sync",
        veh ~= nil and veh.dur == 80 and veh.engine == 70 and
        veh.tires == 60 and veh.battery == 55 and veh.temp == 90 and
