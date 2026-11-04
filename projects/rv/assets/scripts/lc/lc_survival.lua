@@ -1083,6 +1083,31 @@ function updateRelay()
   return false
 end
 
+-- 终局目标：无线电塔 + 信号中继 + 小镇水塔 + 加油站油泵全部恢复
+function infrastructureComplete()
+  return radioMastFixed == true and relayDone == true and
+         waterTowerFixed == true and fuelPumpFixed == true
+end
+
+function checkInfrastructureMilestone()
+  if wastelandRestored then return false end
+  if not infrastructureComplete() then return false end
+  wastelandRestored = true
+  materials.metal = (materials.metal or 0) + 15
+  materials.electronics = (materials.electronics or 0) + 6
+  materials.cloth = (materials.cloth or 0) + 5
+  materials.wood = (materials.wood or 0) + 8
+  fuel = math.min(fuelMax(), (fuel or 0) + 30)
+  water = math.min(waterMax(), (water or 0) + 30)
+  toast.text = "荒原基础设施全部恢复——无线电/中继/水塔/油泵，终局补给已发放"
+  toast.t = 6.0
+  if addJournal then
+    addJournal("荒原基础设施全部恢复（无线电/中继/水塔/油泵）", "goal")
+  end
+  if autoSave then autoSave() end
+  return true
+end
+
 -- 恢复中继后的每日救援补给（每天一次）
 function grantRelaySupply()
   if not relayDone then return false end
@@ -1219,6 +1244,8 @@ function updateSurvival(dt)
   end
 
   if needs.health <= 0 then faintPlayer() end
+  -- 四类基础设施全部恢复时发一次终局补给
+  checkInfrastructureMilestone()
 
   -- 低需求提示（各只提示一次，恢复后重置）
   if needs.hunger < 25 and not lastWarn.hunger then

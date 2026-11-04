@@ -4612,6 +4612,40 @@ function runSelfTest()
                      tostring(again)))
   end
 
+  -- 终局目标：四类基础设施全部恢复时一次性发终局补给
+  do
+    local kR, kD = radioMastFixed, relayDone
+    local kW, kP, kDone = waterTowerFixed, fuelPumpFixed, wastelandRestored
+    local km, ke = materials.metal or 0, materials.electronics or 0
+    local kc, kw = materials.cloth or 0, materials.wood or 0
+    local kf, kwater = fuel, water
+    local ka = autoSave
+    autoSave = nil
+    radioMastFixed, relayDone = false, false
+    waterTowerFixed, fuelPumpFixed = false, false
+    wastelandRestored = false
+    local before = infrastructureComplete()
+    radioMastFixed, relayDone = true, true
+    waterTowerFixed, fuelPumpFixed = true, true
+    local complete = infrastructureComplete()
+    local first = checkInfrastructureMilestone()
+    local restored = wastelandRestored == true
+    local second = checkInfrastructureMilestone()
+    radioMastFixed, relayDone = kR, kD
+    waterTowerFixed, fuelPumpFixed = kW, kP
+    wastelandRestored = kDone
+    materials.metal, materials.electronics = km, ke
+    materials.cloth, materials.wood = kc, kw
+    fuel, water = kf, kwater
+    autoSave = ka
+    ok(r, "wasteland restored",
+       before == false and complete == true and first and restored and
+       second == false,
+       string.format("before=%s complete=%s first=%s again=%s",
+                     tostring(before), tostring(complete), tostring(first),
+                     tostring(second)))
+  end
+
   -- 低油量导航：最近加油站的距离
   do
     local sx, sz = rv.x, rv.z

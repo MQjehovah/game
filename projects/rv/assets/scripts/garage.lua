@@ -243,6 +243,7 @@ function saveLayout(silent)
       radioMastFixed = radioMastFixed and true or false,
       waterTowerFixed = waterTowerFixed and true or false,
       fuelPumpFixed = fuelPumpFixed and true or false,
+      wastelandRestored = wastelandRestored and true or false,
       relayDone = relayDone and true or false,
       relaySupplyDay = relaySupplyDay or 0,
       campfireFuel = campfireFuelMin or 0,
@@ -466,6 +467,7 @@ function loadLayout()
     radioMastFixed = data.progress.radioMastFixed == true
     waterTowerFixed = data.progress.waterTowerFixed == true
     fuelPumpFixed = data.progress.fuelPumpFixed == true
+    wastelandRestored = data.progress.wastelandRestored == true
     relayDone = data.progress.relayDone == true
     relaySupplyDay = tonumber(data.progress.relaySupplyDay) or 0
     if data.progress.campfireFuel ~= nil then
