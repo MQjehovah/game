@@ -4547,6 +4547,32 @@ function runSelfTest()
                      c0, c15, c50, s0, s50))
   end
 
+  -- 长线目标：修好加油站油泵，加油永久 7 折；重复修复无效
+  do
+    local kfix = fuelPumpFixed
+    local km, ke = materials.metal or 0, materials.electronics or 0
+    local ka = autoSave
+    autoSave = nil
+    fuelPumpFixed = false
+    materials.metal, materials.electronics = 10, 10
+    local nd = { fuelPump = { x = 0, z = 0 } }
+    local okFix = repairFuelPumpAt(nd)
+    local fixed = fuelPumpFixed == true
+    local spentMetal, spentElec = materials.metal or 0,
+                                 materials.electronics or 0
+    local cNormal = fuelServiceCost(150, 0, false)
+    local cPump = fuelServiceCost(150, 0, true)
+    local again = repairFuelPumpAt(nd)
+    fuelPumpFixed, materials.metal, materials.electronics = kfix, km, ke
+    autoSave = ka
+    ok(r, "fuel pump repair",
+       okFix and fixed and spentMetal == 5 and spentElec == 8 and
+       cPump < cNormal and again == false,
+       string.format("fixed=%s metal=%d elec=%d cost %d->%d again=%s",
+                     tostring(fixed), spentMetal, spentElec, cNormal, cPump,
+                     tostring(again)))
+  end
+
   -- 低油量导航：最近加油站的距离
   do
     local sx, sz = rv.x, rv.z

@@ -1357,6 +1357,8 @@ function spawnRuinFor(nd)
       local lamp = SpawnPrefab("rv_lamp", { x = cx + lx, y = 2.42, z = cz })
       if lamp ~= nil then SetScale(lamp, 1.3, 1.3, 1.3) end
     end
+    -- 可修复的油泵交互点（长线目标：修好后加油永久 7 折）
+    nd.fuelPump = { x = cx + 2.6, z = cz + 2.2 }
     spawnPoiWindows(nd)
     return
   end

@@ -100,6 +100,7 @@ docks = {}                    -- 钓鱼水塘的木栈桥
 radioMast = nil               -- 仓库旁的无线电塔 {parts, beacon, t}
 radioMastFixed = false        -- 无线电塔是否已修好（长线目标）
 waterTowerFixed = false       -- 小镇水塔是否已修好（长线目标：镇上免费补水）
+fuelPumpFixed = false         -- 加油站油泵是否已修好（长线目标：加油 7 折）
 waterTowers = {}              -- 小镇水塔地标
 windmill = nil                -- 农场风车 {x,y,z,angle,blades}
 windmillWaterMin = 0          -- 风车水泵冷却（游戏分钟）

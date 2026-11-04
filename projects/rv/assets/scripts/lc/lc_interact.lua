@@ -336,6 +336,28 @@ function updateInteraction()
     end
   end
 
+  -- 加油站油泵：走近按 E 修复，修好后加油永久 7 折
+  for _, nd in ipairs(NODES) do
+    local fp = nd.fuelPump
+    if fp ~= nil then
+      local dx, dz = fp.x - player.x, fp.z - player.z
+      local d = math.sqrt(dx * dx + dz * dz)
+      if d < 3.2 and forwardDot(dx, dz, d) > 0.05 then
+        if fuelPumpFixed then
+          nearAction = { kind = "fuelpump", verb = "加油站油泵 · 已修好",
+                         detail = "E 查看（加油永久 7 折）",
+                         x = fp.x, z = fp.z, node = nd }
+        else
+          nearAction = { kind = "fuelpump", verb = "修油泵",
+                         detail = string.format("E 消耗 金属5 电子件2（现有 %d/%d）",
+                           materials.metal or 0, materials.electronics or 0),
+                         x = fp.x, z = fp.z, node = nd }
+        end
+        return
+      end
+    end
+  end
+
   if nearRv() then
     if hasItem("fuelcan", 1) and (fuel or 0) < fuelMax() - 0.5 then
       nearAction = { kind = "refuel", verb = "加注燃油",
@@ -459,6 +481,17 @@ function doInteract()
     return true
   elseif nearAction.kind == "mailbox" then
     lootMailbox(nearAction.node)
+    updateInteraction()
+    return true
+  elseif nearAction.kind == "fuelpump" then
+    if fuelPumpFixed then
+      toast.text = "油泵已修好——加油永久 7 折"
+      toast.t = 2.4
+    elseif repairFuelPumpAt ~= nil then
+      local fixedOk, fixedMsg = repairFuelPumpAt(nearAction.node)
+      toast.text = fixedMsg or (fixedOk and "油泵修好了" or "修油泵失败")
+      toast.t = 3.0
+    end
     updateInteraction()
     return true
   elseif nearAction.kind == "refuel" then

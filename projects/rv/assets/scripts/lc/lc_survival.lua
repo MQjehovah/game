@@ -475,11 +475,33 @@ function discountedServiceCost(base, delivered)
   return math.max(1, math.floor((base or 0) * loyaltyDiscount(delivered) + 0.5))
 end
 
-function fuelServiceCost(need, delivered)
-  if (need or 0) <= 0.5 then return 0, 1.0 end
+function fuelServiceCost(need, delivered, pumpFixed)
+  if (need or 0) <= 0.5 then return 0, 1.0, 1.0 end
   local discount = fuelLoyaltyDiscount(delivered)
-  local cost = math.max(1, math.ceil(((need or 0) / 15) * discount))
-  return cost, discount
+  local pumpScale = pumpFixed and 0.70 or 1.0
+  local cost = math.max(1, math.ceil(((need or 0) / 15) * discount * pumpScale))
+  return cost, discount, pumpScale
+end
+
+-- 长线目标：修好加油站油泵后，加油永久 7 折
+FUEL_PUMP_COST = { metal = 5, electronics = 2 }
+
+function repairFuelPumpAt(nd)
+  if nd == nil or nd.fuelPump == nil then
+    return false, "附近没有可修的油泵"
+  end
+  if fuelPumpFixed then return false, "油泵已经修好了" end
+  if not canAfford(FUEL_PUMP_COST) then
+    return false, "修油泵材料不足：" .. costText(FUEL_PUMP_COST)
+  end
+  payCost(FUEL_PUMP_COST)
+  fuelPumpFixed = true
+  if PlaySfx then PlaySfx("repair") end
+  if addJournal ~= nil then
+    addJournal("修好了加油站油泵（加油永久 7 折）", "goal")
+  end
+  if autoSave ~= nil then autoSave() end
+  return true, "油泵修好了——加油永久 7 折"
 end
 
 function refuelAtNode(id)
@@ -494,11 +516,15 @@ function refuelAtNode(id)
     fuelWarned = false
     return true, 0, "油箱已满"
   end
-  local cost, discount = fuelServiceCost(need, jobDelivered)
+  local cost, discount, pumpScale = fuelServiceCost(need, jobDelivered,
+                                                     fuelPumpFixed)
   local discountTag = ""
   if discount < 0.999 then
     discountTag = string.format("（老顾客 -%d%%）",
                                 math.floor((1 - discount) * 100 + 0.5))
+  end
+  if pumpScale < 0.999 then
+    discountTag = discountTag .. "（油泵 7 折）"
   end
   if (materials.metal or 0) < cost then
     toast.text = string.format("加油需要 %d 金属%s（现有 %d）— 去搜刮或到营地免费加",
