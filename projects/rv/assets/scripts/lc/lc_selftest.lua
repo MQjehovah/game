@@ -4538,8 +4538,8 @@ function runSelfTest()
 
   -- 货运板布局：8 条交易 + 3 张合同也能放进 720p
   do
-    local ph1, sy1 = jobPanelLayout(3, 8, false)
-    local ph2, sy2 = jobPanelLayout(3, 8, true)
+    local ph1, sy1 = jobPanelLayout(3, 9, false)
+    local ph2, sy2 = jobPanelLayout(3, 9, true)
     ok(r, "job panel layout",
        ph1 <= 700 and ph2 <= 700 and sy1 == 70 and sy2 == 112 and
        ph2 > ph1,
@@ -4633,6 +4633,22 @@ function runSelfTest()
     materials.metal = km
     inv.rawfish = kr > 0 and kr or nil
     ok(r, "fish trade", okTrade,
+       string.format("traded=%s metal=%d fish=%d", tostring(traded),
+                     gotMetal, leftFish))
+  end
+
+  -- 以物易物：烟熏鱼 x2 → 金属 x3
+  do
+    local km, kr = materials.metal or 0, inv.smokedfish or 0
+    materials.metal = 0
+    inv.smokedfish = 2
+    local traded = doTrade(9)
+    local gotMetal = materials.metal or 0
+    local leftFish = inv.smokedfish or 0
+    local okTrade = traded and gotMetal == 3 and leftFish == 0
+    materials.metal = km
+    inv.smokedfish = kr > 0 and kr or nil
+    ok(r, "smoked fish trade", okTrade,
        string.format("traded=%s metal=%d fish=%d", tostring(traded),
                      gotMetal, leftFish))
   end

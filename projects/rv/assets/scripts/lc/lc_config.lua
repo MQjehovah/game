@@ -229,6 +229,8 @@ TRADES = {
     cost = { metal = 4 }, give = { item = "sparetire", n = 1 } },
   { id = "fish_metal",  name = "生鱼 x3 → 金属 x2",
     costItem = { rawfish = 3 }, give = { metal = 2 } },
+  { id = "smoked_metal", name = "烟熏鱼 x2 → 金属 x3",
+    costItem = { smokedfish = 2 }, give = { metal = 3 } },
 }
 
 -- 路牌笔记：散落在各地点的可阅读纸条，集齐有一次性奖励
