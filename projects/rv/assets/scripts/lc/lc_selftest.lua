@@ -2182,6 +2182,27 @@ function runSelfTest()
        string.format("dirty=%s clean=%s", tostring(dirty), tostring(clean)))
   end
 
+  -- 驾驶中喷玻璃水：消耗 1L 水，脏污 -0.3；太干净或没水不生效
+  do
+    local kd, kw = rv.dirt, water
+    local kt, kv = toast.text, toast.t
+    rv.dirt, water = 0.8, 10
+    local okWash = useWindshieldWasher()
+    local gotDirt, gotWater = rv.dirt, water
+    rv.dirt, water = 0.1, 10
+    local clean = useWindshieldWasher()
+    rv.dirt, water = 0.8, 0.2
+    local dry = useWindshieldWasher()
+    rv.dirt, water = kd, kw
+    toast.text, toast.t = kt, kv
+    ok(r, "windshield washer",
+       okWash and math.abs(gotDirt - 0.5) < 1e-6 and
+       math.abs(gotWater - 9) < 1e-6 and clean == false and dry == false,
+       string.format("ok=%s dirt=%.2f water=%.1f clean=%s dry=%s",
+                     tostring(okWash), gotDirt, gotWater,
+                     tostring(clean), tostring(dry)))
+  end
+
   -- 夜间远光招感染者：只在“远光 + 夜晚”成立
   do
     local both = highBeamAttracts(true, true)

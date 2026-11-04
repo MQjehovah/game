@@ -347,7 +347,28 @@ end
 -- 车身太脏提示（积灰 >=80% 时提示洗车）
 function dirtWarningText(value)
   if (value or 0) < 0.8 then return nil end
-  return "车身太脏了——油耗上升，到营地/加油站洗车"
+  return "车身太脏了——油耗上升，到营地/加油站洗车，驾驶中按 G 喷玻璃水"
+end
+
+-- 驾驶中喷玻璃水：消耗 1L 水，清除一部分挡风玻璃泥点
+function useWindshieldWasher()
+  if rv == nil or (rv.dirt or 0) < 0.2 then
+    toast.text = "挡风玻璃还算干净"
+    toast.t = 2.0
+    return false
+  end
+  if (water or 0) < 1 then
+    toast.text = "水箱没水了——无法喷玻璃水"
+    toast.t = 2.4
+    return false
+  end
+  water = math.max(0, (water or 0) - 1)
+  rv.dirt = math.max(0, (rv.dirt or 0) - 0.3)
+  if PlaySfx then PlaySfx("drink") end
+  toast.text = string.format("喷玻璃水清洗挡风玻璃（水 -1L，清洁 %.0f%%）",
+                             (1 - (rv.dirt or 0)) * 100)
+  toast.t = 2.6
+  return true
 end
 
 -- 每米积灰量：泥泞/泥土/碎石/草地更脏，雨天更明显

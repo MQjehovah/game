@@ -1680,6 +1680,10 @@ function on_update(ent, dt)
       setPhase("parked")
     end
     if ActionPressed("x") and honk ~= nil then honk() end
+    if ActionPressed("g") and coopRole == nil and
+       useWindshieldWasher ~= nil then
+      useWindshieldWasher()
+    end
     if ActionPressed("y") and callTow ~= nil then callTow() end
     if ActionPressed("v") then
       if cruiseOn then
